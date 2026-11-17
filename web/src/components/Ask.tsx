@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type { SubmitEvent } from 'react';
-import { answerSegments } from '../lib/answer';
+import { answerSegments, unreferencedCitations } from '../lib/answer';
 import type { Citation, InlineSegment } from '../lib/answer';
 import { parseSse } from '../lib/sse';
 import HowItAnswered from './HowItAnswered';
@@ -198,24 +198,36 @@ export default function Ask({ examples }: { examples: string[] }) {
   return (
     <div className="ask" style={{ minInlineSize: 'var(--space-0)' }}>
       <ol className="ask-turns" aria-label="Conversation">
-        {turns.map((turn) => (
-          <li key={turn.id} className="ask-turn">
-            <p className="ask-question"><span className="ask-label">You asked: </span>{turn.question}</p>
-            <div className="ask-answer" aria-label="Answer" aria-live="polite" aria-atomic="true">
-              {answerSegments(turn.text, turn.citations, turn.unsupported).map((segment, index) => (
-                segment.type === 'unsupported'
-                  ? <mark key={index} className="ask-unsupported" title="Not found in the project pages">
-                    {segment.children.map(renderInline)}
-                  </mark>
-                  : renderInline(segment, index)
-              ))}
-              {turn.checking && <span className="ask-checking">checking…</span>}
-              {turn.incomplete && turn.text && <span className="ask-incomplete">(incomplete)</span>}
-            </div>
-            {turn.error && <p className="ask-error" role="alert">{turn.error}</p>}
-            <HowItAnswered trace={turn.trace} />
-          </li>
-        ))}
+        {turns.map((turn) => {
+          const see = unreferencedCitations(turn.text, turn.citations);
+          return (
+            <li key={turn.id} className="ask-turn">
+              <p className="ask-question"><span className="ask-label">You asked: </span>{turn.question}</p>
+              <div className="ask-answer" aria-label="Answer" aria-live="polite" aria-atomic="true">
+                {answerSegments(turn.text, turn.citations, turn.unsupported).map((segment, index) => (
+                  segment.type === 'unsupported'
+                    ? <mark key={index} className="ask-unsupported" title="Not found in the project pages">
+                      {segment.children.map(renderInline)}
+                    </mark>
+                    : renderInline(segment, index)
+                ))}
+                {turn.checking && <span className="ask-checking">checking…</span>}
+                {turn.incomplete && turn.text && <span className="ask-incomplete">(incomplete)</span>}
+                {see.length > 0 && (
+                  <p className="ask-see">
+                    See: {see.map((citation, index) => (
+                      <Fragment key={citation.n}>
+                        {index > 0 && ', '}<a href={citation.url}>{citation.heading}</a>
+                      </Fragment>
+                    ))}
+                  </p>
+                )}
+              </div>
+              {turn.error && <p className="ask-error" role="alert">{turn.error}</p>}
+              <HowItAnswered trace={turn.trace} />
+            </li>
+          );
+        })}
       </ol>
       <form className="ask-form" onSubmit={submit}>
         <label htmlFor={inputId} className="ask-label">Ask about my projects</label>

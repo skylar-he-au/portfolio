@@ -19,6 +19,10 @@ export function safeSiteUrl(url: string): string | null {
   }
 }
 
+export function unreferencedCitations(text: string, citations: Citation[]): Citation[] {
+  return citations.filter(({ n, url }) => !text.includes(`[${n}]`) && safeSiteUrl(url) !== null);
+}
+
 export function answerSegments(text: string, citations: Citation[], unsupported: string[]): AnswerSegment[] {
   function linkify(piece: string): InlineSegment[] {
     const result: InlineSegment[] = [];

@@ -199,6 +199,71 @@ describe('Ask readiness and retained behaviour', () => {
 });
 
 describe('Ask streaming', () => {
+  it('shows the About citation in a See line for the fixed private answer', async () => {
+    await renderReady(async () => eventResponse([
+      ['route', { private: true, off_topic: false, language: 'en' }],
+      ['answer', {
+        text: 'Please see the About page or email me.',
+        citations: [{ n: 1, url: '/about', heading: 'About Skylar' }],
+      }],
+      ['done', {}],
+    ]));
+    await send();
+    const link = await screen.findByRole('link', { name: 'About Skylar' });
+    expect(link).toHaveAttribute('href', '/about');
+    expect(link.closest('.ask-see')).toHaveTextContent(/^See: About Skylar$/);
+    expect(screen.getByLabelText('Answer')).toHaveTextContent('Please see the About page or email me.');
+  });
+
+  it('does not repeat a citation already linked by its marker in a See line', async () => {
+    await renderReady(async () => eventResponse([
+      ['answer', {
+        text: 'Read about RoleRadar [1].',
+        citations: [{ n: 1, url: '/projects/roleradar', heading: 'RoleRadar' }],
+      }],
+      ['done', {}],
+    ]));
+    await send();
+    expect(await screen.findByRole('link', { name: '[1]' })).toHaveAttribute('href', '/projects/roleradar');
+    expect(screen.queryByText(/^See:/)).not.toBeInTheDocument();
+    expect(document.querySelector('.ask-see')).toBeNull();
+  });
+
+  it('skips an unsafe uncited citation without showing a See line', async () => {
+    await renderReady(async () => eventResponse([
+      ['answer', {
+        text: 'An answer without markers.',
+        citations: [{ n: 1, url: '//example.com', heading: 'Unsafe heading' }],
+      }],
+      ['done', {}],
+    ]));
+    await send();
+    await screen.findByText('An answer without markers.');
+    expect(screen.queryByRole('link', { name: 'Unsafe heading' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^See:/)).not.toBeInTheDocument();
+    expect(document.querySelector('.ask-see')).toBeNull();
+  });
+
+  it('lists only the uncited citation when an answer also has an inline citation', async () => {
+    await renderReady(async () => eventResponse([
+      ['answer', {
+        text: 'Read about RoleRadar [1].',
+        citations: [
+          { n: 1, url: '/projects/roleradar', heading: 'RoleRadar' },
+          { n: 2, url: '/about', heading: 'About Skylar' },
+        ],
+      }],
+      ['done', {}],
+    ]));
+    await send();
+    const link = await screen.findByRole('link', { name: 'About Skylar' });
+    expect(link).toHaveAttribute('href', '/about');
+    const see = link.closest<HTMLElement>('.ask-see')!;
+    expect(see).toHaveTextContent(/^See: About Skylar$/);
+    expect(within(see).getAllByRole('link')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: '[1]' })).toHaveAttribute('href', '/projects/roleradar');
+  });
+
   it('shows tokens, then links final citations and marks unsupported text after checking', async () => {
     const stream = controlledStream();
     await renderReady(async () => response(200, {}, stream.body));
@@ -451,9 +516,20 @@ describe('HowItAnswered', () => {
     ]);
     expect(screen.getByRole('link', { name: 'RoleRadar' })).toHaveAttribute('href', '/projects/roleradar#x');
     expect(screen.queryByRole('link', { name: 'Unsafe heading' })).not.toBeInTheDocument();
-    expect(lists[1]).toHaveTextContent('RoleRadar · 0.50');
-    expect(lists[1]).toHaveTextContent('Unsafe heading · 0.13');
+    expect(lists[1]).toHaveTextContent('RoleRadar · 0.500');
+    expect(lists[1]).toHaveTextContent('Unsafe heading · 0.126');
     expect(lists[2]).toHaveTextContent('Earlier question? · 0.80');
+  });
+
+  it('shows three decimals for a small passage score and two for memory', () => {
+    render(<HowItAnswered trace={{
+      nodes: [],
+      sections: [{ url: '/about', heading: 'About Skylar', score: 0.0164 }],
+      memory: [{ turn_id: 'old', question: 'Earlier question?', score: 0.8 }],
+    }} />);
+    fireEvent.click(screen.getByText('How it answered'));
+    expect(screen.getByRole('link', { name: 'About Skylar' }).closest('li')).toHaveTextContent(/^About Skylar · 0.016$/);
+    expect(screen.getByText('Earlier question? · 0.80')).toBeInTheDocument();
   });
 
   it('shows None for empty passages and memory', () => {
