@@ -175,7 +175,7 @@ it('renders two project cards followed by the Ask component on Home', () => {
   const ask = document.querySelector('section#ask[aria-label="Ask about my projects"]')!;
   expect(document.querySelectorAll('section#ask')).toHaveLength(1);
   expect(projects.nextElementSibling).toBe(ask);
-  // The AskPlaceholder component is server-rendered into the page.
+  // The Ask component is server-rendered into the page.
   const field = ask.querySelector('textarea, input[type="text"]')!;
   expect(field).not.toBeNull();
   expect(ask.querySelector(`label[for="${field.id}"]`)).not.toBeNull();
