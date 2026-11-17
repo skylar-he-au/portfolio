@@ -96,7 +96,8 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
   it('uses content metadata and renders the body after its h1 inside main', () => {
     const title = frontMatter(markdown, 'title');
     expect(document.documentElement.lang).toBe('en');
-    expect(document.title).toBe(`${title} · Skylar He`);
+    expect(document.title).toBe(path === '/' ? 'Skylar He' : `${title} · Skylar He`);
+    if (path === '/about') expect(document.title).toBe('About Skylar · Skylar He');
     expect(document.querySelector('meta[name="description"]')?.getAttribute('content'))
       .toBe(frontMatter(markdown, 'summary'));
     expect(document.querySelector('meta[charset]')?.getAttribute('charset')).toBe('utf-8');
@@ -106,13 +107,14 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
     const main = document.querySelector('main#main')!;
     expect(main.firstElementChild?.tagName).toBe('H1');
     expect(main.querySelector('h1')?.textContent).toBe(title);
+    if (path === '/') expect(main.querySelector('h1')?.textContent).toBe('Skylar He');
     expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
     expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
   });
 
   it('preserves the fixture headings, Astro ids, and accessible section anchors', () => {
     const sections = fixtures[path]!;
-    const headings = Array.from(document.querySelectorAll('h2'));
+    const headings = Array.from(document.querySelectorAll('.markdown h2'));
     expect(headings.map((heading) => heading.id)).toEqual(sections.map((section) => section.id));
     expect(Array.from(markdown.matchAll(/^## (.+)$/gm), (match) => match[1]))
       .toEqual(sections.map((section) => section.heading));
@@ -151,12 +153,22 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
 it('renders two project cards followed by the Ask component on Home', () => {
   const document = readPage('/');
   const projects = document.querySelector('section#projects')!;
+  const headings = projects.querySelectorAll('h2');
+  expect(headings).toHaveLength(1);
+  const heading = headings[0]!;
+  expect(heading.textContent).toBe('Projects');
+  expect(heading.querySelector('a.anchor')).toBeNull();
+  const grid = projects.querySelector('.project-grid')!;
+  expect(grid).not.toBeNull();
+  expect(heading.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(Array.from(projects.querySelectorAll('a'), (link) => link.getAttribute('href')))
     .toEqual(['/projects/roleradar', '/projects/oncallops']);
   const cards = projects.querySelectorAll('article');
   expect(cards).toHaveLength(2);
+  expect(heading.compareDocumentPosition(cards[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   for (const [index, file] of ['projects/roleradar.md', 'projects/oncallops.md'].entries()) {
     const markdown = readFileSync(join(root, '../content', file), 'utf8');
+    expect(cards[index]!.firstElementChild?.tagName).toBe('H3');
     expect(cards[index]!.querySelector('h3')?.textContent).toBe(frontMatter(markdown, 'title'));
     expect(cards[index]!.querySelector('p')?.textContent).toBe(frontMatter(markdown, 'summary'));
   }

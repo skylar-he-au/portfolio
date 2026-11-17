@@ -1,5 +1,5 @@
 ---
-title: Home
+title: Skylar He
 summary: Skylar He's portfolio, with an assistant that answers questions about the projects and compares them with a job ad.
 updated: 2026-11-17
 rag: false

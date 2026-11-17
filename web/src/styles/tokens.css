@@ -47,6 +47,7 @@
   --underline-thickness: 0.08em;
   --size-full: 100%;
   --content-width: 36rem;
+  --content-width-wide: 56rem;
   --project-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   --skip-hidden-position: -100%;
   --layer-skip: 1;
