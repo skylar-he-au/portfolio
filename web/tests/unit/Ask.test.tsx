@@ -483,7 +483,118 @@ describe('Ask errors', () => {
   });
 });
 
+describe('Ask check results', () => {
+  it('shows checked only after a passed check and clears it on reset until another check', async () => {
+    const stream = controlledStream();
+    await renderReady(async () => response(200, {}, stream.body));
+    await send();
+    expect(screen.getByText('checking…')).toBeInTheDocument();
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+    await act(async () => {
+      stream.emit('answer', { text: 'Supported answer.', citations: [] });
+      stream.emit('check', { passed: true, unsupported: [], retried: false, reason: null });
+    });
+    expect(screen.getByText('checked')).toHaveClass('ask-checked');
+    expect(screen.queryByText('checking…')).not.toBeInTheDocument();
+    await act(async () => { stream.emit('reset', { reason: 'fallback' }); });
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+    expect(screen.getByText('checking…')).toBeInTheDocument();
+    await act(async () => { stream.emit('answer', { text: 'New answer.', citations: [] }); });
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+    await act(async () => { stream.emit('check', { passed: true, reason: null }); });
+    expect(screen.getByText('checked')).toBeInTheDocument();
+    await act(async () => { stream.emit('done', {}); });
+    expect(screen.getByText('checked')).toBeInTheDocument();
+  });
+
+  it.each(['off-topic', 'not found', 'error'])('never shows checked for %s without a check event', async (kind) => {
+    const stream = controlledStream();
+    await renderReady(async () => response(200, {}, stream.body));
+    await send();
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+    await act(async () => {
+      if (kind === 'error') {
+        stream.emit('error', { code: 'internal' });
+      } else {
+        stream.emit('route', { private: false, off_topic: kind === 'off-topic', language: 'en' });
+        stream.emit('answer', {
+          text: kind === 'off-topic'
+            ? 'Please ask about my projects.' : "I couldn't find that in the project pages — please email me.",
+          citations: [],
+        });
+        stream.emit('done', {});
+      }
+    });
+    expect(screen.queryByText('checking…')).not.toBeInTheDocument();
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+  });
+
+  it('shows the unsupported reason in How it answered and clears it on reset', async () => {
+    const stream = controlledStream();
+    await renderReady(async () => response(200, {}, stream.body));
+    await send();
+    await act(async () => {
+      stream.emit('answer', { text: 'Unsupported answer.', citations: [] });
+      stream.emit('check', { passed: false, unsupported: [], retried: true, reason: 'unsupported' });
+      stream.emit('trace', { nodes: [], sections: [], memory: [] });
+    });
+    fireEvent.click(screen.getByText('How it answered'));
+    const panel = screen.getByText('How it answered').closest('details')!;
+    const heading = within(panel).getByRole('heading', { name: 'Check' });
+    expect(heading.parentElement).toHaveClass('ask-panel-block');
+    expect(within(panel).getByText("Some sentences weren't found in the project pages.").tagName).toBe('P');
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+    expect(screen.queryByText('checking…')).not.toBeInTheDocument();
+    await act(async () => { stream.emit('reset', { reason: 'retry' }); });
+    expect(within(panel).queryByRole('heading', { name: 'Check' })).not.toBeInTheDocument();
+    await act(async () => { stream.emit('done', {}); });
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+  });
+
+  it.each([undefined, null, 42, 'unknown', 'toString'])('handles an old or unknown check reason %j without a reason block', async (reason) => {
+    await renderReady(async () => eventResponse([
+      ['answer', { text: 'An answer.', citations: [] }],
+      ['check', { passed: false, unsupported: [], retried: false, reason }],
+      ['trace', { nodes: [], sections: [], memory: [] }],
+      ['done', {}],
+    ]));
+    await send();
+    fireEvent.click(await screen.findByText('How it answered'));
+    expect(screen.queryByRole('heading', { name: 'Check' })).not.toBeInTheDocument();
+    expect(screen.queryByText('checked')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
 describe('HowItAnswered', () => {
+  it.each([
+    ['not_in_about', "The About page doesn't answer this."],
+    ['inferred', 'The draft said more than the About page does.'],
+  ])('explains a failed check with reason %s', (reason, sentence) => {
+    render(<HowItAnswered
+      trace={{ nodes: [], sections: [], memory: [] }}
+      checkResult={{ passed: false, reason }}
+    />);
+    fireEvent.click(screen.getByText('How it answered'));
+    const heading = screen.getByRole('heading', { name: 'Check' });
+    expect(heading.parentElement).toHaveClass('ask-panel-block');
+    expect(screen.getByText(sentence).tagName).toBe('P');
+  });
+
+  it('omits the reason block for a passed check', () => {
+    render(<HowItAnswered
+      trace={{ nodes: [], sections: [], memory: [] }}
+      checkResult={{ passed: true, reason: 'unsupported' }}
+    />);
+    fireEvent.click(screen.getByText('How it answered'));
+    expect(screen.queryByRole('heading', { name: 'Check' })).not.toBeInTheDocument();
+  });
+
+  it('renders nothing without a trace even when a failed check exists', () => {
+    const { container } = render(<HowItAnswered checkResult={{ passed: false, reason: 'unsupported' }} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('renders nothing without a trace', () => {
     const { container } = render(<HowItAnswered />);
     expect(container).toBeEmptyDOMElement();

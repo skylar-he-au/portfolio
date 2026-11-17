@@ -355,6 +355,20 @@ async def test_general_tokens_are_only_the_answer_node():
 # --- general questions -------------------------------------------------------------------
 
 
+async def test_general_failed_retry_check_reason_is_unsupported():
+    draft = "RoleRadar uses GPT-9 [1]."
+    run = await ask(
+        EXAMPLE_Q,
+        claude=[rewrite_reply(), draft, draft],
+        gemini=[check_reply([draft]), check_reply([draft])],
+        retriever=FakeRetriever([MATCH], [MATCH]),
+    )
+    [check] = run.data("check")
+    assert check["passed"] is False and check["retried"] is True
+    assert check["reason"] == "unsupported"
+    assert run.state["check"] == check
+
+
 async def test_general_question_check_passes():
     run = await ask(
         EXAMPLE_Q,
@@ -369,13 +383,20 @@ async def test_general_question_check_passes():
     [answer] = run.data("answer")
     assert answer["text"] == GOOD_ANSWER
     assert [c["url"] for c in answer["citations"]] == [MATCH.url, TESTS.url]
-    assert run.data("check") == [{"passed": True, "unsupported": [], "retried": False}]
+    assert run.data("check") == [
+        {"passed": True, "unsupported": [], "retried": False, "reason": None}
+    ]
     assert_statuses_paired(run)
 
     state = run.state
     assert state["answer_text"] == GOOD_ANSWER
     assert state["citations"] == answer["citations"]
-    assert state["check"] == {"passed": True, "unsupported": [], "retried": False}
+    assert state["check"] == {
+        "passed": True,
+        "unsupported": [],
+        "retried": False,
+        "reason": None,
+    }
     assert state["private"] is False and state["language"] == "en"
     assert trace_providers(run) == [
         ("rewrite", "anthropic"),
@@ -420,7 +441,12 @@ async def test_general_check_fails_twice_retries_once_then_shows_marked():
     assert [a["text"] for a in run.data("answer")] == [first, second]
     # Only the final check is shown; quotes not in the answer are dropped.
     assert run.data("check") == [
-        {"passed": False, "unsupported": ["It uses GPT-9."], "retried": True}
+        {
+            "passed": False,
+            "unsupported": ["It uses GPT-9."],
+            "retried": True,
+            "reason": "unsupported",
+        }
     ]
     # Searched again for what the failed sentence claimed; told the model what failed.
     assert len(run.retriever.calls) == 2
@@ -446,7 +472,9 @@ async def test_general_retry_that_passes():
         gemini=[check_reply(["RoleRadar was built in 2019 [1]."]), check_reply()],
         retriever=FakeRetriever([MATCH], [MATCH, TESTS]),
     )
-    assert run.data("check") == [{"passed": True, "unsupported": [], "retried": True}]
+    assert run.data("check") == [
+        {"passed": True, "unsupported": [], "retried": True, "reason": None}
+    ]
     assert run.state["answer_text"] == GOOD_ANSWER
 
 
@@ -469,6 +497,46 @@ async def test_off_topic_question_is_declined_without_retrieval_or_check():
 # --- private questions -------------------------------------------------------------------
 
 
+async def test_private_insufficient_info_check_reason_is_not_in_about():
+    run = await ask(
+        "What salary are you expecting?",
+        claude=[rewrite_reply("salary", private=True), "I'm looking for internships [1]."],
+        gemini=[private_check_reply(enough_info=False)],
+        retriever=FakeRetriever([AVAILABILITY]),
+    )
+    [check] = run.data("check")
+    assert check["passed"] is False and check["unsupported"] == []
+    assert check["reason"] == "not_in_about"
+    assert run.state["check"] == check
+
+
+async def test_private_no_sections_check_reason_is_not_in_about():
+    run = await ask(
+        "Where are you based?",
+        claude=[rewrite_reply("location", private=True)],
+        gemini=[],
+        retriever=FakeRetriever([]),
+    )
+    [check] = run.data("check")
+    assert check["passed"] is False and check["unsupported"] == []
+    assert check["reason"] == "not_in_about"
+    assert run.state["check"] == check
+
+
+async def test_private_unsupported_draft_check_reason_is_inferred():
+    draft = "I can work full-time in Australia [1]."
+    run = await ask(
+        "Can you work full-time?",
+        claude=[rewrite_reply("work rights", private=True), draft],
+        gemini=[private_check_reply(enough_info=True, unsupported=[draft], passed=True)],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+    )
+    [check] = run.data("check")
+    assert check["passed"] is False and check["unsupported"] == []
+    assert check["reason"] == "inferred"
+    assert run.state["check"] == check
+
+
 async def test_private_question_flagged_by_rewrite_shown_only_after_check():
     draft = "I'm studying in Sydney and can work in Australia [1]."
     run = await ask(
@@ -487,7 +555,9 @@ async def test_private_question_flagged_by_rewrite_shown_only_after_check():
             "citations": [{"n": 1, "url": WORK_RIGHTS.url, "heading": "Work rights"}],
         }
     ]
-    assert run.data("check") == [{"passed": True, "unsupported": [], "retried": False}]
+    assert run.data("check") == [
+        {"passed": True, "unsupported": [], "retried": False, "reason": None}
+    ]
     assert run.state["private"] is True
     assert_statuses_paired(run)
 
@@ -522,7 +592,9 @@ async def test_private_salary_not_on_about_page_gets_fixed_sentence():
             "citations": [{"n": 1, "url": "/about", "heading": "About Skylar"}],
         }
     ]
-    assert run.data("check") == [{"passed": False, "unsupported": [], "retried": False}]
+    assert run.data("check") == [
+        {"passed": False, "unsupported": [], "retried": False, "reason": "not_in_about"}
+    ]
     assert run.state["private_check"] == {"enough_info": False, "unsupported": []}
     assert run.data("token") == []
 
@@ -541,7 +613,9 @@ async def test_private_inference_is_flagged_and_replaced():
     assert "enough_info" in check_prompt
     assert run.state["private_check"] == {"enough_info": True, "unsupported": [inferred]}
     assert run.data("answer")[0]["text"] == PRIVATE_FALLBACK
-    assert run.data("check") == [{"passed": False, "unsupported": [], "retried": False}]
+    assert run.data("check") == [
+        {"passed": False, "unsupported": [], "retried": False, "reason": "inferred"}
+    ]
     assert run.data("token") == []
 
 
@@ -631,7 +705,9 @@ async def test_check_gemini_error_falls_back_to_claude():
         gemini=[RuntimeError("google 503")],
         retriever=FakeRetriever([MATCH, TESTS]),
     )
-    assert run.data("check") == [{"passed": True, "unsupported": [], "retried": False}]
+    assert run.data("check") == [
+        {"passed": True, "unsupported": [], "retried": False, "reason": None}
+    ]
     assert trace_providers(run)[-1] == ("check", "anthropic")
 
 

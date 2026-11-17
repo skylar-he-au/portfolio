@@ -4,7 +4,7 @@ import { answerSegments, unreferencedCitations } from '../lib/answer';
 import type { Citation, InlineSegment } from '../lib/answer';
 import { parseSse } from '../lib/sse';
 import HowItAnswered from './HowItAnswered';
-import type { AnswerTrace } from './HowItAnswered';
+import type { AnswerTrace, CheckResult } from './HowItAnswered';
 
 interface Turn {
   id: number;
@@ -13,6 +13,7 @@ interface Turn {
   citations: Citation[];
   unsupported: string[];
   checking: boolean;
+  checkResult?: CheckResult;
   incomplete: boolean;
   error?: string;
   trace?: AnswerTrace;
@@ -154,7 +155,7 @@ export default function Ask({ examples }: { examples: string[] }) {
             }
             break;
           case 'reset':
-            update((turn) => ({ ...turn, text: '', citations: [], unsupported: [], checking: true }));
+            update((turn) => ({ ...turn, text: '', citations: [], unsupported: [], checking: true, checkResult: undefined }));
             break;
           case 'answer':
             if (typeof data.text === 'string') {
@@ -166,7 +167,11 @@ export default function Ask({ examples }: { examples: string[] }) {
           case 'check': {
             const unsupported = Array.isArray(data.unsupported)
               ? data.unsupported.filter((span): span is string => typeof span === 'string') : [];
-            update((turn) => ({ ...turn, checking: false, unsupported }));
+            const checkResult = {
+              passed: data.passed === true,
+              reason: typeof data.reason === 'string' ? data.reason : null,
+            };
+            update((turn) => ({ ...turn, checking: false, unsupported, checkResult }));
             break;
           }
           case 'trace': {
@@ -212,6 +217,7 @@ export default function Ask({ examples }: { examples: string[] }) {
                     : renderInline(segment, index)
                 ))}
                 {turn.checking && <span className="ask-checking">checking…</span>}
+                {turn.checkResult?.passed === true && <span className="ask-checked">checked</span>}
                 {turn.incomplete && turn.text && <span className="ask-incomplete">(incomplete)</span>}
                 {see.length > 0 && (
                   <p className="ask-see">
@@ -224,7 +230,7 @@ export default function Ask({ examples }: { examples: string[] }) {
                 )}
               </div>
               {turn.error && <p className="ask-error" role="alert">{turn.error}</p>}
-              <HowItAnswered trace={turn.trace} />
+              <HowItAnswered trace={turn.trace} checkResult={turn.checkResult} />
             </li>
           );
         })}
