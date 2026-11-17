@@ -84,11 +84,21 @@ it('builds exactly the six public HTML pages and excludes examples', () => {
   expect(existsSync(join(dist, 'examples/index.html'))).toBe(false);
 });
 
-it('renders the Evals heading and empty state without run sections or tables', () => {
+it('renders the Evals heading, and run tables when summaries exist or the empty state when none do', () => {
+  const evalsDir = join(root, '../content/evals');
+  const published = existsSync(evalsDir)
+    ? readdirSync(evalsDir).filter((name) => name.endsWith('.json'))
+    : [];
   const document = readPage('/evals');
+  const main = document.querySelector('main');
   expect(document.querySelector('main h1')?.textContent).toBe('Evals');
-  expect(document.querySelector('main')?.textContent).toContain('No eval runs published yet.');
-  expect(document.querySelectorAll('main section, main table')).toHaveLength(0);
+  if (published.length > 0) {
+    expect(main?.querySelectorAll('table').length).toBeGreaterThan(0);
+    expect(main?.textContent).not.toContain('No eval runs published yet.');
+  } else {
+    expect(main?.textContent).toContain('No eval runs published yet.');
+    expect(document.querySelectorAll('main section, main table')).toHaveLength(0);
+  }
   expect(document.querySelectorAll('script')).toHaveLength(0);
   expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
 });

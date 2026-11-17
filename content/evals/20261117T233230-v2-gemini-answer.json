@@ -1,0 +1,148 @@
+{
+  "kind": "qa",
+  "run_id": "20261117T233230-v2-gemini-answer",
+  "date": "2026-11-17",
+  "prompt_version": "v2",
+  "route": "gemini-answer",
+  "split": "all",
+  "repeats": 1,
+  "questions": 48,
+  "samples": 57,
+  "errors": 0,
+  "ragas_nulls": 0,
+  "models": {
+    "answer": "gemini-3.5-flash-lite",
+    "check": "gemini-3.5-flash-lite",
+    "judge": "claude-sonnet-5-5",
+    "embed": "text-embedding-3-small"
+  },
+  "ragas": {
+    "tune": {
+      "faithfulness": {
+        "mean": 0.939983,
+        "min": 0.939983,
+        "max": 0.939983,
+        "scored": 25,
+        "below_floor": 1
+      },
+      "response_relevancy": {
+        "mean": 0.676881,
+        "min": 0.676881,
+        "max": 0.676881,
+        "scored": 24,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": 0.944444,
+        "min": 0.944444,
+        "max": 0.944444,
+        "scored": 24,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.535833,
+        "min": 0.535833,
+        "max": 0.535833,
+        "scored": 24,
+        "below_floor": null
+      }
+    },
+    "held_out": {
+      "faithfulness": {
+        "mean": 0.96875,
+        "min": 0.96875,
+        "max": 0.96875,
+        "scored": 8,
+        "below_floor": 0
+      },
+      "response_relevancy": {
+        "mean": 0.692819,
+        "min": 0.692819,
+        "max": 0.692819,
+        "scored": 6,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "scored": 6,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.575,
+        "min": 0.575,
+        "max": 0.575,
+        "scored": 6,
+        "below_floor": null
+      }
+    },
+    "zh": {
+      "faithfulness": {
+        "mean": 0.959524,
+        "min": 0.959524,
+        "max": 0.959524,
+        "scored": 6,
+        "below_floor": 0
+      },
+      "response_relevancy": {
+        "mean": 0.793174,
+        "min": 0.793174,
+        "max": 0.793174,
+        "scored": 6,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "scored": 6,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.723333,
+        "min": 0.723333,
+        "max": 0.723333,
+        "scored": 6,
+        "below_floor": null
+      }
+    }
+  },
+  "code_checks": {
+    "project": {
+      "passed": 15,
+      "total": 20
+    },
+    "zh": {
+      "passed": 6,
+      "total": 6
+    },
+    "not_on_site": {
+      "passed": 0,
+      "total": 4
+    },
+    "private_answerable": {
+      "passed": 4,
+      "total": 4
+    },
+    "private_fixed": {
+      "passed": 4,
+      "total": 4
+    },
+    "off_topic": {
+      "passed": 4,
+      "total": 4
+    },
+    "injection": {
+      "passed": 6,
+      "total": 6
+    }
+  },
+  "private_repeat": {
+    "runs": 10,
+    "fixed": 10,
+    "answered": 0,
+    "failed": 0
+  },
+  "cost_usd": 1.983332
+}
