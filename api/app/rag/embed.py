@@ -16,6 +16,12 @@ class OpenAIEmbedder:
             api_key=settings.openai_api_key,
             timeout=30,
             max_retries=2,
+            # Send raw text instead of tiktoken token ids. The default first
+            # downloads tiktoken's encoding table, which made the first call in
+            # a fresh container take about 8 seconds. Sections (largest is
+            # under 500 tokens) and 500-character questions stay far below the
+            # model's 8191-token limit, so no local splitting is needed.
+            check_embedding_ctx_length=False,
         )
 
     async def embed(self, texts: list[str]) -> list[list[float]]:

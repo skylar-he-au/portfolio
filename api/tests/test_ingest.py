@@ -147,7 +147,36 @@ def test_openai_embedder_uses_configured_client(monkeypatch: pytest.MonkeyPatch)
         "api_key": settings.openai_api_key,
         "timeout": 30,
         "max_retries": 2,
+        "check_embedding_ctx_length": False,
     }
+
+
+def test_openai_embedder_sends_text_without_tiktoken(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real client sends raw strings and never loads a tiktoken encoding."""
+    sent: list[object] = []
+
+    class StubResponse:
+        def model_dump(self) -> dict[str, object]:
+            return {"data": [{"embedding": unit_vector()}]}
+
+    class StubAsyncClient:
+        async def create(self, *, input: object, **_kwargs: object) -> StubResponse:
+            sent.append(input)
+            return StubResponse()
+
+    def no_tiktoken(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("tiktoken must not be loaded")
+
+    monkeypatch.setattr("tiktoken.encoding_for_model", no_tiktoken)
+    monkeypatch.setattr("tiktoken.get_encoding", no_tiktoken)
+    settings = Settings(
+        _env_file=None, database_url="postgresql://unused", openai_api_key="stub-key"
+    )
+    embedder = OpenAIEmbedder(settings)
+    assert embedder._client.check_embedding_ctx_length is False
+    embedder._client.async_client = StubAsyncClient()
+    assert asyncio.run(embedder.embed(["What did Skylar build?"])) == [unit_vector()]
+    assert sent == [["What did Skylar build?"]]
 
 
 @pytest.mark.parametrize("key", [None, ""])
