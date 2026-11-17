@@ -266,7 +266,7 @@ blockquote {
   color: var(--color-muted);
 }
 
-/* Ask placeholder (web/src/components/AskPlaceholder.tsx) */
+/* Ask chat (web/src/components/Ask.tsx) */
 .ask {
   display: grid;
   gap: var(--space-4);
@@ -311,6 +311,12 @@ blockquote {
 
 .ask-send {
   justify-self: start;
+  cursor: pointer;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.ask-send:disabled {
   cursor: not-allowed;
   color: var(--color-muted);
   background: var(--color-code-background);
@@ -343,4 +349,88 @@ blockquote {
 
 .ask-note {
   font-size: var(--font-size-small);
+}
+
+.ask-turns {
+  display: grid;
+  gap: var(--space-5);
+  list-style: none;
+  margin: var(--space-0);
+  padding: var(--space-0);
+}
+
+.ask-turns:empty {
+  display: none;
+}
+
+.ask-turn {
+  min-inline-size: var(--space-0);
+  padding-block-end: var(--space-4);
+  border-block-end: var(--border-width) solid var(--color-rule);
+}
+
+.ask-turn + .ask-turn {
+  margin-block-start: var(--space-0);
+}
+
+.ask-question {
+  margin-block-end: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-code-background);
+  border-radius: var(--radius-small);
+}
+
+.ask-question,
+.ask-answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ask-checking,
+.ask-incomplete {
+  margin-inline-start: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+.ask-unsupported {
+  color: inherit;
+  background: var(--color-clear);
+  text-decoration: underline dotted var(--color-accent);
+  text-underline-offset: var(--underline-offset);
+  text-decoration-thickness: var(--border-width);
+}
+
+.ask-error {
+  margin-block: var(--space-3) var(--space-0);
+  padding-inline-start: var(--space-3);
+  border-inline-start: var(--rule-width) solid var(--color-accent);
+  color: var(--color-text);
+}
+
+.ask-panel {
+  margin-block-start: var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+.ask-panel summary {
+  cursor: pointer;
+  color: var(--color-accent);
+}
+
+.ask-panel-block {
+  margin-block-start: var(--space-3);
+}
+
+.ask-panel-block h3 {
+  margin-block-end: var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--font-size-small);
+}
+
+.ask-panel-block p,
+.ask-panel-block ul,
+.ask-panel-block ol {
+  margin-block-end: var(--space-0);
 }
