@@ -6,7 +6,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from app.migrate import LOCK_KEY, MigrationError, discover, migrate
+from app.migrate import DEFAULT_DIR, LOCK_KEY, MigrationError, discover, migrate
 
 API_DIR = Path(__file__).resolve().parent.parent
 
@@ -69,13 +69,14 @@ def test_discover_rejects_bad_name(tmp_path: Path) -> None:
 
 
 def test_empty_database_then_rerun_is_noop(db_url: str) -> None:
-    assert migrate(db_url) == ["0001"]
-    assert versions(db_url) == ["0001"]
+    expected = [version for version, _ in discover(DEFAULT_DIR)]
+    assert migrate(db_url) == expected
+    assert versions(db_url) == expected
     with psycopg.connect(db_url) as conn:
         assert conn.execute("SELECT 1 FROM pg_extension WHERE extname='vector'").fetchone()
 
     assert migrate(db_url) == []
-    assert versions(db_url) == ["0001"]
+    assert versions(db_url) == expected
 
 
 def test_concurrent_runs_apply_once(db_url: str, tmp_path: Path) -> None:

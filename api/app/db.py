@@ -6,9 +6,12 @@ The pool is created closed and opened on first use, so starting the app (and
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
+from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger(__name__)
@@ -64,6 +67,13 @@ class Database:
         if self._opened:
             await self._pool.close()
             self._opened = False
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[AsyncConnection]:
+        """Borrow a connection, opening the pool on first use."""
+        await self._ensure_open()
+        async with self._pool.connection(timeout=POOL_WAIT_S) as conn:
+            yield conn
 
     async def health(self) -> HealthResult:
         try:
