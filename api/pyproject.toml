@@ -22,6 +22,10 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.5",
 ]
+# Eval-only (never in default-groups: CI syncs dev only, the Docker image has no evals/).
+eval = [
+    "ragas==0.4.4",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
