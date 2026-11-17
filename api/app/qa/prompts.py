@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.rag.types import RecalledTurn, Section
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 _LANGUAGE_NAMES = {
     "en": "English",
@@ -100,13 +100,17 @@ help unrelated to the projects). If unsure, false.
 Do not answer the question."""
 
 
-def rewrite_messages(question: str, history: Sequence[RecalledTurn]) -> list[BaseMessage]:
-    marker = _marker()
+def _earlier_turns_block(history: Sequence[RecalledTurn], marker: str) -> str:
     turns = "\n\n".join(
         _wrap("earlier-turn", marker, f"Q: {t.question}\nA: {t.answer}") for t in history
     )
+    return f"Earlier turns in this conversation:\n{turns}\n\n" if turns else ""
+
+
+def rewrite_messages(question: str, history: Sequence[RecalledTurn]) -> list[BaseMessage]:
+    marker = _marker()
     human = (
-        (f"Earlier turns in this conversation:\n{turns}\n\n" if turns else "")
+        _earlier_turns_block(history, marker)
         + "The visitor's question:\n"
         + _wrap("question", marker, question)
     )
@@ -133,6 +137,13 @@ given, for example [2]. Cite only sections that actually state the claim.
 answer only part of the question, answer that part and say the rest isn't on the site.
 - Plain text only: no Markdown, no links, no URLs, no headings, no lists."""
 
+_HISTORY_NOTE = """
+
+Earlier turns of this conversation come before the sections. Use them only to work out \
+what the visitor means, for example what "it" or "that" refers to. They are not sources: \
+take every fact from the numbered sections of this turn, and never cite or repeat an \
+earlier answer as evidence."""
+
 _RETRY_NOTE = """
 
 An earlier answer to this question included these statements, which the sections did not \
@@ -144,18 +155,23 @@ def answer_messages(
     question: str,
     language: str,
     sections: Sequence[Section],
+    history: Sequence[RecalledTurn],
     previous_unsupported: Sequence[str] = (),
 ) -> list[BaseMessage]:
+    """General answer. `history` (recalled earlier turns) only says what the question means."""
     marker = _marker()
     system = _ANSWER_SYSTEM.format(
         data_rule=_data_rule(marker), language=language_instruction(language)
     )
+    if history:
+        system += _HISTORY_NOTE
     if previous_unsupported:
         quotes = "\n".join(_wrap("earlier-statement", marker, q) for q in previous_unsupported)
         system += _RETRY_NOTE.format(quotes=quotes)
     human = (
-        f"Sections:\n\n{_sections_block(sections, marker)}\n\n"
-        f"The visitor's question:\n{_wrap('question', marker, question)}"
+        _earlier_turns_block(history, marker)
+        + f"Sections:\n\n{_sections_block(sections, marker)}\n\n"
+        + f"The visitor's question:\n{_wrap('question', marker, question)}"
     )
     return [SystemMessage(system), HumanMessage(human)]
 
