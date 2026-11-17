@@ -1,0 +1,132 @@
+{
+  "kind": "qa",
+  "run_id": "20261120T031500-v2-default",
+  "date": "2026-11-20",
+  "prompt_version": "v2",
+  "route": "default",
+  "split": "all",
+  "repeats": 3,
+  "questions": 48,
+  "samples": 144,
+  "errors": 0,
+  "ragas_nulls": 2,
+  "models": {
+    "answer": "claude-haiku-5-5",
+    "check": "gemini-3.5-flash-lite",
+    "judge": "claude-sonnet-5-5",
+    "embed": "text-embedding-3-small"
+  },
+  "ragas": {
+    "tune": {
+      "faithfulness": {
+        "mean": 0.91,
+        "min": 0.88,
+        "max": 0.93,
+        "scored": 90,
+        "below_floor": 2
+      },
+      "response_relevancy": {
+        "mean": 0.8,
+        "min": 0.78,
+        "max": 0.82,
+        "scored": 90,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": null,
+        "min": null,
+        "max": null,
+        "scored": 0,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.85,
+        "min": 0.83,
+        "max": 0.87,
+        "scored": 90,
+        "below_floor": null
+      }
+    },
+    "held_out": {
+      "faithfulness": {
+        "mean": 0.91,
+        "min": 0.88,
+        "max": 0.93,
+        "scored": 90,
+        "below_floor": 2
+      },
+      "response_relevancy": {
+        "mean": 0.8,
+        "min": 0.78,
+        "max": 0.82,
+        "scored": 90,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": null,
+        "min": null,
+        "max": null,
+        "scored": 0,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.85,
+        "min": 0.83,
+        "max": 0.87,
+        "scored": 90,
+        "below_floor": null
+      }
+    },
+    "zh": {
+      "faithfulness": {
+        "mean": 0.91,
+        "min": 0.88,
+        "max": 0.93,
+        "scored": 90,
+        "below_floor": 2
+      },
+      "response_relevancy": {
+        "mean": 0.8,
+        "min": 0.78,
+        "max": 0.82,
+        "scored": 90,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": null,
+        "min": null,
+        "max": null,
+        "scored": 0,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.85,
+        "min": 0.83,
+        "max": 0.87,
+        "scored": 90,
+        "below_floor": null
+      }
+    }
+  },
+  "code_checks": {
+    "project": {
+      "passed": 58,
+      "total": 60
+    },
+    "zh": {
+      "passed": 18,
+      "total": 18
+    },
+    "private_fixed": {
+      "passed": 12,
+      "total": 12
+    }
+  },
+  "private_repeat": {
+    "runs": 10,
+    "fixed": 7,
+    "answered": 3,
+    "failed": 0
+  },
+  "cost_usd": 1.23
+}

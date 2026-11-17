@@ -1,0 +1,96 @@
+{
+  "kind": "qa",
+  "run_id": "20261121T031500-v3-default",
+  "date": "2026-11-21",
+  "prompt_version": "v3",
+  "route": "default",
+  "split": "tune",
+  "repeats": 1,
+  "questions": 48,
+  "samples": 48,
+  "errors": 0,
+  "ragas_nulls": 0,
+  "models": {
+    "answer": "claude-haiku-5-5",
+    "check": "gemini-3.5-flash-lite",
+    "judge": "claude-sonnet-5-5",
+    "embed": "text-embedding-3-small"
+  },
+  "ragas": {
+    "tune": {
+      "faithfulness": {
+        "mean": 0.91,
+        "min": 0.91,
+        "max": 0.91,
+        "scored": 90,
+        "below_floor": 0
+      },
+      "response_relevancy": {
+        "mean": 0.8,
+        "min": 0.8,
+        "max": 0.8,
+        "scored": 90,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": null,
+        "min": null,
+        "max": null,
+        "scored": 0,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.85,
+        "min": 0.85,
+        "max": 0.85,
+        "scored": 90,
+        "below_floor": null
+      }
+    },
+    "zh": {
+      "faithfulness": {
+        "mean": 0.91,
+        "min": 0.91,
+        "max": 0.91,
+        "scored": 90,
+        "below_floor": 0
+      },
+      "response_relevancy": {
+        "mean": 0.8,
+        "min": 0.8,
+        "max": 0.8,
+        "scored": 90,
+        "below_floor": null
+      },
+      "context_recall": {
+        "mean": null,
+        "min": null,
+        "max": null,
+        "scored": 0,
+        "below_floor": null
+      },
+      "factual_correctness": {
+        "mean": 0.85,
+        "min": 0.85,
+        "max": 0.85,
+        "scored": 90,
+        "below_floor": null
+      }
+    }
+  },
+  "code_checks": {
+    "project": {
+      "passed": 58,
+      "total": 60
+    },
+    "zh": {
+      "passed": 18,
+      "total": 18
+    },
+    "private_fixed": {
+      "passed": 12,
+      "total": 12
+    }
+  },
+  "cost_usd": 0.004
+}
