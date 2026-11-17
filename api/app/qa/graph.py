@@ -217,7 +217,12 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         sections: Sequence[Section] = state["sections"]
         if not sections:
             trace = node.end()
-            check = {"passed": False, "unsupported": [], "retried": False}
+            check = {
+                "passed": False,
+                "unsupported": [],
+                "retried": False,
+                "reason": "not_in_about",
+            }
             _emit_answer(writer, PRIVATE_FALLBACK, [ABOUT_CITATION])
             _emit_check(writer, check)
             return {
@@ -246,7 +251,12 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         )
         unsupported = verify_unsupported(out.unsupported, text)
         passed = out.passed and not unsupported
-        result = {"passed": passed, "unsupported": unsupported, "retried": state["retried"]}
+        result = {
+            "passed": passed,
+            "unsupported": unsupported,
+            "retried": state["retried"],
+            "reason": None if passed else "unsupported",
+        }
         trace = node.end(provider.name, provider.model)
         if passed or state["retried"]:
             _emit_check(writer, result)  # final; a check that leads to a retry is not shown
@@ -284,7 +294,12 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
             text, citations = draft, state["citations"]
         else:
             text, citations = PRIVATE_FALLBACK, [ABOUT_CITATION]
-        result = {"passed": passed, "unsupported": [], "retried": False}
+        result = {
+            "passed": passed,
+            "unsupported": [],
+            "retried": False,
+            "reason": None if passed else "not_in_about" if not out.enough_info else "inferred",
+        }
         _emit_answer(writer, text, citations)
         _emit_check(writer, result)
         return {**update, "answer_text": text, "citations": citations, "check": result}

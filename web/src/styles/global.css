@@ -399,6 +399,7 @@ blockquote {
 }
 
 .ask-checking,
+.ask-checked,
 .ask-incomplete {
   margin-inline-start: var(--space-2);
   color: var(--color-muted);

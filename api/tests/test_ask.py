@@ -174,6 +174,13 @@ def settings(url: str) -> Settings:
 # --- event order -------------------------------------------------------------------------
 
 
+async def test_general_passed_check_reason_is_none():
+    events = await collect(make_service(Models(*general_turn()), FakeRetriever([MATCH])), EXAMPLE_Q)
+    check = one(events, "check")
+    assert check["passed"] is True
+    assert check["reason"] is None
+
+
 async def test_general_question_event_order():
     models = Models(*general_turn())
     events = await collect(make_service(models, FakeRetriever([MATCH, TESTS])), EXAMPLE_Q)
@@ -193,7 +200,12 @@ async def test_general_question_event_order():
     meta = one(events, "meta")
     uuid.UUID(meta["conversation_id"])
     assert len(meta["turn_id"]) == 32
-    assert one(events, "check") == {"passed": True, "unsupported": [], "retried": False}
+    assert one(events, "check") == {
+        "passed": True,
+        "unsupported": [],
+        "retried": False,
+        "reason": None,
+    }
     trace = one(events, "trace")
     assert [n["name"] for n in trace["nodes"]] == [
         "recall",
@@ -251,7 +263,12 @@ async def test_turns_in_one_conversation_keep_their_own_results_and_memory():
     assert len(set(ids)) == 4
 
     # Turn 1: private.
-    assert one(first, "check") == {"passed": True, "unsupported": [], "retried": False}
+    assert one(first, "check") == {
+        "passed": True,
+        "unsupported": [],
+        "retried": False,
+        "reason": None,
+    }
     assert [c["url"] for c in one(first, "answer")["citations"]] == ["/about#work-rights"]
     assert one(first, "trace")["memory"] == []
     # Turn 2: general, remembers turn 1.
@@ -269,7 +286,12 @@ async def test_turns_in_one_conversation_keep_their_own_results_and_memory():
     )
     assert "done" not in names(third) and "trace" not in names(third)
     # Turn 4: its own check, citations and sections; remembers turns 1 and 2 only.
-    assert one(fourth, "check") == {"passed": True, "unsupported": [], "retried": False}
+    assert one(fourth, "check") == {
+        "passed": True,
+        "unsupported": [],
+        "retried": False,
+        "reason": None,
+    }
     assert one(fourth, "answer") == {
         "text": "Every prompt has a version [1].",
         "citations": [{"n": 1, "url": TESTS.url, "heading": TESTS.heading}],

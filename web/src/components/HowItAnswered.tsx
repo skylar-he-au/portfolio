@@ -6,12 +6,32 @@ export interface AnswerTrace {
   memory: { turn_id: string; question: string; score: number }[];
 }
 
-export default function HowItAnswered({ trace }: { trace?: AnswerTrace }) {
+export interface CheckResult {
+  passed: boolean;
+  reason: string | null;
+}
+
+export default function HowItAnswered({ trace, checkResult }: { trace?: AnswerTrace; checkResult?: CheckResult }) {
   if (!trace) return null;
+
+  let checkReason: string | undefined;
+  if (checkResult && !checkResult.passed) {
+    switch (checkResult.reason) {
+      case 'unsupported': checkReason = "Some sentences weren't found in the project pages."; break;
+      case 'not_in_about': checkReason = "The About page doesn't answer this."; break;
+      case 'inferred': checkReason = 'The draft said more than the About page does.'; break;
+    }
+  }
 
   return (
     <details className="ask-panel">
       <summary>How it answered</summary>
+      {checkReason && (
+        <div className="ask-panel-block">
+          <h3>Check</h3>
+          <p>{checkReason}</p>
+        </div>
+      )}
       <div className="ask-panel-block">
         <h3>Steps</h3>
         <ol>
