@@ -148,7 +148,7 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
   });
 });
 
-it('renders two project cards followed by the exact Ask placeholder on Home', () => {
+it('renders two project cards followed by the Ask component on Home', () => {
   const document = readPage('/');
   const projects = document.querySelector('section#projects')!;
   expect(Array.from(projects.querySelectorAll('a'), (link) => link.getAttribute('href')))
@@ -162,8 +162,12 @@ it('renders two project cards followed by the exact Ask placeholder on Home', ()
   }
   const ask = document.querySelector('section#ask[aria-label="Ask about my projects"]')!;
   expect(document.querySelectorAll('section#ask')).toHaveLength(1);
-  expect(ask.outerHTML).toBe('<section id="ask" aria-label="Ask about my projects"><p>Assistant coming soon</p></section>');
   expect(projects.nextElementSibling).toBe(ask);
+  // The AskPlaceholder component is server-rendered into the page.
+  const field = ask.querySelector('textarea, input[type="text"]')!;
+  expect(field).not.toBeNull();
+  expect(ask.querySelector(`label[for="${field.id}"]`)).not.toBeNull();
+  expect(ask.querySelector('a[href="/privacy"]')).not.toBeNull();
 });
 
 it('loads no third-party resources from any generated HTML or CSS file', () => {
