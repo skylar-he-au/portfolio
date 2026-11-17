@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "check": "astro check",
+    "test": "vitest run",
+    "test:dist": "TEST_DIST=1 vitest run",
     "preview": "astro preview",
     "astro": "astro"
   },
@@ -24,6 +27,7 @@
     "@astrojs/check": "^0.9.12",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.6.6",
     "github-slugger": "^2.0.0",
     "jsdom": "^31.0.1",
     "typescript": "^6.0.3",

@@ -1,0 +1,139 @@
+{
+  "/projects/roleradar": [
+    {
+      "heading": "In 30 seconds",
+      "id": "in-30-seconds"
+    },
+    {
+      "heading": "The problem RoleRadar solves",
+      "id": "the-problem-roleradar-solves"
+    },
+    {
+      "heading": "How RoleRadar is built",
+      "id": "how-roleradar-is-built"
+    },
+    {
+      "heading": "How RoleRadar matches jobs",
+      "id": "how-roleradar-matches-jobs"
+    },
+    {
+      "heading": "How RoleRadar tailors a resume without inventing experience",
+      "id": "how-roleradar-tailors-a-resume-without-inventing-experience"
+    },
+    {
+      "heading": "How RoleRadar tests its AI: evals and prompt versions",
+      "id": "how-roleradar-tests-its-ai-evals-and-prompt-versions"
+    },
+    {
+      "heading": "The chat assistant and read-only tools",
+      "id": "the-chat-assistant-and-read-only-tools"
+    },
+    {
+      "heading": "How RoleRadar stays safe and affordable",
+      "id": "how-roleradar-stays-safe-and-affordable"
+    },
+    {
+      "heading": "How I built RoleRadar with Claude Code",
+      "id": "how-i-built-roleradar-with-claude-code"
+    }
+  ],
+  "/projects/oncallops": [
+    {
+      "heading": "In 30 seconds",
+      "id": "in-30-seconds"
+    },
+    {
+      "heading": "The team and my role",
+      "id": "the-team-and-my-role"
+    },
+    {
+      "heading": "A contract-first Dashboard API",
+      "id": "a-contract-first-dashboard-api"
+    },
+    {
+      "heading": "Access control by role",
+      "id": "access-control-by-role"
+    },
+    {
+      "heading": "When part of a page fails to load",
+      "id": "when-part-of-a-page-fails-to-load"
+    },
+    {
+      "heading": "Writes that may or may not have happened",
+      "id": "writes-that-may-or-may-not-have-happened"
+    },
+    {
+      "heading": "The Dashboard pages",
+      "id": "the-dashboard-pages"
+    },
+    {
+      "heading": "Delivering inside the team process",
+      "id": "delivering-inside-the-team-process"
+    },
+    {
+      "heading": "How I used Claude Code",
+      "id": "how-i-used-claude-code"
+    }
+  ],
+  "/about": [
+    {
+      "heading": "About me",
+      "id": "about-me"
+    },
+    {
+      "heading": "Work rights",
+      "id": "work-rights"
+    },
+    {
+      "heading": "Location",
+      "id": "location"
+    },
+    {
+      "heading": "Availability",
+      "id": "availability"
+    },
+    {
+      "heading": "Contact",
+      "id": "contact"
+    }
+  ],
+  "/privacy": [
+    {
+      "heading": "Who sees your question",
+      "id": "who-sees-your-question"
+    },
+    {
+      "heading": "How long the AI providers keep it",
+      "id": "how-long-the-ai-providers-keep-it"
+    },
+    {
+      "heading": "What this site stores and for how long",
+      "id": "what-this-site-stores-and-for-how-long"
+    },
+    {
+      "heading": "IP addresses",
+      "id": "ip-addresses"
+    },
+    {
+      "heading": "Logs and tracing",
+      "id": "logs-and-tracing"
+    },
+    {
+      "heading": "Voice",
+      "id": "voice"
+    },
+    {
+      "heading": "Memory between visits",
+      "id": "memory-between-visits"
+    },
+    {
+      "heading": "Questions used to test the assistant",
+      "id": "questions-used-to-test-the-assistant"
+    },
+    {
+      "heading": "Deleting your data",
+      "id": "deleting-your-data"
+    }
+  ],
+  "/": []
+}
