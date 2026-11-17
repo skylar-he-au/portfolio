@@ -2,7 +2,8 @@
 
 `question` and `history` come in with each turn. Everything in `TURN_FIELDS` belongs to one
 turn only: the first node resets it, so nothing leaks from the previous turn when a
-checkpointer keeps the conversation's state (3b2).
+checkpointer keeps the conversation's state (3b2). `turns` is the conversation's memory: it
+lives across turns, and only the API adds to it, after a turn reached `done`.
 """
 
 from typing import Any, TypedDict
@@ -17,7 +18,12 @@ class QAInput(TypedDict):
 
 class QAState(TypedDict, total=False):
     question: str
-    history: list[RecalledTurn]
+    history: list[RecalledTurn]  # earlier turns picked by `recall` (memory.recall)
+
+    # Memory, kept across turns: finished turns, oldest first (memory.StoredTurn dicts).
+    turns: list[dict[str, Any]]
+    # Set by `recall`: this question's embedding (float32 bytes), stored with the turn.
+    question_embedding: bytes
 
     # Set by `rewrite`.
     query: str  # standalone English search query
@@ -48,6 +54,7 @@ class QAState(TypedDict, total=False):
 def turn_defaults() -> dict[str, Any]:
     """Fresh values for every per-turn field (new lists each call)."""
     return {
+        "question_embedding": b"",
         "query": "",
         "language": "en",
         "private": False,

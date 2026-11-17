@@ -1,11 +1,11 @@
-"""The Q&A graph: rewrite -> retrieve -> answer -> check, retrying a failed check once.
+"""The Q&A graph: recall -> rewrite -> retrieve -> answer -> check, retrying a failed check once.
 
-    begin -> rewrite -+-> (off-topic) ---------------------------> answer -> finish
-                      +-> retrieve -+-> (general) -> answer -> check -+-> finish
-                      |             |                  ^              |
-                      |             |                  +- retrieve <- prepare_retry
-                      |             |                     (failed check, first time only)
-                      |             +-> (private) -> answer_private -> check_private -> finish
+    begin -> recall -> rewrite -+-> (off-topic) ---------------------------> answer -> finish
+                                +-> retrieve -+-> (general) -> answer -> check -+-> finish
+                                |             |                  ^              |
+                                |             |                  +- retrieve <- prepare_retry
+                                |             |                    (failed check, first time only)
+                                |             +-> (private) -> answer_private -> check_private
 
 - General questions stream as they are written (`answer` is the only node whose tokens
   reach the visitor, see `output.answer_token`); the check then marks unsupported
@@ -14,6 +14,9 @@
 - Private questions (rewrite flag or `private.looks_private`) use /about only, are never
   streamed, and are shown only if the check passes; otherwise a fixed sentence.
 - Off-topic questions get a one-line decline: no retrieval, no check.
+- `recall` (3b2) embeds the question and picks earlier turns of the conversation from the
+  state's `turns` (see `memory`); the rewrite node uses them to resolve "it". Without an
+  embedder in `GraphDeps` it passes the input `history` through unchanged.
 
 Nodes send the `route`, `status`, `reset`, `answer`, `check` and `trace` events (contract
 item 7) through `get_stream_writer()`; the API adds `meta`, `token`, `done` and `error`.
@@ -29,12 +32,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import StreamWriter
 
 from app.config import Settings
-from app.qa import prompts
+from app.qa import memory, prompts
 from app.qa.models import CALL_TIMEOUT_S, ChatProvider, build_providers, stream_text, structured
 from app.qa.output import ANSWER_NODE, resolve_citations, verify_unsupported
 from app.qa.private import looks_private
 from app.qa.state import QAInput, QAState, turn_defaults
-from app.rag.types import Retriever, Section
+from app.rag.types import Embedder, Retriever, Section
 
 NOT_FOUND = "I couldn't find that in the project pages — please email me."
 PRIVATE_FALLBACK = "Please see the About page or email me."
@@ -53,11 +56,14 @@ class GraphDeps:
     retriever: Retriever  # db and embedder already bound (3b2)
     embed_model: str  # for status/trace of the retrieve node
     call_timeout: float = CALL_TIMEOUT_S  # per model call; tests make it small
+    embedder: Embedder | None = None  # for `recall` (3b2); None: no memory
 
 
-def build_deps(settings: Settings, retriever: Retriever) -> GraphDeps:
+def build_deps(
+    settings: Settings, retriever: Retriever, embedder: Embedder | None = None
+) -> GraphDeps:
     claude, gemini = build_providers(settings)
-    return GraphDeps(claude, gemini, retriever, embed_model=settings.embed_model)
+    return GraphDeps(claude, gemini, retriever, embed_model=settings.embed_model, embedder=embedder)
 
 
 # --- small helpers -------------------------------------------------------------------
@@ -118,6 +124,21 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
 
     async def begin(state: QAState) -> dict[str, Any]:
         return turn_defaults()
+
+    async def recall(state: QAState) -> dict[str, Any]:
+        """Memory: embed the question, pick earlier turns (memory.recall) for `history`."""
+        if deps.embedder is None:
+            return {}
+        writer = get_stream_writer()
+        node = _Node(writer, "recall")
+        [vector] = await deps.embedder.embed([state["question"]])
+        history = memory.recall(state.get("turns") or [], vector)  # type: ignore[arg-type]
+        trace = node.end("openai", deps.embed_model)
+        return {
+            "history": history,
+            "question_embedding": memory.pack_embedding(vector),
+            "nodes": [*state["nodes"], trace],
+        }
 
     async def rewrite(state: QAState) -> dict[str, Any]:
         writer = get_stream_writer()
@@ -202,8 +223,10 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
                 "nodes": [*state["nodes"], trace],
             }
         messages = prompts.private_answer_messages(state["question"], state["language"], sections)
+        # nostream: LangGraph keeps this model out of the `messages` stream altogether, a
+        # second guard besides the node-name filter in output.answer_token.
         raw, provider = await stream_text(
-            PRIVATE_ANSWER_NODE, answer_order, messages, deadline_s=timeout
+            PRIVATE_ANSWER_NODE, answer_order, messages, deadline_s=timeout, visible=False
         )
         text, citations = resolve_citations(raw, sections)
         trace = node.end(provider.name, provider.model)
@@ -298,6 +321,7 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
 
     builder = StateGraph(QAState, input_schema=QAInput)
     builder.add_node("begin", begin)
+    builder.add_node("recall", recall)
     builder.add_node("rewrite", rewrite)
     builder.add_node("retrieve", retrieve)
     builder.add_node(ANSWER_NODE, answer)
@@ -308,7 +332,8 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
     builder.add_node("finish", finish)
 
     builder.add_edge(START, "begin")
-    builder.add_edge("begin", "rewrite")
+    builder.add_edge("begin", "recall")
+    builder.add_edge("recall", "rewrite")
     builder.add_conditional_edges("rewrite", after_rewrite)
     builder.add_conditional_edges("retrieve", after_retrieve)
     builder.add_conditional_edges(ANSWER_NODE, after_answer)
