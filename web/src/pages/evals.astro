@@ -1,0 +1,233 @@
+---
+import Base from '../layouts/Base.astro';
+import {
+  buildRagasRows,
+  CHECK_LABELS,
+  formatChecks,
+  formatCost,
+  formatMetric,
+  METRIC_LABELS,
+  parseEvalFiles,
+  type CheckName,
+} from '../lib/evals';
+
+const files = import.meta.glob('../../../content/evals/*.json', { eager: true, import: 'default' });
+const { qa, cot } = parseEvalFiles(Object.values(files));
+const judges = [...new Set(qa.map((run) => run.models.judge).filter((judge): judge is string => !!judge))];
+const judgeNames = judges.length ? judges.join(', ') : 'claude-sonnet-5-5';
+const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
+---
+
+<Base title="Evals" description="Public scores and counts measuring how well project answers are supported by the project pages.">
+  <h1>Evals</h1>
+  <div class="intro">
+    <p>
+      This is how I measure whether “Ask about my projects” answers are supported by the project pages.
+      The questions are not published because some come from visitors’ wording; only scores and counts are shared.
+      Answers are scored by {judgeNames} using RAGAS metrics.
+    </p>
+    <dl class="definitions">
+      <div>
+        <dt>Faithfulness</dt>
+        <dd>Share of the answer’s claims that the retrieved page text supports.</dd>
+      </div>
+      <div>
+        <dt>Response relevancy</dt>
+        <dd>How directly the answer addresses the question.</dd>
+      </div>
+      <div>
+        <dt>Context recall</dt>
+        <dd>How much of the reference answer the retrieved text actually contained.</dd>
+      </div>
+      <div>
+        <dt>Factual correctness</dt>
+        <dd>How closely the answer’s facts match a hand-written reference answer.</dd>
+      </div>
+    </dl>
+    <p class="note">
+      Code checks are plain rule checks: has a citation, sentence count, language, route, fixed reply, and required/forbidden text.
+    </p>
+  </div>
+
+  {qa.length === 0 && cot.length === 0 && <p>No eval runs published yet.</p>}
+
+  {qa.map((run) => (
+    <section>
+      <h2>{run.date || '–'} · prompt {run.prompt_version ?? '–'}</h2>
+      <p class="meta">
+        Route: {run.route ?? '–'} · Split: {run.split ?? '–'} · {run.questions ?? '–'} questions × {run.repeats ?? '–'} {run.repeats === 1 ? 'pass' : 'passes'} · {run.samples ?? '–'} samples
+        <br />
+        Answer model: {run.models.answer ?? '–'} / Check model: {run.models.check ?? '–'}
+      </p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label={`RAGAS scores for ${run.date}, prompt ${run.prompt_version ?? '–'}`}>
+        <table>
+          <caption>RAGAS scores: mean and, for repeated passes, lowest–highest pass average.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Questions</th>
+              {Object.values(METRIC_LABELS).map((label) => <th scope="col">{label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {buildRagasRows(run).map((row) => (
+              <tr>
+                <th scope="row">{row.label}</th>
+                {row.cells.map((cell) => <td>{cell}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {checkNames.some((name) => run.code_checks[name]) && (
+        <div class="checks">
+          <h3>Code checks</h3>
+          <ul>
+            {checkNames.filter((name) => run.code_checks[name]).map((name) => (
+              <li>{CHECK_LABELS[name]}: {formatChecks(run.code_checks[name])}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {run.private_repeat && (
+        <p class="note">
+          Full-time question repeated {run.private_repeat.runs} {run.private_repeat.runs === 1 ? 'time' : 'times'}: {run.private_repeat.fixed} fixed sentence, {run.private_repeat.answered} answered from the page, {run.private_repeat.failed} failed
+        </p>
+      )}
+      <p class="meta">
+        Errors: {run.errors ?? '–'}
+        {(run.ragas_nulls ?? 0) > 0 && <> · RAGAS gaps: {run.ragas_nulls}</>}
+        {' · '}Cost: {formatCost(run.cost_usd)}
+      </p>
+    </section>
+  ))}
+
+  {cot.length > 0 && (
+    <section>
+      <h2>Does reasoning first help the checker?</h2>
+      <p>This compares whether letting a small model write its reasoning before the verdict helps it check whether each sentence is supported.</p>
+      {cot.map((run) => (
+        <article class="cot-run">
+          <h3>{run.date || '–'}</h3>
+          <p class="meta">{run.model ?? '–'} · {run.sentences ?? '–'} sentences × {run.repeats ?? '–'} {run.repeats === 1 ? 'pass' : 'passes'}</p>
+          <div class="table-scroll" tabindex="0" role="region" aria-label={`Checker comparison for ${run.date}`}>
+            <table>
+              <caption>Checker comparison: mean and, for repeated passes, lowest–highest pass average.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Approach</th>
+                  <th scope="col">Thinking level</th>
+                  <th scope="col">Accuracy</th>
+                  <th scope="col">Unsupported precision</th>
+                  <th scope="col">Unsupported recall</th>
+                  <th scope="col">Invalid</th>
+                  <th scope="col">Median ms</th>
+                  <th scope="col">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {run.arms.map((arm) => (
+                  <tr>
+                    <th scope="row">{arm.label}</th>
+                    <td>{arm.thinking_level ?? '–'}</td>
+                    <td>{formatMetric(arm.accuracy, { repeats: run.repeats })}</td>
+                    <td>{formatMetric(arm.unsupported_precision, { repeats: run.repeats })}</td>
+                    <td>{formatMetric(arm.unsupported_recall, { repeats: run.repeats })}</td>
+                    <td>{arm.invalid ?? '–'}</td>
+                    <td>{arm.ms_median ?? '–'}</td>
+                    <td>{formatCost(arm.cost_usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      ))}
+    </section>
+  )}
+</Base>
+
+<style>
+  .definitions {
+    margin: var(--space-0) var(--space-0) var(--space-5);
+  }
+
+  .definitions div + div {
+    margin-block-start: var(--space-3);
+  }
+
+  dt {
+    display: inline;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  dt::after {
+    content: ': ';
+  }
+
+  dd {
+    display: inline;
+    margin: var(--space-0);
+  }
+
+  .meta,
+  .note,
+  caption {
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
+  }
+
+  .meta,
+  .checks,
+  .table-scroll {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .table-scroll {
+    max-inline-size: var(--size-full);
+    min-inline-size: var(--space-0);
+    overflow-x: auto;
+    margin-block: var(--space-5);
+  }
+
+  table {
+    display: table;
+    inline-size: var(--size-full);
+    max-inline-size: none;
+    overflow: visible;
+    overflow-wrap: normal;
+    margin: var(--space-0);
+    font-size: var(--font-size-small);
+  }
+
+  caption {
+    text-align: start;
+    padding-block-end: var(--space-3);
+  }
+
+  th,
+  td {
+    vertical-align: top;
+  }
+
+  td {
+    white-space: nowrap;
+  }
+
+  th {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .checks h3 {
+    margin-block-end: var(--space-3);
+  }
+
+  .checks ul {
+    font-size: var(--font-size-small);
+  }
+
+  .cot-run + .cot-run {
+    margin-block-start: var(--space-6);
+    padding-block-start: var(--space-5);
+    border-block-start: var(--border-width) solid var(--color-rule);
+  }
+</style>

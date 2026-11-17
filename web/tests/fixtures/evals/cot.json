@@ -1,0 +1,79 @@
+{
+  "kind": "cot",
+  "run_id": "20261122T031500-checker",
+  "date": "2026-11-22",
+  "model": "gemini-3.5-flash-lite",
+  "sentences": 150,
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "reasoning_field",
+      "label": "Writes reasoning, then verdict",
+      "thinking_level": "minimal",
+      "accuracy": {
+        "mean": 0.9,
+        "min": 0.88,
+        "max": 0.92
+      },
+      "unsupported_precision": {
+        "mean": 0.8,
+        "min": 0.7,
+        "max": 0.85
+      },
+      "unsupported_recall": {
+        "mean": 0.7,
+        "min": 0.65,
+        "max": 0.75
+      },
+      "invalid": 0,
+      "ms_median": 850,
+      "cost_usd": 0.01
+    },
+    {
+      "name": "verdict_only",
+      "label": "Writes only a verdict",
+      "thinking_level": "minimal",
+      "accuracy": {
+        "mean": 0.9,
+        "min": 0.88,
+        "max": 0.92
+      },
+      "unsupported_precision": {
+        "mean": 0.8,
+        "min": 0.7,
+        "max": 0.85
+      },
+      "unsupported_recall": {
+        "mean": 0.7,
+        "min": 0.65,
+        "max": 0.75
+      },
+      "invalid": 0,
+      "ms_median": 850,
+      "cost_usd": 0.01
+    },
+    {
+      "name": "thinking",
+      "label": "Thinks before the verdict",
+      "thinking_level": "low",
+      "accuracy": {
+        "mean": 0.9,
+        "min": 0.88,
+        "max": 0.92
+      },
+      "unsupported_precision": {
+        "mean": 0.8,
+        "min": 0.7,
+        "max": 0.85
+      },
+      "unsupported_recall": {
+        "mean": 0.7,
+        "min": 0.65,
+        "max": 0.75
+      },
+      "invalid": 0,
+      "ms_median": 850,
+      "cost_usd": 0.01
+    }
+  ]
+}

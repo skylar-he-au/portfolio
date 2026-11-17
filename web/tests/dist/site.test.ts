@@ -71,16 +71,26 @@ function srcsetUrls(value: string): string[] {
   return urls;
 }
 
-it('builds exactly the five public HTML pages and excludes examples', () => {
+it('builds exactly the six public HTML pages and excludes examples', () => {
   expect(filesWithin(dist).filter((path) => path.endsWith('.html'))
     .map((path) => relative(dist, path)).sort()).toEqual([
     'about/index.html',
+    'evals/index.html',
     'index.html',
     'privacy/index.html',
     'projects/oncallops/index.html',
     'projects/roleradar/index.html',
   ]);
   expect(existsSync(join(dist, 'examples/index.html'))).toBe(false);
+});
+
+it('renders the Evals heading and empty state without run sections or tables', () => {
+  const document = readPage('/evals');
+  expect(document.querySelector('main h1')?.textContent).toBe('Evals');
+  expect(document.querySelector('main')?.textContent).toContain('No eval runs published yet.');
+  expect(document.querySelectorAll('main section, main table')).toHaveLength(0);
+  expect(document.querySelectorAll('script')).toHaveLength(0);
+  expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
 });
 
 it('pins all 32 sections in document order', () => {
@@ -141,6 +151,7 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
     expect(document.querySelector('header a[href="/#projects"]')?.textContent).toBe('Projects');
     expect(document.querySelector('header a[href="/about"]')?.textContent).toBe('About');
     expect(document.querySelector('footer a[href="/privacy"]')?.textContent).toBe('Privacy');
+    expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
     expect(document.querySelector('footer')?.textContent).toContain('© 2026 Skylar He');
     const firstFocusable = document.querySelector(
       'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
