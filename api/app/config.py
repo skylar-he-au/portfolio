@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
 
     answer_model: str = "claude-haiku-5-5"
-    check_model: str = "gemini-2.5-flash-lite"
+    check_model: str = "gemini-3.5-flash-lite"
     embed_model: str = "text-embedding-3-small"
     embed_dims: int = 1536
 
