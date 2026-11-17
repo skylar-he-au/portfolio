@@ -1,13 +1,4 @@
-import { useEffect, useId, useState, type CSSProperties } from 'react';
-
-const controlStyle: CSSProperties = {
-  border: 'var(--border-width) solid var(--color-border)',
-  background: 'var(--color-surface)',
-  color: 'var(--color-text)',
-  padding: 'var(--space-3)',
-  borderRadius: 'var(--radius-small)',
-  font: 'inherit',
-};
+import { useEffect, useId, useState } from 'react';
 
 export default function AskPlaceholder({ examples }: { examples: string[] }) {
   const inputId = useId();
@@ -58,60 +49,41 @@ export default function AskPlaceholder({ examples }: { examples: string[] }) {
     return () => controller.abort();
   }, []);
 
+  // Styles live in src/styles/global.css (.ask-*); the inline token keeps grid children shrinkable.
   return (
-    <div style={{
-      display: 'grid',
-      gap: 'var(--space-4)',
-      padding: 'var(--space-5)',
-      border: 'var(--border-width) solid var(--color-border)',
-      borderRadius: 'var(--radius-card)',
-      background: 'var(--color-surface)',
-      minInlineSize: 'var(--space-0)',
-    }}>
-      <form onSubmit={(event) => event.preventDefault()} style={{ display: 'grid', gap: 'var(--space-3)' }}>
-        <label htmlFor={inputId} style={{ fontWeight: 'var(--font-weight-semibold)' }}>
+    <div className="ask" style={{ minInlineSize: 'var(--space-0)' }}>
+      <form className="ask-form" onSubmit={(event) => event.preventDefault()}>
+        <label htmlFor={inputId} className="ask-label">
           Ask about my projects
         </label>
         <textarea
           id={inputId}
+          className="ask-control ask-input"
           maxLength={500}
           rows={4}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          style={{ ...controlStyle, inlineSize: 'var(--size-full)', minInlineSize: 'var(--space-0)', resize: 'vertical' }}
         />
-        <button type="submit" disabled style={{
-          ...controlStyle,
-          justifySelf: 'start',
-          cursor: 'not-allowed',
-          color: 'var(--color-muted)',
-        }}>
+        <button type="submit" disabled className="ask-control ask-send">
           Send
         </button>
       </form>
-      <div role="group" aria-label="Example questions" style={{ display: 'grid', gap: 'var(--space-2)' }}>
-        <span style={{ fontWeight: 'var(--font-weight-semibold)' }}>Example questions</span>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+      <div role="group" aria-label="Example questions" className="ask-examples">
+        <span className="ask-label">Example questions</span>
+        <div className="ask-example-list">
           {examples.map((example) => (
-            <button key={example} type="button" onClick={() => setQuestion(example)} style={{
-              ...controlStyle,
-              cursor: 'pointer',
-              textAlign: 'start',
-              maxInlineSize: 'var(--size-full)',
-              minInlineSize: 'var(--space-0)',
-              overflowWrap: 'anywhere',
-            }}>
+            <button key={example} type="button" onClick={() => setQuestion(example)} className="ask-control ask-example">
               {example}
             </button>
           ))}
         </div>
       </div>
-      <p style={{ margin: 'var(--space-0)', fontSize: 'var(--font-size-small)', color: 'var(--color-muted)' }}>
+      <p className="ask-note">
         Your question is processed by AI providers. <a href="/privacy">See Privacy.</a>
       </p>
-      <p role="status" style={{ margin: 'var(--space-0)', color: 'var(--color-muted)' }}>{status}</p>
+      <p role="status" className="ask-status">{status}</p>
       {import.meta.env.DEV && (
-        <p style={{ margin: 'var(--space-0)', fontSize: 'var(--font-size-small)', color: 'var(--color-muted)' }}>
+        <p className="ask-note">
           {healthStatus}
         </p>
       )}
