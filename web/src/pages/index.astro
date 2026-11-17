@@ -1,0 +1,5 @@
+---
+import { getCollection } from 'astro:content';
+const all = await getCollection('pages');
+---
+<html lang="en"><body><pre>{all.map((e) => e.id).join('\n')}</pre></body></html>
