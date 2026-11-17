@@ -313,8 +313,12 @@ async def test_private_question_streams_no_tokens_and_hides_other_nodes():
         retriever=FakeRetriever([WORK_RIGHTS]),
     )
     assert run.data("token") == []
-    # The raw stream really carries the other nodes' output: the filter is what stops it.
-    assert "I can work in Australia" in run.raw_text("answer_private")
+    # The private draft was written (and shown only after the check) ...
+    assert len(run.claude.calls) == 2
+    assert [d["text"] for d in run.data("answer")] == ["I can work in Australia [1]."]
+    # ... but its model is tagged `nostream`, so not even the raw stream carries it.
+    assert run.raw_text("answer_private") == ""
+    # The raw stream does carry the other nodes' output: the filter is what stops it.
     assert '"enough_info"' in run.raw_text("check_private")
     assert '"query"' in run.raw_text("rewrite")
 

@@ -18,6 +18,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.constants import TAG_NOSTREAM
 from pydantic import BaseModel
 
 from app.config import Settings
@@ -132,19 +133,22 @@ async def stream_text(
     *,
     deadline_s: float,
     on_switch: Callable[[], None] | None = None,
+    visible: bool = True,
 ) -> tuple[str, ChatProvider]:
     """Streamed plain text from the first provider in `order` that succeeds.
 
-    LangGraph's `messages` stream picks the tokens up as they arrive. Before switching to
+    LangGraph's `messages` stream picks the tokens up as they arrive; with `visible=False`
+    the call is tagged `nostream` and its tokens never enter that stream. Before switching to
     the next provider `on_switch` runs (the answer node sends `reset fallback`, so the page
     clears any half answer; with nothing shown yet the reset is harmless).
     """
     last: BaseException | None = None
     for index, provider in enumerate(order):
         parts: list[str] = []
+        chat = provider.chat if visible else provider.chat.with_config(tags=[TAG_NOSTREAM])
         try:
             async with asyncio.timeout(deadline_s):
-                async for chunk in provider.chat.astream(messages):
+                async for chunk in chat.astream(messages):
                     text = message_text(chunk)
                     if text:
                         parts.append(text)
