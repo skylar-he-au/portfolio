@@ -40,6 +40,20 @@ With `APP_ENV=dev`, `GET /api/health` also reports whether the database is reach
 
 `docker compose down -v` stops everything and deletes the local database volume.
 
+## Load the content for Ask
+
+After `docker compose up` starts the database and applies migrations, run on the host:
+
+```bash
+cd api
+uv run python -m app.ingest
+```
+
+Set `OPENAI_API_KEY` in the repo-root `.env`; the command reads `DATABASE_URL` from
+the same file (the compose `localhost:5433` address) and loads `content/` pages with
+`rag: true`. Re-running creates a new version and removes the old one. Run this on
+the host because the API container image has no `content/` directory.
+
 ## Run the tests
 
 Backend (needs [uv](https://docs.astral.sh/uv/); the database tests use the compose `db` and create and drop their own temporary databases):
