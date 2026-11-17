@@ -79,6 +79,31 @@ npm test
 npm run build && npm run test:dist
 ```
 
+## Evals
+
+From `api/`, the offline eval runner sends a YAML question set through the real Q&A graph,
+applies code checks, and optionally scores answers with RAGAS. First run
+`docker compose up -d db migrate` from the repo root, ingest the content, and configure
+`.env` with the three dev keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`)
+and `DATABASE_URL`.
+
+```bash
+uv run --group eval python -m evals.run --set <qa-set.yaml> --out <private-results-dir> \
+  --ledger <ledger.jsonl> --pass-cap <usd> --total-cap <usd> \
+  --credit-pass-cap <usd> --credit-total-cap <usd>
+```
+
+All four caps are required, there are no defaults; the numbers live in the project docs,
+not here. Copy them from the docs repo's command. The `eval` group is installed on demand;
+CI does not install it.
+
+Options: `--split tune|held_out|all` (default `tune`), `--only id1,id2`, `--repeats N`
+(default `1`), `--route default|gemini-answer` (default `default`), and `--no-ragas`.
+Raw JSONL results and a metadata sidecar go to `--out` and must stay private. Add
+`--summary-out ../content/evals` only for baseline/final runs to publish aggregates without
+question or answer text. An incomplete run keeps its raw results and writes no summary.
+Exit codes: `0` complete, `1` incomplete, `2` invalid arguments/set or missing eval modules.
+
 ## License
 
 The code is under the [MIT License](LICENSE). The text and images in `content/` are © Skylar He, all rights reserved, and are not covered by the MIT License (see [content/LICENSE](content/LICENSE)).
