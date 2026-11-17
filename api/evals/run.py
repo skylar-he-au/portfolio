@@ -246,6 +246,7 @@ async def evaluate(
     status, reason = "complete", None
     date = date or datetime.now(UTC).date().isoformat()
     streak = 0
+    error_streak = 0
     seen_providers: set[str] = set()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -347,11 +348,16 @@ async def evaluate(
                     else:
                         streak = 0
                         seen_providers.clear()
+                    error_streak = error_streak + 1 if error_name else 0
                     if streak >= 3:
                         status = "incomplete"
                         reason = "three consecutive fallbacks; providers: " + ", ".join(
                             sorted(seen_providers)
                         )
+                        break
+                    if error_streak >= 3:
+                        status = "incomplete"
+                        reason = "three consecutive errors; last: " + str(error_name)
                         break
                 if status == "incomplete":
                     break

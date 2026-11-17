@@ -395,6 +395,31 @@ async def test_retry_then_continue(tmp_path: Path) -> None:
     assert "hidden" not in (tmp_path / "raw.jsonl").read_text()
 
 
+async def test_error_streak_stops_without_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An error, then an ok sample resets the streak; three errors in a row stop the run.
+    graph = TinyGraph(
+        [
+            ValueError("x"),
+            ValueError("x"),
+            state(),
+            *[ValueError("x") for _ in range(6)],
+            state(),
+        ]
+    )
+    qs = [question(id=f"kite-{n}") for n in ("a", "b", "c", "d", "e", "f")]
+    outcome = await run_eval(tmp_path, qs, graph=graph)
+    assert [r["status"] for r in outcome.rows] == ["error", "ok", "error", "error", "error"]
+    assert outcome.status == "incomplete" and outcome.exit_code != 0
+    assert outcome.reason == "three consecutive errors; last: ValueError"
+    assert len(graph.calls) == 9
+    assert not (tmp_path / "public").exists()
+    meta = json.loads((tmp_path / "raw.meta.json").read_text())
+    assert meta["status"] == "incomplete" and meta["samples"] == 5
+    assert "three consecutive errors" in capsys.readouterr().err
+
+
 async def test_timeout_retries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("evals.run.SAMPLE_TIMEOUT_S", 0.001)
     graph = TinyGraph(["timeout", state()])
