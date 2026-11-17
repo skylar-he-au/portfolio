@@ -30,7 +30,7 @@ export default function HowItAnswered({ trace }: { trace?: AnswerTrace }) {
               const href = safeSiteUrl(section.url);
               return (
                 <li key={index}>
-                  {href ? <a href={href}>{section.heading}</a> : section.heading} · {section.score.toFixed(2)}
+                  {href ? <a href={href}>{section.heading}</a> : section.heading} · {section.score.toFixed(3)}
                 </li>
               );
             })}

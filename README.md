@@ -54,6 +54,8 @@ the same file (the compose `localhost:5433` address) and loads `content/` pages 
 `rag: true`. Re-running creates a new version and removes the old one. Run this on
 the host because the API container image has no `content/` directory.
 
+If you changed `DB_PORT` (for example to 5434 because 5433 is taken), set `DATABASE_URL` to point at that port when running the ingest.
+
 ## Run the tests
 
 Backend (needs [uv](https://docs.astral.sh/uv/); the database tests use the compose `db` and create and drop their own temporary databases):
