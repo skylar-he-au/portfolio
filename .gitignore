@@ -1,4 +1,13 @@
 .env
 .env.*
+!.env.example
 .DS_Store
 node_modules
+node_modules/
+web/dist/
+web/.astro/
+api/.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.coverage
