@@ -1,10 +1,16 @@
 ---
 import { getCollection, getEntry } from 'astro:content';
+import AskPlaceholder from '../components/AskPlaceholder';
 import Base from '../layouts/Base.astro';
 import { addSectionAnchors } from '../lib/anchors';
+import { parseExamples } from '../lib/examples';
 
 const entry = await getEntry('pages', 'home');
 if (!entry?.rendered) throw new Error('Missing rendered content: home');
+
+const examplesEntry = await getEntry('pages', 'examples');
+if (!examplesEntry?.body) throw new Error('Missing content: examples');
+const examples = parseExamples(examplesEntry.body);
 
 const projectIds = ['projects/roleradar', 'projects/oncallops'];
 const projects = (await getCollection('pages', ({ id }) => projectIds.includes(id)))
@@ -25,5 +31,5 @@ const projects = (await getCollection('pages', ({ id }) => projectIds.includes(i
       ))}
     </div>
   </section>
-  <section id="ask" aria-label="Ask about my projects"><p>Assistant coming soon</p></section>
+  <section id="ask" aria-label="Ask about my projects"><AskPlaceholder client:load examples={examples} /></section>
 </Base>
