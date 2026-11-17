@@ -1,0 +1,29 @@
+---
+import { getCollection, getEntry } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import { addSectionAnchors } from '../lib/anchors';
+
+const entry = await getEntry('pages', 'home');
+if (!entry?.rendered) throw new Error('Missing rendered content: home');
+
+const projectIds = ['projects/roleradar', 'projects/oncallops'];
+const projects = (await getCollection('pages', ({ id }) => projectIds.includes(id)))
+  .sort((a, b) => projectIds.indexOf(a.id) - projectIds.indexOf(b.id));
+---
+
+<Base title={entry.data.title} description={entry.data.summary}>
+  <h1>{entry.data.title}</h1>
+  <div class="markdown" set:html={addSectionAnchors(entry.rendered.html)} />
+  <section id="projects" aria-label="Projects">
+    <div class="project-grid">
+      {projects.map((project) => (
+        <article class="project-card">
+          <h3>{project.data.title}</h3>
+          <p>{project.data.summary}</p>
+          <a href={`/${project.id}`}>Read about {project.data.title}</a>
+        </article>
+      ))}
+    </div>
+  </section>
+  <section id="ask" aria-label="Ask about my projects"><p>Assistant coming soon</p></section>
+</Base>
