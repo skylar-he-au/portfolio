@@ -23,8 +23,18 @@ dev = [
     "ruff>=0.17.5",
 ]
 # Eval-only (never in default-groups: CI syncs dev only, the Docker image has no evals/).
+# ragas needs instructor, which caps jiter below what the newest openai needs, so this group
+# resolves separately from dev (see [tool.uv] conflicts) and carries its own test tools.
+# Run it with: uv run --no-default-groups --group eval ...
 eval = [
+    "httpx2>=2.16.2",
+    "pytest>=9.2.0",
     "ragas==0.4.4",
+]
+
+[tool.uv]
+conflicts = [
+    [{ group = "dev" }, { group = "eval" }],
 ]
 
 [tool.pytest.ini_options]

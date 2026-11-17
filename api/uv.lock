@@ -2,10 +2,16 @@ version = 1
 revision = 3
 requires-python = "==3.12.*"
 resolution-markers = [
-    "sys_platform == 'win32'",
-    "sys_platform == 'emscripten'",
-    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "sys_platform == 'win32' and extra != 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval'",
+    "sys_platform == 'emscripten' and extra != 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval'",
+    "sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval'",
+    "extra == 'group-13-portfolio-api-dev' and extra != 'group-13-portfolio-api-eval'",
+    "extra != 'group-13-portfolio-api-dev' and extra != 'group-13-portfolio-api-eval'",
 ]
+conflicts = [[
+    { package = "portfolio-api", group = "dev" },
+    { package = "portfolio-api", group = "eval" },
+]]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -92,7 +98,8 @@ dependencies = [
     { name = "anyio" },
     { name = "docstring-parser" },
     { name = "httpx2" },
-    { name = "jiter" },
+    { name = "jiter", version = "0.14.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "jiter", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
     { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "sniffio" },
@@ -148,7 +155,7 @@ name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz", hash = "sha256:dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be", size = 530807, upload-time = "2026-08-03T21:21:18.939Z" }
 wheels = [
@@ -230,7 +237,7 @@ name = "cryptography"
 version = "50.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9d/af/182eb91b0df3fe75c4d9f26fe70684569566745f6ba7e5c9c73a862c5252/cryptography-50.0.2.tar.gz", hash = "sha256:7b46165bb56eb4704e2eaaf86f3c940d19154535d9b0ca7d6d590b04060e00d5", size = 880623, upload-time = "2026-09-30T15:30:04.884Z" }
 wheels = [
@@ -523,11 +530,11 @@ name = "httpx2"
 version = "2.16.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio", marker = "sys_platform != 'emscripten'" },
-    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
-    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten'" },
+    { name = "anyio", marker = "sys_platform != 'emscripten' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
+    { name = "httpcore2", marker = "sys_platform != 'emscripten' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
+    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
     { name = "idna" },
-    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "sys_platform != 'emscripten' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/77/6515121dc5ac3c743ad1bff5afe635bcd1a3f23cc40db3c5c89f7d02917d/httpx2-2.16.2.tar.gz", hash = "sha256:748b615678f07d8e3b183efe81ad13b655ca88bfc56ce4589219b2d442860574", size = 103370, upload-time = "2026-11-16T10:12:20.49Z" }
@@ -592,8 +599,8 @@ dependencies = [
     { name = "docstring-parser" },
     { name = "idna" },
     { name = "jinja2" },
-    { name = "jiter" },
-    { name = "openai" },
+    { name = "jiter", version = "0.14.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "openai", version = "3.3.0", source = { registry = "https://pypi.org/simple" } },
     { name = "pydantic" },
     { name = "pydantic-core" },
     { name = "regex" },
@@ -624,6 +631,11 @@ wheels = [
 name = "jiter"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "sys_platform == 'win32'",
+    "sys_platform == 'emscripten'",
+    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
 sdist = { url = "https://files.pythonhosted.org/packages/6e/c1/0cddc6eb17d4c53a99840953f95dd3accdc5cfc7a337b0e9b26476276be9/jiter-0.14.0.tar.gz", hash = "sha256:e8a39e66dac7153cf3f964a12aad515afa8d74938ec5cc0018adcdae5367c79e", size = 165725, upload-time = "2026-04-10T14:28:42.01Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/68/7390a418f10897da93b158f2d5a8bd0bcd73a0f9ec3bb36917085bb759ef/jiter-0.14.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:2fb2ce3a7bc331256dfb14cefc34832366bb28a9aca81deaf43bbf2a5659e607", size = 316295, upload-time = "2026-04-10T14:26:24.887Z" },
@@ -644,6 +656,32 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/60/cf/a7e19b308bd86bb04776803b1f01a5f9a287a4c55205f4708827ee487fbf/jiter-0.14.0-graalpy312-graalpy250_312_native-macosx_11_0_arm64.whl", hash = "sha256:33a20d838b91ef376b3a56896d5b04e725c7df5bc4864cc6569cf046a8d73b6d", size = 308443, upload-time = "2026-04-10T14:28:36.658Z" },
     { url = "https://files.pythonhosted.org/packages/ca/44/e26ede3f0caeff93f222559cb0cc4ca68579f07d009d7b6010c5b586f9b1/jiter-0.14.0-graalpy312-graalpy250_312_native-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:432c4db5255d86a259efde91e55cb4c8d18c0521d844c9e2e7efcce3899fb016", size = 343039, upload-time = "2026-04-10T14:28:38.356Z" },
     { url = "https://files.pythonhosted.org/packages/da/e9/1f9ada30cef7b05e74bb06f52127e7a724976c225f46adb65c37b1dadfb6/jiter-0.14.0-graalpy312-graalpy250_312_native-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:67f00d94b281174144d6532a04b66a12cb866cbdc47c3af3bfe2973677f9861a", size = 349613, upload-time = "2026-04-10T14:28:40.066Z" },
+]
+
+[[package]]
+name = "jiter"
+version = "0.19.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/de/8dfd06a2153d8ab6a83a8ca8f8ae3ff860ce2fe324ee6a5d05294b621c2a/jiter-0.19.0.tar.gz", hash = "sha256:ba3064f8be276d7cfb83c2fb85c858be533da2c2f80f9b048c3781b45a57a195", size = 665248, upload-time = "2026-11-06T15:03:33.462Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/cd/88cf9efec4d4b6cb816233a6fbfcd842e9675012b2827c6abee4f87e53f1/jiter-0.19.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:0282eae10bbccfabcb6001ced6a20abc5e05e26c6316e7729c8fc1510bd3b8e1", size = 290088, upload-time = "2026-11-06T15:01:25.103Z" },
+    { url = "https://files.pythonhosted.org/packages/86/56/371651ed5fdbab064b9ca39f5ceddd1bad2175bc1d4c81915eb63ac1fa3d/jiter-0.19.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:730b0387fbea21b71b86b6975e20da7a364b04c4428eba0d15e6f0a7b20aa59b", size = 314238, upload-time = "2026-11-06T15:01:26.672Z" },
+    { url = "https://files.pythonhosted.org/packages/71/56/357172c32d0763f5cf8eb1afb8f5ded5ba314856eccbdb600fc82efe8b18/jiter-0.19.0-cp312-cp312-manylinux1_i686.manylinux_2_5_i686.whl", hash = "sha256:cfbf731056b76d2d600f11ee895ca5d4d39d22d881562d65ada3ecbaf6053d25", size = 332123, upload-time = "2026-11-06T15:01:28.273Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/a8/9c0e83f11fd067d1973e8f801e78d0c2ea1186aef7cd6bf9e7c847c16836/jiter-0.19.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:fcce75459e06cf811395581f6d256e2535d165ec4d223b809115a59b4ea6f398", size = 335561, upload-time = "2026-11-06T15:01:29.834Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/e9/d49c126dad2bc47d8e02392eb7ffae797134f021f4dcfc15bccc3b704c7a/jiter-0.19.0-cp312-cp312-manylinux2014_armv7l.manylinux_2_17_armv7l.whl", hash = "sha256:10e863d52095bc1106d22a4b9285bbe722a56d7f3e65f9a5d09ec9814a31be43", size = 322601, upload-time = "2026-11-06T15:01:31.313Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/d3/9085b225b080218f7ae7f3f33b746686cabefa99cbc34895fd35221df4d6/jiter-0.19.0-cp312-cp312-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:bafc856de75f6d4400e2d839189a6aefa1c985a151893743262811495917c20c", size = 333667, upload-time = "2026-11-06T15:01:33.032Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/2d/d71dbb7bb2f5954e2f33151de25721abf03771fb5368acda88f781b419d0/jiter-0.19.0-cp312-cp312-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:562d329189727922d9ee2e58f37382de1d0ec0d7a69b8d9670a23ef7ea216a49", size = 348693, upload-time = "2026-11-06T15:01:34.541Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/41/22f74631763c50a6ec76fec1e6a9557ffba181fe5048135520284a5746f3/jiter-0.19.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:0956b5f58b804221dfb929c120e6d4032138fed20c1cc0ef683a2d1326255e46", size = 338071, upload-time = "2026-11-06T15:01:35.871Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/4a/66e5d347e63b452eb160b549d1bb9bc88b2e7ad4d55c900afd278b8ec85b/jiter-0.19.0-cp312-cp312-manylinux_2_31_riscv64.whl", hash = "sha256:aa8e941d7569417134d14ed982bd5cef2c9baa55748bd70601f29e59b65497a9", size = 314409, upload-time = "2026-11-06T15:01:38.148Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/19/919970ab010e41cc8daae6e3b225cf457b09f9ce1a8458a0b949272d312d/jiter-0.19.0-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:39032d61473b11a6201300a710d6f912935bb3c783f3b564f94caa4d8ea34f40", size = 480350, upload-time = "2026-11-06T15:01:39.515Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/53/fef6d7566fdc019201be101bb63056a01ac3746c4f072901318593c65a2b/jiter-0.19.0-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:1427fd34cf36db7c13d9643465a9fe00bfcc9ba969d8a633e43a4e2525afb565", size = 515375, upload-time = "2026-11-06T15:01:40.9Z" },
+    { url = "https://files.pythonhosted.org/packages/50/94/0eb1a877a9e34fe757aa6fbcb9e19a996540283fafa4826c4fff816087bc/jiter-0.19.0-cp312-cp312-win32.whl", hash = "sha256:178bdffd86ccaf25fda33dee522b046720b1f617f5b72864a720a4e88d574fc6", size = 185353, upload-time = "2026-11-06T15:01:42.628Z" },
+    { url = "https://files.pythonhosted.org/packages/10/7f/9d1dd194cc52698a9c7116b0b464826cc1a2feda2afd12fa562182ff27d6/jiter-0.19.0-cp312-cp312-win_amd64.whl", hash = "sha256:f64154096d9aa5462ef3c4f48d624492602d0073d54d30c20c08793387f67e42", size = 225500, upload-time = "2026-11-06T15:01:43.975Z" },
+    { url = "https://files.pythonhosted.org/packages/98/d9/5065590d951e03216b7b0beba984d397d1e724201dc57184503f79d696eb/jiter-0.19.0-cp312-cp312-win_arm64.whl", hash = "sha256:d9cf0a878f99f97335023f51bf07e1f81c19ce13636b06347c8b548e3a26bc70", size = 181832, upload-time = "2026-11-06T15:01:45.279Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/67/66164d4be8991d7f3b7163be80c7c5e94040cc7d9ba62b4e4e4113da5f79/jiter-0.19.0-graalpy312-graalpy250_312_native-macosx_10_12_x86_64.whl", hash = "sha256:e7682cfd9561bcdc47dbd10d2546b5b37640b4bef407f76fb434c30e4cb0ae81", size = 287293, upload-time = "2026-11-06T15:03:23.746Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/8f/94f8b4d9be8cbf8e0be61c21b368ba367d8cb57d8f5d0ef71bcc8f61ef3d/jiter-0.19.0-graalpy312-graalpy250_312_native-macosx_11_0_arm64.whl", hash = "sha256:bee08505baeb38c891d884e977b20924ec13bbedfc3ff1d32cfd66a867f8e9b1", size = 277813, upload-time = "2026-11-06T15:03:25.476Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/5e/1ba251fae0c9d689cc40b4dbedc9a6674db0d5ef5dae2af0a7a4ccaa8886/jiter-0.19.0-graalpy312-graalpy250_312_native-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:dd34bb5493184ca9816fc4ffb19ea7377940d5171512cfc107356a3a145a4ba2", size = 300193, upload-time = "2026-11-06T15:03:26.882Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/00/03f9750ce7fc6882c00e030f5843afaec7ab06813ebe2f0d363acaadb973/jiter-0.19.0-graalpy312-graalpy250_312_native-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:885673d25907536b3bce8d61accd67a534eb3ad5fa2dc7ebfa67c4842b3b0060", size = 301132, upload-time = "2026-11-06T15:03:28.217Z" },
 ]
 
 [[package]]
@@ -779,7 +817,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "langchain-core" },
-    { name = "openai" },
+    { name = "openai", version = "3.3.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "openai", version = "3.52.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
     { name = "tiktoken" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/06/4a/7b9a0e825917813eae02d254229a0b56cbd870a8618c38c14eb0eb6c34ab/langchain_openai-1.8.0.tar.gz", hash = "sha256:670a39def25c550ac7b828f6c4336f5653a440e992584590f6cc168525d993b7", size = 3383548, upload-time = "2026-11-13T16:48:12.161Z" }
@@ -893,7 +932,7 @@ dependencies = [
     { name = "anyio" },
     { name = "distro" },
     { name = "httpx2" },
-    { name = "orjson", marker = "platform_python_implementation != 'PyPy'" },
+    { name = "orjson", marker = "platform_python_implementation != 'PyPy' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
     { name = "packaging" },
     { name = "pydantic" },
     { name = "requests" },
@@ -1039,18 +1078,40 @@ wheels = [
 name = "openai"
 version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "sys_platform == 'win32'",
+    "sys_platform == 'emscripten'",
+    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
 dependencies = [
-    { name = "anyio" },
-    { name = "distro" },
-    { name = "httpx2" },
-    { name = "jiter" },
-    { name = "pydantic" },
-    { name = "sniffio" },
-    { name = "typing-extensions" },
+    { name = "anyio", marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "distro", marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "httpx2", marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "jiter", version = "0.14.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "pydantic", marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "sniffio", marker = "extra == 'group-13-portfolio-api-eval'" },
+    { name = "typing-extensions", marker = "extra == 'group-13-portfolio-api-eval'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e6/6c/670271205379061112bf5ed900b78a68e21bf11733de829772c5322f92aa/openai-3.3.0.tar.gz", hash = "sha256:28f904a9fbff15288e9dd67bc0f7020d4f576d37786383a480db02fe5d8139d3", size = 1166178, upload-time = "2026-08-18T21:17:53.419Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/83/d44980712bf51dddaca090cd772b3102e75377ddac877eaa4b2cb58d886a/openai-3.3.0-py3-none-any.whl", hash = "sha256:ded6b2112e6d299c7a2573ff6f165dc92fb64ceaa4d7daa42345f091157bd373", size = 1690265, upload-time = "2026-08-18T21:17:51.351Z" },
+]
+
+[[package]]
+name = "openai"
+version = "3.52.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio", marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
+    { name = "httpx2", marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
+    { name = "jiter", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
+    { name = "pydantic", marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
+    { name = "sniffio", marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
+    { name = "typing-extensions", marker = "extra == 'group-13-portfolio-api-dev' or extra != 'group-13-portfolio-api-eval'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bb/d9/2ef76a717f5cd5d42857ae3424db2f16bf5f01070edfd63ea9347e7d041f/openai-3.52.0.tar.gz", hash = "sha256:258a4fec3e40b412c58672526ed33f20738c2e4ea27601792e73843af62466af", size = 2417464, upload-time = "2026-11-16T22:41:08.028Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/14/e6e4ee80bcca7c89377e4263ff9125ed5d6fe656f34215675669449fb3a2/openai-3.52.0-py3-none-any.whl", hash = "sha256:fc220b5f06d354e8f48ab38a64410ec1537957a47d6e584b77cee8c21b7cb84e", size = 2446605, upload-time = "2026-11-16T22:41:05.869Z" },
 ]
 
 [[package]]
@@ -1194,6 +1255,8 @@ dev = [
     { name = "ruff" },
 ]
 eval = [
+    { name = "httpx2" },
+    { name = "pytest" },
     { name = "ragas" },
 ]
 
@@ -1217,7 +1280,11 @@ dev = [
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "ruff", specifier = ">=0.17.5" },
 ]
-eval = [{ name = "ragas", specifier = "==0.4.4" }]
+eval = [
+    { name = "httpx2", specifier = ">=2.16.2" },
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "ragas", specifier = "==0.4.4" },
+]
 
 [[package]]
 name = "propcache"
@@ -1251,7 +1318,7 @@ version = "3.3.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions" },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "tzdata", marker = "sys_platform == 'win32' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b4/74/ff710399dfa9fe9b546c2f5a05ea2f9b9d1dc2145c0b59e53a3fa2013679/psycopg-3.3.9.tar.gz", hash = "sha256:87c1d85c3e0e88e811d3c0b3808f947bd967c6faf34af6cd86fd021f77793d6c", size = 171122, upload-time = "2026-11-12T09:04:06.548Z" }
 wheels = [
@@ -1260,7 +1327,7 @@ wheels = [
 
 [package.optional-dependencies]
 binary = [
-    { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
+    { name = "psycopg-binary", marker = "implementation_name != 'pypy' or (extra == 'group-13-portfolio-api-dev' and extra == 'group-13-portfolio-api-eval')" },
 ]
 pool = [
     { name = "psycopg-pool" },
@@ -1481,7 +1548,7 @@ dependencies = [
     { name = "nest-asyncio" },
     { name = "networkx" },
     { name = "numpy" },
-    { name = "openai" },
+    { name = "openai", version = "3.3.0", source = { registry = "https://pypi.org/simple" } },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "requests" },
