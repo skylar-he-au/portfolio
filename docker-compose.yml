@@ -1,0 +1,72 @@
+# Local development stack: db -> migrate -> api -> web.
+# Every port is bound to 127.0.0.1 so other devices on the network can't reach it.
+# Host ports default to 5433 / 8000 / 4321; set DB_PORT, API_PORT or WEB_PORT to change one.
+# The database credentials below are for this local container only.
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql://portfolio:portfolio@db:5432/portfolio
+  APP_ENV: dev
+
+services:
+  db:
+    # Matches Neon's PG17 (pgvector 0.8.0); CI uses the same image.
+    image: pgvector/pgvector:0.8.0-pg17
+    environment:
+      POSTGRES_USER: portfolio
+      POSTGRES_PASSWORD: portfolio
+      POSTGRES_DB: portfolio
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio -d portfolio"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  migrate:
+    build: ./api
+    image: portfolio-api:dev
+    command: ["python", "-m", "app.migrate"]
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: ./api
+    image: portfolio-api:dev
+    environment:
+      <<: *api-env
+      PORT: "8000"
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    image: node:24-alpine
+    working_dir: /site/web
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 4321"
+    environment:
+      API_ORIGIN: http://api:8000
+      # No outbound calls from the dev server. The update check also writes
+      # web/.astro/settings.json, which on a bind mount triggers a restart that
+      # loses the content collection on a container's first start.
+      ASTRO_DISABLE_UPDATE_CHECK: "true"
+      ASTRO_TELEMETRY_DISABLED: "1"
+    ports:
+      - "127.0.0.1:${WEB_PORT:-4321}:4321"
+    volumes:
+      # The whole repo, so Astro can read ../content and reload on edits.
+      - ./:/site
+      # Keep Linux node_modules inside the container, apart from the host's.
+      - /site/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  db-data:
