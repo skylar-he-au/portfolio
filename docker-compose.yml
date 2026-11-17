@@ -38,6 +38,11 @@ services:
   api:
     build: ./api
     image: portfolio-api:dev
+    # Development model keys. `environment` below still wins, so DATABASE_URL
+    # stays db:5432 instead of the .env localhost address.
+    env_file:
+      - path: .env
+        required: false
     environment:
       <<: *api-env
       PORT: "8000"

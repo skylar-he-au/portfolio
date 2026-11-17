@@ -5,6 +5,12 @@ description = "Backend for the portfolio site: health checks now, project Q&A la
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.163.1",
+    "langchain-anthropic>=1.7.10",
+    "langchain-google-genai>=4.5.0",
+    "langchain-openai>=1.8.0",
+    "langgraph>=1.2.22",
+    "langgraph-checkpoint-postgres>=3.2.1",
+    "pgvector>=0.5.1",
     "psycopg[binary,pool]>=3.3.9",
     "pydantic-settings>=2.16.3",
     "uvicorn>=0.54.0",
@@ -22,6 +28,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 # -rs prints the reason for every skipped test (e.g. no TEST_DATABASE_URL).
 addopts = "-rs"
+markers = ["live: calls real model APIs with dev keys; skipped without keys, never in CI"]
 
 [tool.ruff]
 line-length = 100
