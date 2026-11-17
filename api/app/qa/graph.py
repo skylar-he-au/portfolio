@@ -192,7 +192,11 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
             return {"answer_text": NOT_FOUND, "citations": [], "nodes": [*state["nodes"], trace]}
         else:
             messages = prompts.answer_messages(
-                question, language, sections, state.get("previous_unsupported") or []
+                question,
+                language,
+                sections,
+                state.get("history") or [],
+                state.get("previous_unsupported") or [],
             )
 
         def reset_fallback() -> None:

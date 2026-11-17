@@ -24,7 +24,7 @@ from pydantic import Field
 from app.qa import output
 from app.qa.graph import NOT_FOUND, PRIVATE_FALLBACK, GraphDeps, build_graph
 from app.qa.models import ChatProvider
-from app.rag.types import ModelsUnavailable, Section
+from app.rag.types import ModelsUnavailable, RecalledTurn, Section
 
 # anyio's pytest plugin ships with anyio (a FastAPI dependency); asyncio only.
 pytestmark = pytest.mark.anyio
@@ -248,14 +248,20 @@ def make_deps(
     return deps, claude_model, gemini_model
 
 
-async def stream_turn(graph: Any, question: str, thread: str = "t1") -> tuple[list, list, dict]:
-    """One turn through the compiled graph, the way the API streams it."""
+async def stream_turn(
+    graph: Any, question: str, thread: str = "t1", history: Sequence[RecalledTurn] = ()
+) -> tuple[list, list, dict]:
+    """One turn through the compiled graph, the way the API streams it.
+
+    `history` is the recalled turns; with no embedder in the deps, `recall` passes the
+    input's `history` through as it is (graph.py), so tests hand the earlier turns in here.
+    """
     config = {"configurable": {"thread_id": thread}}
     parts: list[dict] = []
 
     async def tap() -> AsyncIterator[dict]:
         stream = graph.astream(
-            {"question": question, "history": []},
+            {"question": question, "history": list(history)},
             config,
             stream_mode=["messages", "custom"],
             version="v2",
@@ -276,10 +282,11 @@ async def ask(
     gemini: list[Any],
     retriever: FakeRetriever,
     call_timeout: float = 5.0,
+    history: Sequence[RecalledTurn] = (),
 ) -> Run:
     deps, claude_model, gemini_model = make_deps(claude, gemini, retriever, timeout=call_timeout)
     graph = build_graph(deps, checkpointer=InMemorySaver())
-    events, parts, state = await stream_turn(graph, question)
+    events, parts, state = await stream_turn(graph, question, history=history)
     return Run(events, parts, state, claude_model, gemini_model, retriever)
 
 
@@ -300,6 +307,15 @@ def trace_providers(run: Run) -> list[tuple[str, str | None]]:
 
 def system_prompt(model: FakeChat, call: int) -> str:
     return str(model.calls[call][0].content)
+
+
+def earlier_turns(model: FakeChat, call: int) -> list[str]:
+    """The `earlier-turn` blocks one model call got, each checked to carry that call's marker."""
+    text = "\n".join(str(m.content) for m in model.calls[call])
+    [marker] = re.findall(r"tags whose name ends in -([0-9a-f]{16})", text)
+    blocks = re.findall(r"<earlier-turn-([0-9a-f]+)>\n(.*?)\n</earlier-turn-\1>", text, re.S)
+    assert all(m == marker for m, _ in blocks), "an earlier turn outside this call's marker"
+    return [body for _, body in blocks]
 
 
 # --- streaming filter --------------------------------------------------------------------
@@ -696,6 +712,80 @@ async def test_second_turn_does_not_reuse_the_first_turns_fields():
     assert [d["text"] for n, d in events if n == "answer"] == [
         "Sorry, I only answer questions about my projects."
     ]
+
+
+# --- memory in the answer prompt ---------------------------------------------------------
+
+FOLLOW_UP = "Which model does it use for that?"
+FOLLOW_UP_QUERY = "Which model RoleRadar uses to decide which jobs match a user"
+EARLIER = RecalledTurn("turn-1", EXAMPLE_Q, GOOD_ANSWER, 0.72)
+EARLIER_BLOCK = f"Q: {EXAMPLE_Q}\nA: {GOOD_ANSWER}"
+
+
+async def test_second_turn_answer_gets_the_first_turn_as_data():
+    follow_up_answer = "It uses an embedding model to rank jobs by similarity [1]."
+    deps, claude, gemini = make_deps(
+        claude=[rewrite_reply(), GOOD_ANSWER, rewrite_reply(FOLLOW_UP_QUERY), follow_up_answer],
+        gemini=[check_reply(), check_reply()],
+        retriever=FakeRetriever([MATCH, TESTS], [MATCH]),
+    )
+    graph = build_graph(deps, checkpointer=InMemorySaver())
+    _, _, first = await stream_turn(graph, EXAMPLE_Q)
+    assert earlier_turns(claude, 1) == []  # turn 1 has nothing to recall
+
+    recalled = RecalledTurn("turn-1", EXAMPLE_Q, first["answer_text"], 0.72)
+    _, _, second = await stream_turn(graph, FOLLOW_UP, history=[recalled])
+    # Turn 2's rewrite and answer both got turn 1's question and answer, inside the marker.
+    assert earlier_turns(claude, 2) == [EARLIER_BLOCK]
+    assert earlier_turns(claude, 3) == [EARLIER_BLOCK]
+    answer_system = system_prompt(claude, 3)
+    assert "Earlier turns" in answer_system and "never cite" in answer_system
+    # The check still sees only this turn's sections, not the earlier turns.
+    assert earlier_turns(gemini, 1) == []
+    assert GOOD_ANSWER not in "\n".join(str(m.content) for m in gemini.calls[1])
+    # Citations still point only at this turn's sections.
+    assert second["answer_text"] == follow_up_answer
+    assert [c["url"] for c in second["citations"]] == [MATCH.url]
+
+
+async def test_retried_answer_also_gets_the_earlier_turns():
+    run = await ask(
+        FOLLOW_UP,
+        claude=[
+            rewrite_reply(FOLLOW_UP_QUERY),
+            "It uses GPT-9 [1].",
+            "It ranks by similarity [1].",
+        ],
+        gemini=[check_reply(["It uses GPT-9 [1]."]), check_reply()],
+        retriever=FakeRetriever([MATCH], [MATCH, TESTS]),
+        history=[EARLIER],
+    )
+    assert run.data("reset") == [{"reason": "retry"}]
+    assert earlier_turns(run.claude, 1) == [EARLIER_BLOCK]
+    assert earlier_turns(run.claude, 2) == [EARLIER_BLOCK]
+
+
+async def test_private_and_off_topic_answers_get_no_earlier_turns():
+    private = await ask(
+        "Can you work in Australia?",
+        claude=[rewrite_reply("work rights", private=True), "I can work in Australia [1]."],
+        gemini=[private_check_reply(enough_info=True)],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+        history=[EARLIER],
+    )
+    assert earlier_turns(private.claude, 0) == [EARLIER_BLOCK]  # the rewrite did get them
+    private_prompt = "\n".join(str(m.content) for m in private.claude.calls[1])
+    assert EXAMPLE_Q not in private_prompt and GOOD_ANSWER not in private_prompt
+
+    off_topic = await ask(
+        "What's the capital of France?",
+        claude=[rewrite_reply("capital of France", off_topic=True), "I only answer that."],
+        gemini=[],
+        retriever=FakeRetriever(),
+        history=[EARLIER],
+    )
+    off_topic_prompt = "\n".join(str(m.content) for m in off_topic.claude.calls[1])
+    assert EXAMPLE_Q not in off_topic_prompt and GOOD_ANSWER not in off_topic_prompt
 
 
 # --- model settings (no network) ---------------------------------------------------------
