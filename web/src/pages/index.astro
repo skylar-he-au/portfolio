@@ -21,6 +21,7 @@ const projects = (await getCollection('pages', ({ id }) => projectIds.includes(i
   <h1>{entry.data.title}</h1>
   <div class="markdown" set:html={addSectionAnchors(entry.rendered.html)} />
   <section id="projects" aria-label="Projects">
+    <h2>Projects</h2>
     <div class="project-grid">
       {projects.map((project) => (
         <article class="project-card">

@@ -183,6 +183,14 @@ h2 {
   margin-block-start: var(--space-7);
 }
 
+/* Allow room for the wide section and page gutters at the body font size. */
+@media (min-width: 64rem) {
+  #projects {
+    inline-size: var(--content-width-wide);
+    margin-inline: calc((var(--size-full) - var(--content-width-wide)) / 2);
+  }
+}
+
 .project-grid {
   display: grid;
   grid-template-columns: var(--project-columns);
