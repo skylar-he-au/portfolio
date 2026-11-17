@@ -5,16 +5,19 @@ updated: 2026-11-17
 rag: true
 ---
 
-<!-- needs Skylar's confirmation -->
-
 ## Who sees your question
 
 This Privacy page of Skylar's portfolio explains where a question typed into the site goes. Your question is processed by up to five services: Anthropic (Claude rewrites your question and writes the answer), Google (Gemini checks the answer, takes over the other's job if one of the two fails, and Google Cloud Run also hosts this site's backend), OpenAI (embeddings, voice transcription and read-aloud), Cloudflare (bot check and request routing) and Neon (the database that stores the data described below).
 
 ## How long the AI providers keep it
 
-This site (Skylar's portfolio) sends your text to AI providers, and each one may keep what it receives for a period to detect abuse, and I can't turn that off on a personal account. OpenAI keeps embedding and read-aloud requests for 30 days and does not store voice transcription. Google's paid Gemini tier may keep what it receives for a period to detect abuse, and Google's documentation does not say how long. I use only the paid Gemini tier, so your text is not used to improve Google's products. <!-- retention for Anthropic, Cloudflare, Neon pending research -->
-Retention at Anthropic, Cloudflare and Neon is not stated on this page yet.
+This site (Skylar's portfolio) sends your text to outside services, and each one may keep what it receives for a while to detect abuse; I can't turn that off on a personal account. Here is what each one says, as of 2026-11-17:
+
+- **Anthropic** deletes API inputs and outputs within 30 days. Content its automated systems flag as breaking its usage policy may be kept for up to 2 years. It does not use API data to train its models by default.
+- **Google** (paid Gemini tier) keeps prompts and responses for a limited period only to detect abuse; Google does not say how long. On the paid tier your text is not used to improve Google's products.
+- **OpenAI** keeps embedding and read-aloud requests for up to 30 days and does not keep voice transcription requests. It does not use API data for training.
+- **Cloudflare** checks for bots with Turnstile, which looks at signals such as your IP address and browser; Cloudflare does not say how long it keeps them. I turn off Cloudflare's Worker logs.
+- **Neon** hosts the database in Sydney. After this site deletes a record, Neon can still restore it for up to 6 hours, and Neon keeps encrypted backups for 30 days.
 
 ## What this site stores and for how long
 

@@ -1,11 +1,11 @@
 ---
 title: Example questions
-summary: Candidate example questions for the Ask box, to be narrowed to three.
+summary: The three example questions shown under the Ask box, plus two spares.
 updated: 2026-11-17
 rag: false
 ---
 
-Candidates for the 3 example questions (Skylar picks 3). The topic in brackets is the page section that should answer it; section names match the project pages as of 2026-11-17.
+The 3 example questions shown under the Ask box are 1, 2 and 4 (chosen 2026-11-17); 3 and 5 are spares. The topic in brackets is the page section that should answer it; section names match the project pages as of 2026-11-17.
 
 1. How does RoleRadar decide which jobs match a user? (RoleRadar: How RoleRadar matches jobs)
 2. How do you stop the AI from making things up when it rewrites a resume? (RoleRadar: How RoleRadar tailors a resume without inventing experience)
