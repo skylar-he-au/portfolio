@@ -88,7 +88,7 @@ applies code checks, and optionally scores answers with RAGAS. First run
 and `DATABASE_URL`.
 
 ```bash
-uv run --group eval python -m evals.run --set <qa-set.yaml> --out <private-results-dir> \
+uv run --no-default-groups --group eval python -m evals.run --set <qa-set.yaml> --out <private-results-dir> \
   --ledger <ledger.jsonl> --pass-cap <usd> --total-cap <usd> \
   --credit-pass-cap <usd> --credit-total-cap <usd>
 ```
