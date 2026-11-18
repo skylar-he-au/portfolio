@@ -3,7 +3,7 @@
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
-from guard_helpers import AdmittingLimits, guard_headers, guard_settings
+from guard_helpers import AdmittingLimits, NoSpendLedger, guard_headers, guard_settings
 from test_api import ExplodingPool
 
 from app.guard.limits import Admission
@@ -16,7 +16,10 @@ class QuietService:
     def __init__(self):
         self.admissions: list[Admission] = []
 
-    async def stream(self, question, conversation_id, admission=None):
+    async def reserve(self, turn_id):
+        return None
+
+    async def stream(self, question, conversation_id, admission=None, *, scope=None, turn_id=None):
         self.admissions.append(admission)
         yield "done", {}
 
@@ -28,7 +31,7 @@ def test_ask_without_token_is_auth(refused_url: str):
     settings = guard_settings(refused_url)
     service = QuietService()
     pool = ExplodingPool()
-    app = create_app(settings, pool=pool, ask_service=service)
+    app = create_app(settings, pool=pool, ask_service=service, ledger=NoSpendLedger())
     with TestClient(app) as client:
         response = client.post(
             "/api/ask",
@@ -53,7 +56,7 @@ def test_bad_token_never_opens_database(refused_url, token):
     settings = guard_settings(refused_url)
     pool = ExplodingPool()
     service = QuietService()
-    app = create_app(settings, pool=pool, ask_service=service)
+    app = create_app(settings, pool=pool, ask_service=service, ledger=NoSpendLedger())
     with TestClient(app) as client:
         result = client.post(
             "/api/ask", headers=guard_headers(settings, token=token), json={"question": "Hello"}
@@ -65,7 +68,7 @@ def test_bad_token_never_opens_database(refused_url, token):
 def test_valid_request_with_database_down_is_json_unavailable(refused_url):
     settings = guard_settings(refused_url)
     service = QuietService()
-    app = create_app(settings, ask_service=service)
+    app = create_app(settings, ask_service=service, ledger=NoSpendLedger())
     with TestClient(app) as client:
         result = client.post(
             "/api/ask", headers=guard_headers(settings), json={"question": "Hello"}
@@ -81,7 +84,7 @@ def test_invalid_question_never_reaches_admit(refused_url, question):
     settings = guard_settings(refused_url)
     limits = AdmittingLimits()
     service = QuietService()
-    app = create_app(settings, ask_service=service, limits=limits)
+    app = create_app(settings, ask_service=service, ledger=NoSpendLedger(), limits=limits)
     with TestClient(app) as client:
         result = client.post(
             "/api/ask", headers=guard_headers(settings), json={"question": question}
@@ -94,7 +97,7 @@ def test_invalid_questions_leave_real_counters_unchanged(db_url):
     migrate(db_url)
     settings = guard_settings(db_url)
     service = QuietService()
-    app = create_app(settings, ask_service=service)
+    app = create_app(settings, ask_service=service, ledger=NoSpendLedger())
     with TestClient(app, headers=guard_headers(settings)) as client:
         assert client.post("/api/ask", json={"question": "valid"}).status_code == 200
         with psycopg.connect(db_url) as conn:
@@ -112,7 +115,7 @@ def test_http_daily_rejection_precedes_sse(db_url):
     migrate(db_url)
     settings = guard_settings(db_url, ask_limit_token=1)
     service = QuietService()
-    app = create_app(settings, ask_service=service)
+    app = create_app(settings, ask_service=service, ledger=NoSpendLedger())
     with TestClient(app, headers=guard_headers(settings)) as client:
         assert client.post("/api/ask", json={"question": "valid"}).status_code == 200
         result = client.post("/api/ask", json={"question": "over limit"})
@@ -138,7 +141,7 @@ def test_http_canonical_ip_and_xff_cannot_change_counter(db_url, first_ip, secon
     migrate(db_url)
     settings = guard_settings(db_url)
     service = QuietService()
-    app = create_app(settings, ask_service=service)
+    app = create_app(settings, ask_service=service, ledger=NoSpendLedger())
     with TestClient(app, headers=guard_headers(settings)) as client:
         for ip, forwarded in ((first_ip, "203.0.113.1"), (second_ip, "203.0.113.2")):
             result = client.post(

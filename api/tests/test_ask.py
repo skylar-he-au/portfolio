@@ -16,7 +16,7 @@ import psycopg
 import pytest
 from fakes import FakeEmbedder
 from fastapi.testclient import TestClient
-from guard_helpers import AdmittingLimits, guard_headers
+from guard_helpers import AdmittingLimits, NoSpendLedger, guard_headers
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde import jsonplus
 from pydantic import SecretStr
@@ -59,6 +59,7 @@ def anyio_backend() -> str:
 class MemoryConversations:
     def __init__(self) -> None:
         self.known: set[str] = set()
+        self.owners: dict[str, uuid.UUID] = {}
 
     async def resolve(self, requested: str | None) -> str:
         if requested in self.known:
@@ -66,6 +67,16 @@ class MemoryConversations:
         new = str(uuid.uuid4())
         self.known.add(new)
         return new
+
+    async def acquire(self, conversation_id: str, owner: uuid.UUID) -> bool:
+        if conversation_id in self.owners:
+            return False
+        self.owners[conversation_id] = owner
+        return True
+
+    async def release(self, conversation_id: str, owner: uuid.UUID) -> None:
+        if self.owners.get(conversation_id) == owner:
+            del self.owners[conversation_id]
 
 
 class MemoryCheckpoints:
@@ -233,6 +244,7 @@ async def test_sse_wire_format_through_the_endpoint():
     app = create_app(
         settings("postgresql://nobody@127.0.0.1:1/none"),
         ask_service=service,
+        ledger=NoSpendLedger(),
         limits=AdmittingLimits(),
     )
     with TestClient(app, headers=guard_headers(app.state.settings)) as client:
@@ -395,8 +407,8 @@ async def test_whole_request_deadline_sends_timeout_and_frees_the_conversation()
     )
     assert names(events) == ["meta", "error"]
     with anyio.fail_after(2):  # the cancelled graph task stops; the conversation is free
-        await asyncio.gather(*service._tasks, return_exceptions=True)
-    assert service._active == {}
+        await service.wait_idle()
+    assert service._conversations.owners == {}
     turns = await stored_turns(service, one(events, "meta")["conversation_id"])
     assert turns == []
 
@@ -411,6 +423,7 @@ async def test_keep_alive_comments_are_sent(monkeypatch):
     app = create_app(
         settings("postgresql://nobody@127.0.0.1:1/none"),
         ask_service=service,
+        ledger=NoSpendLedger(),
         limits=AdmittingLimits(),
     )
     with TestClient(app, headers=guard_headers(app.state.settings)) as client:
@@ -437,6 +450,7 @@ def test_bad_request_body_is_422(body):
     app = create_app(
         settings("postgresql://nobody@127.0.0.1:1/none"),
         ask_service=make_service(Models([], []), FakeRetriever()),
+        ledger=NoSpendLedger(),
         limits=AdmittingLimits(),
     )
     with TestClient(app, headers=guard_headers(app.state.settings)) as client:
@@ -449,6 +463,7 @@ def test_question_of_500_characters_is_accepted():
     app = create_app(
         settings("postgresql://nobody@127.0.0.1:1/none"),
         ask_service=service,
+        ledger=NoSpendLedger(),
         limits=AdmittingLimits(),
     )
     with TestClient(app, headers=guard_headers(app.state.settings)) as client:

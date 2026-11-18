@@ -65,3 +65,11 @@ class AdmittingLimits:
             hashlib.sha256(session.ip.encode()).digest(),
             datetime.now(UTC).astimezone(SYDNEY).date(),
         )
+
+
+class NoSpendLedger:
+    async def paused(self, now: datetime) -> None:
+        return None
+
+    async def reserve_question(self, turn_id) -> None:
+        return None

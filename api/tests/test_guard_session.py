@@ -10,7 +10,7 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from guard_helpers import AdmittingLimits, Clock, guard_headers, guard_settings
+from guard_helpers import AdmittingLimits, Clock, NoSpendLedger, guard_headers, guard_settings
 from test_api import ExplodingPool
 from test_guard_ask import QuietService
 
@@ -280,7 +280,9 @@ def test_bearer_scheme_is_case_insensitive(refused_url):
     settings = guard_settings(refused_url)
     headers = guard_headers(settings)
     headers["Authorization"] = headers["Authorization"].replace("Bearer", "bEaReR")
-    app = create_app(settings, ask_service=QuietService(), limits=AdmittingLimits())
+    app = create_app(
+        settings, ask_service=QuietService(), limits=AdmittingLimits(), ledger=NoSpendLedger()
+    )
     with TestClient(app) as client:
         assert client.post("/api/ask", headers=headers, json={"question": "Hi"}).status_code == 200
 
