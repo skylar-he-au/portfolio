@@ -16,6 +16,7 @@ import psycopg
 import pytest
 from fakes import FakeEmbedder
 from fastapi.testclient import TestClient
+from guard_helpers import AdmittingLimits, guard_headers
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde import jsonplus
 from pydantic import SecretStr
@@ -229,8 +230,12 @@ async def test_private_question_has_no_tokens():
 async def test_sse_wire_format_through_the_endpoint():
     models = Models(*general_turn())
     service = make_service(models, FakeRetriever([MATCH, TESTS]))
-    app = create_app(settings("postgresql://nobody@127.0.0.1:1/none"), ask_service=service)
-    with TestClient(app) as client:
+    app = create_app(
+        settings("postgresql://nobody@127.0.0.1:1/none"),
+        ask_service=service,
+        limits=AdmittingLimits(),
+    )
+    with TestClient(app, headers=guard_headers(app.state.settings)) as client:
         resp = client.post("/api/ask", json={"question": EXAMPLE_Q})
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
@@ -403,8 +408,12 @@ async def test_keep_alive_comments_are_sent(monkeypatch):
     c, g = general_turn()
     models = Models([Slow(0.4, c[0]), c[1]], g)
     service = make_service(models, FakeRetriever([MATCH]))
-    app = create_app(settings("postgresql://nobody@127.0.0.1:1/none"), ask_service=service)
-    with TestClient(app) as client:
+    app = create_app(
+        settings("postgresql://nobody@127.0.0.1:1/none"),
+        ask_service=service,
+        limits=AdmittingLimits(),
+    )
+    with TestClient(app, headers=guard_headers(app.state.settings)) as client:
         resp = client.post("/api/ask", json={"question": EXAMPLE_Q})
     events, pings = parse_sse(resp.text)
     assert pings >= 3
@@ -428,16 +437,21 @@ def test_bad_request_body_is_422(body):
     app = create_app(
         settings("postgresql://nobody@127.0.0.1:1/none"),
         ask_service=make_service(Models([], []), FakeRetriever()),
+        limits=AdmittingLimits(),
     )
-    with TestClient(app) as client:
+    with TestClient(app, headers=guard_headers(app.state.settings)) as client:
         assert client.post("/api/ask", json=body).status_code == 422
 
 
 def test_question_of_500_characters_is_accepted():
     models = Models(*general_turn())
     service = make_service(models, FakeRetriever([MATCH]))
-    app = create_app(settings("postgresql://nobody@127.0.0.1:1/none"), ask_service=service)
-    with TestClient(app) as client:
+    app = create_app(
+        settings("postgresql://nobody@127.0.0.1:1/none"),
+        ask_service=service,
+        limits=AdmittingLimits(),
+    )
+    with TestClient(app, headers=guard_headers(app.state.settings)) as client:
         resp = client.post("/api/ask", json={"question": "x" * 500})
     assert resp.status_code == 200
     assert parse_sse(resp.text)[0][-1] == ("done", {})
@@ -522,7 +536,10 @@ def test_postgres_conversations_and_checkpoints(db_url: str, monkeypatch, caplog
             body["conversation_id"] = cid
         return parse_sse(client.post("/api/ask", json=body).text)[0]
 
-    with TestClient(app) as client, caplog.at_level(logging.WARNING):
+    with (
+        TestClient(app, headers=guard_headers(app.state.settings)) as client,
+        caplog.at_level(logging.WARNING),
+    ):
         assert client.get("/api/ping").status_code == 200
         assert "checkpoint_migrations" not in _tables(db_url)  # not until the first question
 

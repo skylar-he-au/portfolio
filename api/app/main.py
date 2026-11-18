@@ -1,16 +1,32 @@
 """FastAPI app. Run with `uvicorn app.main:app --no-access-log`."""
 
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response
 
 from app.api.ask import AskService, ask_router
+from app.api.session import session_router
 from app.config import Settings, get_settings
 from app.db import Database, make_pool
+from app.guard.limits import Limits, PauseSource
+from app.guard.session import Rejected, require_origin
+from app.guard.turnstile import TurnstileVerifier
 from app.qa.memory import make_checkpoint_pool
+
+logger = logging.getLogger(__name__)
+# Routes that skip the Worker secret check (`/api/cleanup` is added by the cleanup step).
+ORIGIN_EXEMPT_PATHS = frozenset({"/api/ping", "/api/health"})
+REQUIRED_SECRETS = ("origin_secret", "session_secret", "turnstile_secret")
+REQUIRED_CAPS = tuple(
+    f"spend_{period}_usd_{provider}"
+    for period in ("daily", "monthly")
+    for provider in ("anthropic", "google", "openai")
+)
 
 
 def create_app(
@@ -19,10 +35,21 @@ def create_app(
     *,
     checkpoint_pool: Any | None = None,
     ask_service: AskService | None = None,
+    limits: Limits | None = None,
+    pause_source: PauseSource | None = None,
+    turnstile_client: httpx.AsyncClient | None = None,
 ) -> FastAPI:
     """Build the app. Tests can inject fake pools or a whole `AskService`; by default both
     pools are made closed (the app's, and the checkpointer's for `/api/ask`)."""
     settings = settings or get_settings()
+    if settings.app_env == "prod":
+        missing = [
+            name.upper()
+            for name in (*REQUIRED_SECRETS, *REQUIRED_CAPS)
+            if getattr(settings, name) is None
+        ]
+        if missing:
+            raise RuntimeError(f"Missing required variables: {', '.join(missing)}")
     database_url = settings.database_url.get_secret_value()
     db = Database(pool if pool is not None else make_pool(database_url))
     if ask_service is None:
@@ -34,7 +61,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        # Nothing to do at startup: the pools open on first use.
+        if settings.app_env == "dev":
+            for name in REQUIRED_SECRETS:
+                if getattr(settings, name) is None:
+                    logger.warning("%s is not configured", name.upper())
+        # The pools still open only on first use.
         yield
         await ask_service.close()
         await db.close()
@@ -48,7 +79,34 @@ def create_app(
         redoc_url=None,
     )
 
+    app.state.settings = settings
+    app.state.db = db
+    app.state.limits = limits if limits is not None else Limits(db, settings, pause_source)
+    app.state.turnstile_verifier = TurnstileVerifier(settings, turnstile_client)
+
+    @app.exception_handler(Rejected)
+    async def rejected(_request: Request, error: Rejected) -> JSONResponse:
+        return JSONResponse(
+            {"code": error.code, "message": error.message}, status_code=error.status_code
+        )
+
+    @app.middleware("http")
+    async def trusted_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        # Also protect dev docs/schema; unknown paths keep their normal 404 response.
+        guarded = request.url.path not in ORIGIN_EXEMPT_PATHS and any(
+            getattr(route, "path", None) == request.url.path for route in app.routes
+        )
+        if guarded:
+            try:
+                require_origin(request)
+            except Rejected as error:
+                return await rejected(request, error)
+        return await call_next(request)
+
     app.include_router(ask_router(ask_service))
+    app.include_router(session_router())
 
     @app.get("/api/ping")
     async def ping() -> dict[str, str]:

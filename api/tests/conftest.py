@@ -18,6 +18,12 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 # `app.main` builds a module-level app at import time; give it a harmless URL.
 os.environ.setdefault("DATABASE_URL", "postgresql://nobody@127.0.0.1:1/none")
+os.environ.setdefault("ORIGIN_SECRET", "test-origin")
+os.environ.setdefault("SESSION_SECRET", "test-session")
+os.environ.setdefault("TURNSTILE_SECRET", "1x0000000000000000000000000000000AA")
+for period, cap in (("DAILY", "1"), ("MONTHLY", "10")):
+    for provider in ("ANTHROPIC", "GOOGLE", "OPENAI"):
+        os.environ.setdefault(f"SPEND_{period}_USD_{provider}", cap)
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 SKIP_REASON = "TEST_DATABASE_URL is not set; database tests skipped"
