@@ -217,10 +217,16 @@ async def test_matches_delete_after_30_days_up_to_limit(database):
     assert await rows(database, "SELECT id FROM match_log") == [(ids[2],)]
 
 
-async def test_question_sweep_and_cleanup_also_delete_old_matches(database):
+async def test_question_save_sweep_also_deletes_old_matches(database):
     ids = await seed_matches(database, (40, 1))
     assert await retention.delete_old_questions(database, 20) == 1
     assert await rows(database, "SELECT id FROM match_log") == [(ids[1],)]
+
+
+async def test_question_rows_sweep_leaves_match_log_alone(database):
+    ids = await seed_matches(database, (40, 1))
+    assert await retention.delete_old_question_rows(database, 20) == 0
+    assert {r[0] for r in await rows(database, "SELECT id FROM match_log")} == set(ids)
 
 
 async def test_match_record_write_sweeps_old_matches(database):

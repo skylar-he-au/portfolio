@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
@@ -45,17 +46,22 @@ async def _delete_reservations(db: Database) -> int:
 
 async def run_cleanup(db: Database, checkpoints: CheckpointStore) -> CleanupResult:
     result = CleanupResult(
-        dict.fromkeys(("questions", "conversations", "daily_keys", "counters", "reservations"), 0),
+        dict.fromkeys(
+            ("questions", "matches", "conversations", "daily_keys", "counters", "reservations"), 0
+        ),
         [],
     )
 
-    async def questions() -> int:
-        for _ in range(20):
-            count = await retention.delete_old_questions(db, limit=500)
-            result.deleted["questions"] += count
-            if count < 500:
-                break
-        return result.deleted["questions"]
+    def batched(name: str, sweep: Callable[..., Awaitable[int]]) -> Callable[[], Awaitable[int]]:
+        async def step() -> int:
+            for _ in range(20):
+                count = await sweep(db, limit=500)
+                result.deleted[name] += count
+                if count < 500:
+                    break
+            return result.deleted[name]
+
+        return step
 
     async def conversations() -> int:
         saver = await checkpoints.saver()
@@ -68,7 +74,8 @@ async def run_cleanup(db: Database, checkpoints: CheckpointStore) -> CleanupResu
 
     # Each sweep has its own boundary so a failed saver cannot stop key cleanup.
     for name, step in (
-        ("questions", questions),
+        ("questions", batched("questions", retention.delete_old_question_rows)),
+        ("matches", batched("matches", retention.delete_old_matches)),
         ("conversations", conversations),
         ("daily_keys", lambda: retention.delete_old_daily_keys(db)),
         ("counters", lambda: retention.delete_old_counters(db)),

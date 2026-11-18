@@ -24,7 +24,9 @@ from app.qa.memory import Checkpoints, make_checkpoint_pool
 AUDIENCE = "https://api.example.com/api/cleanup"
 EMAIL = "scheduler@example.iam.gserviceaccount.com"
 HEADERS = {"Authorization": "Bearer google-id-token"}
-COUNTS = dict.fromkeys(("questions", "conversations", "daily_keys", "counters", "reservations"), 0)
+COUNTS = dict.fromkeys(
+    ("questions", "matches", "conversations", "daily_keys", "counters", "reservations"), 0
+)
 
 
 @pytest.fixture
@@ -128,13 +130,28 @@ def test_cleanup_accepts_verified_claims_without_origin(refused_url, monkeypatch
 
 def seed_rows(url):
     ids = {
-        name: uuid.uuid4() for name in ("old_question", "question", "expired", "running", "recent")
+        name: uuid.uuid4()
+        for name in (
+            "old_question",
+            "question",
+            "old_match",
+            "match",
+            "expired",
+            "running",
+            "recent",
+        )
     }
     with psycopg.connect(url) as conn:
         for name, days in (("old_question", 31), ("question", 1)):
             conn.execute(
                 "INSERT INTO question_log (id, question, prompt_version, ip_hash, created_at) "
                 "VALUES (%s, 'question', 'v-test', %s, now() - %s * interval '1 day')",
+                (ids[name], b"hash", days),
+            )
+        for name, days in (("old_match", 31), ("match", 29)):
+            conn.execute(
+                "INSERT INTO match_log (id, source, prompt_version, ip_hash, created_at) "
+                "VALUES (%s, 'text', 'match-v1', %s, now() - %s * interval '1 day')",
                 (ids[name], b"hash", days),
             )
         for name, hours in (("expired", 25), ("running", 25), ("recent", 1)):
@@ -182,6 +199,7 @@ def seed_rows(url):
 def assert_rows_kept(url, ids, *, conversations_deleted=True):
     with psycopg.connect(url) as conn:
         assert conn.execute("SELECT id FROM question_log").fetchall() == [(ids["question"],)]
+        assert conn.execute("SELECT id FROM match_log").fetchall() == [(ids["match"],)]
         conversations = {ids["running"], ids["recent"]}
         if not conversations_deleted:
             conversations.add(ids["expired"])
@@ -230,6 +248,7 @@ def test_cleanup_real_retention_and_spend_booking(db_url, monkeypatch):
         assert response.json() == {
             "deleted": {
                 "questions": 1,
+                "matches": 1,
                 "conversations": 1,
                 "daily_keys": 1,
                 "counters": 1,
@@ -287,6 +306,7 @@ def test_cleanup_step_failure_still_runs_other_steps(db_url, monkeypatch, caplog
     assert response.json() == {
         "deleted": {
             "questions": 1,
+            "matches": 1,
             "conversations": 0,
             "daily_keys": 1,
             "counters": 1,
@@ -302,10 +322,15 @@ def test_cleanup_step_failure_still_runs_other_steps(db_url, monkeypatch, caplog
 @pytest.mark.anyio
 async def test_cleanup_batch_cap_and_single_saver(monkeypatch):
     questions = AsyncMock(return_value=500)
+    matches = AsyncMock(return_value=500)
     conversations = AsyncMock(return_value=500)
     keys = AsyncMock(return_value=2)
     counters = AsyncMock(return_value=3)
-    monkeypatch.setattr(cleanup.retention, "delete_old_questions", questions)
+    monkeypatch.setattr(cleanup.retention, "delete_old_question_rows", questions)
+    monkeypatch.setattr(cleanup.retention, "delete_old_matches", matches)
+    monkeypatch.setattr(
+        cleanup.retention, "delete_old_questions", AsyncMock(side_effect=AssertionError)
+    )
     monkeypatch.setattr(cleanup.retention, "delete_expired_conversations", conversations)
     monkeypatch.setattr(cleanup.retention, "delete_old_daily_keys", keys)
     monkeypatch.setattr(cleanup.retention, "delete_old_counters", counters)
@@ -318,13 +343,15 @@ async def test_cleanup_batch_cap_and_single_saver(monkeypatch):
     assert result.failed == []
     assert result.deleted == {
         "questions": 10_000,
+        "matches": 10_000,
         "conversations": 10_000,
         "daily_keys": 2,
         "counters": 3,
         "reservations": 0,
     }
-    assert questions.await_count == conversations.await_count == 20
+    assert questions.await_count == matches.await_count == conversations.await_count == 20
     assert all(call.kwargs["limit"] == 500 for call in questions.await_args_list)
+    assert all(call.kwargs["limit"] == 500 for call in matches.await_args_list)
     assert all(call.kwargs["limit"] == 500 for call in conversations.await_args_list)
     checkpoints.saver.assert_awaited_once()
     keys.assert_awaited_once_with(db)
@@ -372,6 +399,7 @@ async def test_cleanup_main_uses_settings_and_prints_json(db_url, monkeypatch, c
     assert json.loads(output) == {
         "deleted": {
             "questions": 1,
+            "matches": 1,
             "conversations": 1,
             "daily_keys": 1,
             "counters": 1,
