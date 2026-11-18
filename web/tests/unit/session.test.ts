@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockTurnstile, turnstileScripts } from './turnstile-mock';
 
 let session: typeof import('../../src/lib/session');
 const valid = () => ({ token: 'stored-token', expires_at: new Date(Date.now() + 3_600_000).toISOString() });
@@ -48,5 +49,75 @@ describe('session tokens', () => {
     expect(session.getToken()).toBe('stored-token');
     session.clearToken();
     expect(session.getToken()).toBeNull();
+  });
+});
+
+describe('shared session creation', () => {
+  let widget: ReturnType<typeof mockTurnstile>;
+  let releases: (() => void)[];
+
+  beforeEach(() => {
+    vi.stubEnv('PUBLIC_TURNSTILE_SITEKEY', 'test-sitekey');
+    widget = mockTurnstile();
+    releases = [session.acquireWidget(), session.acquireWidget()];
+  });
+
+  afterEach(() => {
+    for (const release of releases) release();
+    for (const script of turnstileScripts()) script.remove();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('deduplicates verification and the pending session fetch, isolating caller cancellation', async () => {
+    let resolveResponse!: (value: Response) => void;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+    vi.stubGlobal('fetch', fetchMock);
+    const first = new AbortController();
+    const second = new AbortController();
+    const firstResult = expect(session.createSession(first.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const other = session.createSession(second.signal);
+    first.abort();
+    await firstResult;
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(false);
+    resolveResponse(new Response(JSON.stringify(valid()), { status: 200 }));
+    await expect(other).resolves.toBe('stored-token');
+    expect(widget.api.execute).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(session.getToken()).toBe('stored-token');
+  });
+
+  it('aborts the session fetch after the last waiter cancels, ignoring late JSON', async () => {
+    let resolveResponse!: (value: Response) => void;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    const rejected = expect(session.createSession(controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    controller.abort();
+    await rejected;
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    resolveResponse(new Response(JSON.stringify(valid()), { status: 200 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.getToken()).toBeNull();
+  });
+
+  it('releases idempotently and creates a fresh hidden widget after the last release', async () => {
+    session.prepareWidget();
+    await vi.waitFor(() => expect(widget.api.render).toHaveBeenCalledOnce());
+    const container = widget.api.render.mock.calls[0][0];
+    releases[0]();
+    releases[0]();
+    expect(widget.api.remove).not.toHaveBeenCalled();
+    releases[1]();
+    expect(widget.api.remove).toHaveBeenCalledOnce();
+    expect(container).not.toBeInTheDocument();
+    releases.push(session.acquireWidget());
+    session.prepareWidget();
+    await vi.waitFor(() => expect(widget.api.render).toHaveBeenCalledTimes(2));
+    expect(widget.api.render.mock.calls[1][0]).not.toBe(container);
+    expect(turnstileScripts()).toHaveLength(1);
   });
 });

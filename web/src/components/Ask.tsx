@@ -4,9 +4,7 @@ import { answerSegments, unreferencedCitations } from '../lib/answer';
 import type { Citation, InlineSegment } from '../lib/answer';
 import { sendFeedback } from '../lib/feedback';
 import { parseSse } from '../lib/sse';
-import { clearToken, getToken, isSession, setToken } from '../lib/session';
-import { renderWidget } from '../lib/turnstile';
-import type { WidgetController } from '../lib/turnstile';
+import { acquireWidget, clearToken, createSession, getToken, HttpError, prepareWidget, responseError, VerificationError } from '../lib/session';
 import HowItAnswered from './HowItAnswered';
 import type { AnswerTrace, CheckResult } from './HowItAnswered';
 
@@ -29,34 +27,6 @@ interface Turn {
 const droppedMessage = 'The connection dropped — please try again.';
 const genericMessage = 'Something went wrong — please try again.';
 const unavailableMessage = 'The assistant is unavailable right now — please try again later or email me.';
-let warnedMissingSitekey = false;
-
-class VerificationError extends Error {}
-
-class HttpError extends Error {
-  constructor(readonly status: number, readonly code: unknown) {
-    let message = genericMessage;
-    switch (code) {
-      case 'auth': message = 'Please try again.'; break;
-      case 'slow_down': message = 'Too many requests — please wait a minute and try again.'; break;
-      case 'limit_day': message = "Today's AI limit is reached — please email me"; break;
-      case 'paused_month': message = 'The AI is paused until next month — please email me'; break;
-      case 'unavailable': message = unavailableMessage; break;
-    }
-    super(status === 422 ? 'Please ask a question of up to 500 characters.' : message);
-  }
-}
-
-async function responseError(response: Response): Promise<HttpError> {
-  let code: unknown;
-  try {
-    const body: unknown = await response.json();
-    if (typeof body === 'object' && body !== null && 'code' in body) code = body.code;
-  } catch {
-    // Non-JSON rejections use the generic message.
-  }
-  return new HttpError(response.status, code);
-}
 
 function errorMessage(code: unknown, message: unknown): string {
   switch (code) {
@@ -82,14 +52,12 @@ export default function Ask({ examples }: { examples: string[] }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [inProgress, setInProgress] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
-  const widgetContainer = useRef<HTMLDivElement | null>(null);
-  const widgetRef = useRef<WidgetController | null>(null);
-  const widgetExecuted = useRef(false);
   const mounted = useRef(true);
   const nextId = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
+    const releaseWidget = acquireWidget();
     const controller = new AbortController();
     const { signal } = controller;
 
@@ -131,29 +99,9 @@ export default function Ask({ examples }: { examples: string[] }) {
       mounted.current = false;
       controller.abort();
       requestRef.current?.abort();
-      widgetRef.current?.remove();
-      widgetRef.current = null;
-      widgetExecuted.current = false;
+      releaseWidget();
     };
   }, []);
-
-  function getWidget(): WidgetController {
-    const sitekey = import.meta.env.PUBLIC_TURNSTILE_SITEKEY;
-    if (!sitekey) {
-      if (!warnedMissingSitekey) {
-        console.warn('PUBLIC_TURNSTILE_SITEKEY is missing; the assistant is unavailable.');
-        warnedMissingSitekey = true;
-      }
-      throw new VerificationError(unavailableMessage);
-    }
-    if (!mounted.current || !widgetContainer.current) throw new VerificationError(unavailableMessage);
-    if (!widgetRef.current) widgetRef.current = renderWidget(widgetContainer.current, sitekey);
-    return widgetRef.current;
-  }
-
-  function prepareWidget() {
-    if (import.meta.env.PUBLIC_TURNSTILE_SITEKEY) getWidget();
-  }
 
   async function recordFeedback(turn: Turn) {
     if (!mounted.current || !turn.turnId || turn.feedback !== 'idle') return;
@@ -188,46 +136,9 @@ export default function Ask({ examples }: { examples: string[] }) {
     let privateRoute = false;
     let receivedMeta = false;
     let receivedTurnMeta = false;
-    let verificationRetries = 0;
-
-    async function createSession(reset = false): Promise<string> {
-      let turnstile: string;
-      try {
-        const widget = getWidget();
-        if (reset || widgetExecuted.current) widget.reset();
-        while (true) {
-          try {
-            widgetExecuted.current = true;
-            turnstile = await widget.execute();
-            break;
-          } catch (error) {
-            if (controller.signal.aborted || verificationRetries >= 1) throw error;
-            verificationRetries++;
-            widget.reset();
-          }
-        }
-      } catch {
-        throw new VerificationError(unavailableMessage);
-      }
-      controller.signal.throwIfAborted();
-      const response = await fetch('/api/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ turnstile }),
-        signal: controller.signal,
-      });
-      controller.signal.throwIfAborted();
-      if (!response.ok) throw await responseError(response);
-      const session: unknown = await response.json();
-      controller.signal.throwIfAborted();
-      if (!isSession(session)) throw new HttpError(response.status, undefined);
-      setToken(session);
-      return session.token;
-    }
 
     try {
-      if (!import.meta.env.PUBLIC_TURNSTILE_SITEKEY) getWidget();
-      let token = getToken() ?? await createSession();
+      let token = (import.meta.env.PUBLIC_TURNSTILE_SITEKEY && getToken()) || await createSession(controller.signal);
       let response: Response;
       for (let attempt = 0; ; attempt++) {
         controller.signal.throwIfAborted();
@@ -244,7 +155,7 @@ export default function Ask({ examples }: { examples: string[] }) {
         if (error.status === 401 && error.code === 'auth') {
           clearToken();
           if (attempt === 0) {
-            token = await createSession(true);
+            token = await createSession(controller.signal, true);
             continue;
           }
         }
@@ -316,8 +227,12 @@ export default function Ask({ examples }: { examples: string[] }) {
       }
       if (!terminal) update((turn) => ({ ...turn, error: droppedMessage, incomplete: true }));
     } catch (error) {
-      if (error instanceof HttpError || error instanceof VerificationError) {
-        update((turn) => ({ ...turn, error: error.message }));
+      if (error instanceof VerificationError) {
+        update((turn) => ({ ...turn, error: unavailableMessage }));
+      } else if (error instanceof HttpError) {
+        const message = error.status === 422 ? 'Please ask a question of up to 500 characters.'
+          : error.code === 'unavailable' ? unavailableMessage : error.message;
+        update((turn) => ({ ...turn, error: message }));
       } else if (!terminal) {
         update((turn) => ({ ...turn, error: droppedMessage, incomplete: true }));
       }
@@ -331,7 +246,6 @@ export default function Ask({ examples }: { examples: string[] }) {
   // Styles live in src/styles/global.css (.ask-*); the inline token keeps grid children shrinkable.
   return (
     <div className="ask" style={{ minInlineSize: 'var(--space-0)' }}>
-      <div ref={widgetContainer} hidden />
       <ol className="ask-turns" aria-label="Conversation">
         {turns.map((turn) => {
           const see = unreferencedCitations(turn.text, turn.citations);

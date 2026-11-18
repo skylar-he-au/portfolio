@@ -1,6 +1,7 @@
 ---
 import { getCollection, getEntry } from 'astro:content';
 import Ask from '../components/Ask';
+import Match from '../components/Match';
 import Base from '../layouts/Base.astro';
 import { addSectionAnchors } from '../lib/anchors';
 import { parseExamples } from '../lib/examples';
@@ -33,4 +34,5 @@ const projects = (await getCollection('pages', ({ id }) => projectIds.includes(i
     </div>
   </section>
   <section id="ask" aria-label="Ask about my projects"><Ask client:load examples={examples} /></section>
+  <section id="match" aria-label="Paste a job ad"><Match client:load /></section>
 </Base>
