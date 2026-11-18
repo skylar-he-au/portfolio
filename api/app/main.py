@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from app.api.ask import AskService, ask_router
 from app.api.cleanup import cleanup_router
 from app.api.feedback import feedback_router
+from app.api.match import MatchService, match_router
 from app.api.session import session_router
 from app.config import Settings, get_settings
 from app.db import Database, make_pool
@@ -41,6 +42,7 @@ def create_app(
     checkpoint_pool: Any | None = None,
     cleanup_checkpoints: Any | None = None,
     ask_service: AskService | None = None,
+    match_service: MatchService | None = None,
     limits: Limits | None = None,
     ledger: Ledger | None = None,
     pause_source: PauseSource | None = None,
@@ -70,6 +72,12 @@ def create_app(
         else Ledger(db, SpendLimits.from_settings(settings), MAX_OUTPUT_TOKENS)
     )
     pause_source = pause_source if pause_source is not None else ledger
+    limits = limits if limits is not None else Limits(db, settings, pause_source)
+    matches = (
+        match_service
+        if match_service is not None
+        else MatchService.for_app(settings, db, ledger, limits)
+    )
     if ask_service is None:
         ask_service = AskService.for_app(
             settings,
@@ -87,6 +95,7 @@ def create_app(
         # The pools still open only on first use.
         yield
         await ask_service.close()
+        await matches.close()
         try:
             await cleanup_checkpoints.close()
         finally:
@@ -104,7 +113,7 @@ def create_app(
     app.state.settings = settings
     app.state.db = db
     app.state.ledger = ledger
-    app.state.limits = limits if limits is not None else Limits(db, settings, pause_source)
+    app.state.limits = limits
     app.state.turnstile_verifier = TurnstileVerifier(settings, turnstile_client)
 
     @app.exception_handler(Rejected)
@@ -129,6 +138,7 @@ def create_app(
         return await call_next(request)
 
     app.include_router(ask_router(ask_service))
+    app.include_router(match_router(matches))
     app.include_router(session_router())
     app.include_router(feedback_router())
     app.include_router(cleanup_router(cleanup_checkpoints))

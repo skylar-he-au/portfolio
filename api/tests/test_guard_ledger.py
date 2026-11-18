@@ -372,3 +372,54 @@ async def test_unconfigured_limits_fail_closed_once_per_process(monkeypatch, cap
             await ledger.reserve_question(uuid4())
     assert caught.value.kind == "day"
     assert len(caplog.records) == 1
+
+
+# --- step 6b2: a worst path per kind --------------------------------------------------------
+
+
+def test_worst_path_per_kind() -> None:
+    ledger = Ledger(None, limits(), 1024)
+    assert ledger.worst() == ledger.worst("ask") == ledger.question_worst()
+    with pytest.raises(ValueError):
+        ledger.worst("match")
+    with pytest.raises(ValueError):
+        ledger.set_worst("ask", dict.fromkeys(PROVIDERS, Decimal(1)))
+    with pytest.raises(ValueError):
+        ledger.set_worst("match", {"anthropic": Decimal(1)})
+    ledger.set_worst("match", dict.fromkeys(PROVIDERS, Decimal("0.01")))
+    assert ledger.worst("match") == dict.fromkeys(PROVIDERS, Decimal("0.01"))
+
+
+async def test_paused_and_reserve_use_the_kinds_worst_path(ledger: Ledger) -> None:
+    now = datetime.now(UTC)
+    big = dict.fromkeys(PROVIDERS, Decimal("0.5"))
+    ledger.set_worst("match", big)
+    ledger.limits = limits(daily="0.4")
+    assert await ledger.paused(now) is None
+    assert await ledger.paused(now, "match") == "day"
+    with pytest.raises(AIPaused):
+        await ledger.reserve("match", uuid4(), now)
+    scope = await ledger.reserve("ask", uuid4(), now)
+    assert scope.reserved == ledger.question_worst()
+    small = dict.fromkeys(PROVIDERS, Decimal("0.01"))
+    scope = await ledger.reserve("match", uuid4(), now, amounts=small)
+    assert scope.reserved == small
+
+
+async def test_reserve_inside_a_callers_transaction_rolls_back_with_it(ledger: Ledger) -> None:
+    ledger.set_worst("match", dict.fromkeys(PROVIDERS, Decimal("0.01")))
+    with pytest.raises(RuntimeError):
+        async with ledger.db.connection() as conn, conn.transaction():
+            await ledger.reserve("match", uuid4(), conn=conn)
+            raise RuntimeError("the count failed after the reservation")
+    assert await rows(ledger, "SELECT * FROM spend_reservations") == []
+    async with ledger.db.connection() as conn, conn.transaction():
+        scope = await ledger.reserve("match", uuid4(), conn=conn)
+    assert (
+        len(
+            await rows(
+                ledger, "SELECT * FROM spend_reservations WHERE id = %s", (scope.question_id,)
+            )
+        )
+        == 3
+    )

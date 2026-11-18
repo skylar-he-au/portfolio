@@ -288,3 +288,105 @@ def test_sieves_store_hashes_and_default_bound(refused_url):
     assert all(len(key) == 32 for key in limits._issuing._entries)
     assert limits._issuing.max_keys == limits._coarse.max_keys == 10_000
     assert limits._issuing.limit == 10 and limits._coarse.limit == 30
+
+
+# --- step 6b2: fetch kind, sieve, peek, refund, hold ---------------------------------------
+
+
+async def counts(db: Database, kind: str) -> dict[str, int]:
+    return {scope: count for _, k, scope, _, count in await rows(db) if k == kind}
+
+
+async def test_peek_reads_but_never_counts(database, db_url):
+    clock = Clock(datetime(2026, 1, 1, 0, tzinfo=UTC))
+    limits = Limits(database, guard_settings(db_url, match_limit_token=2), clock=clock)
+    await limits.peek("match", visitor())
+    assert await rows(database) == []  # nothing written, not even a daily key
+    async with database.connection() as conn:
+        cursor = await conn.execute("SELECT count(*) FROM daily_keys")
+        assert await cursor.fetchone() == (0,)
+    await limits.admit("match", visitor())
+    await limits.peek("match", visitor())
+    await limits.admit("match", visitor())
+    with pytest.raises(Rejected) as caught:
+        await limits.peek("match", visitor())
+    assert caught.value.code == "limit_day"
+    assert await counts(database, "match") == {"token": 2, "ip": 2, "site": 2}
+    await limits.peek("match", visitor(2, "192.0.2.2"))  # another visitor still has room
+
+
+async def test_peek_sees_a_full_ip_and_site(database, db_url):
+    clock = Clock(datetime(2026, 1, 1, 0, tzinfo=UTC))
+    settings = guard_settings(db_url, match_limit_ip=1, match_limit_site=2)
+    limits = Limits(database, settings, clock=clock)
+    await limits.admit("match", visitor(1))
+    with pytest.raises(Rejected):
+        await limits.peek("match", visitor(2))  # same IP, new token
+    await limits.admit("match", visitor(3, "192.0.2.3"))
+    with pytest.raises(Rejected):
+        await limits.peek("match", visitor(4, "192.0.2.4"))  # the site is full
+
+
+async def test_refund_takes_one_back_and_clears_marks(database, db_url):
+    clock = Clock(datetime(2026, 1, 1, 0, tzinfo=UTC))
+    limits = Limits(database, guard_settings(db_url, match_limit_token=1), clock=clock)
+    admission = await limits.admit("match", visitor())
+    with pytest.raises(Rejected):
+        await limits.admit("match", visitor())  # sets the in-process token mark
+    await limits.refund(admission, visitor())
+    assert await counts(database, "match") == {"token": 0, "ip": 0, "site": 0}
+    await limits.admit("match", visitor())  # the mark is gone and the slot is back
+    await limits.refund(admission, visitor())
+    await limits.refund(admission, visitor())  # never below zero
+    assert await counts(database, "match") == {"token": 0, "ip": 0, "site": 0}
+
+
+async def test_hold_runs_in_the_counting_transaction(database, db_url):
+    clock = Clock(datetime(2026, 1, 1, 0, tzinfo=UTC))
+    limits = Limits(database, guard_settings(db_url), clock=clock)
+    seen = []
+
+    async def hold(conn):
+        cursor = await conn.execute("SELECT count FROM usage_counters WHERE scope = 'site'")
+        seen.append(await cursor.fetchall())
+        raise RuntimeError("reservation failed")
+
+    with pytest.raises(RuntimeError):
+        await limits.admit("match", visitor(), hold=hold)
+    assert seen == [[(1,)]]  # it saw the uncommitted count ...
+    assert await rows(database) == []  # ... which was rolled back with it
+
+    async def fine(conn):
+        await conn.execute("SELECT 1")
+
+    await limits.admit("match", visitor(), hold=fine)
+    assert await counts(database, "match") == {"token": 1, "ip": 1, "site": 1}
+
+
+async def test_fetch_has_a_minute_window_per_token_and_per_ip(database, db_url):
+    clock = Clock(datetime(2026, 1, 1, 0, tzinfo=UTC))
+    limits = Limits(database, guard_settings(db_url), clock=clock)
+    for _ in range(3):
+        await limits.admit("fetch", visitor(1), sieved=True)
+    with pytest.raises(Rejected) as caught:
+        await limits.admit("fetch", visitor(1), sieved=True)
+    assert caught.value.code == "slow_down"
+    with pytest.raises(Rejected):  # same IP, another token
+        await limits.admit("fetch", visitor(2), sieved=True)
+    clock.advance(seconds=61)
+    await limits.admit("fetch", visitor(1), sieved=True)
+    assert await counts(database, "fetch") == {"token": 4, "ip": 4, "site": 4}
+    # The minute window is the fetch kind's only: matches and questions are not slowed.
+    await limits.admit("match", visitor(1), sieved=True)
+
+
+async def test_sieve_is_the_in_process_part_only(refused_url):
+    clock = Clock(datetime(2026, 1, 1, 0, tzinfo=UTC))
+    limits = Limits(Database(ExplodingPool()), guard_settings(refused_url), clock=clock)
+    for _ in range(30):
+        limits.sieve("match", visitor())
+    with pytest.raises(Rejected) as caught:
+        limits.sieve("match", visitor())
+    assert caught.value.code == "slow_down"
+    with pytest.raises(ValueError):
+        limits.sieve("other", visitor())

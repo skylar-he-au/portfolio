@@ -1,4 +1,9 @@
-"""Postgres reservations and settlement for one question's spending."""
+"""Postgres reservations and settlement for one request's spending (a question or a match).
+
+Each kind of request has its own worst path (`Ledger.worst(kind)`): what one request of that
+kind reserves up front and what `paused(now, kind)` checks there is room for. The Q&A path
+is fixed in code (`question_worst`); other kinds register theirs (`set_worst`), the job match
+from its real prompt lengths (`app.api.match.match_worst`)."""
 
 import asyncio
 import logging
@@ -152,6 +157,7 @@ class Ledger:
         self.db = db
         self.limits = limits
         self.max_output_tokens = max_output_tokens
+        self._worst: dict[str, dict[str, Decimal]] = {}
 
     def _configured(self) -> bool:
         global _warned_unconfigured
@@ -166,6 +172,7 @@ class Ledger:
         return configured
 
     def question_worst(self) -> dict[str, Decimal]:
+        """The Q&A worst path: (3, 2, 3) calls at the input estimate and `max_output_tokens`."""
         return {
             provider: count
             * cost_usd(
@@ -178,17 +185,32 @@ class Ledger:
             for provider, count in zip(PROVIDERS, (3, 2, 3), strict=True)
         }
 
+    def set_worst(self, kind: str, amounts: Mapping[str, Decimal]) -> None:
+        """Register the worst path of `kind` (one amount per provider)."""
+        if kind == "ask" or set(amounts) != set(PROVIDERS):
+            raise ValueError("a worst path needs one amount per provider and a new kind")
+        self._worst[kind] = dict(amounts)
+
+    def worst(self, kind: str = "ask") -> dict[str, Decimal]:
+        if kind == "ask":
+            return self.question_worst()
+        try:
+            return dict(self._worst[kind])
+        except KeyError:
+            raise ValueError(f"no worst path registered for {kind!r}") from None
+
     async def _has_pause(self, conn: AsyncConnection, now: datetime) -> bool:
         cursor = await conn.execute("SELECT 1 FROM ai_pause WHERE until > %s LIMIT 1", (now,))
         return await cursor.fetchone() is not None
 
-    async def paused(self, now: datetime) -> PauseKind | None:
+    async def paused(self, now: datetime, kind: str = "ask") -> PauseKind | None:
+        """Read-only: would one more request of `kind` fit now? ("day" / "month" if not)."""
         if not self._configured():
             return "day"
+        worst = self.worst(kind)
         async with self.db.connection() as conn:
             if await self._has_pause(conn, now):
                 return "month"
-            worst = self.question_worst()
             totals = {
                 provider: await _totals(conn, provider, sydney_day(now), now)
                 for provider in PROVIDERS
@@ -213,32 +235,62 @@ class Ledger:
     async def reserve_question(
         self, question_id: UUID, now: datetime | None = None
     ) -> "SpendScope":
+        return await self.reserve("ask", question_id, now)
+
+    async def reserve(
+        self,
+        kind: str,
+        request_id: UUID,
+        now: datetime | None = None,
+        *,
+        amounts: Mapping[str, Decimal] | None = None,
+        conn: AsyncConnection | None = None,
+    ) -> "SpendScope":
+        """Reserve `amounts` (default: the worst path of `kind`) for one request.
+
+        With `conn` the rows are written in the caller's open transaction (the job match
+        reserves in the same transaction that adds to its daily count, so both happen or
+        neither does); otherwise in a transaction of its own. Raises `AIPaused`.
+        """
         if not self._configured():
             raise AIPaused("day")
         now = now if now is not None else datetime.now(UTC)
         day = sydney_day(now)
-        amounts = self.question_worst()
-        async with self.db.connection() as conn, conn.transaction():
-            for provider in PROVIDERS:
-                await _lock_provider(conn, provider)
-            if await self._has_pause(conn, now):
-                raise AIPaused("month")
-            for provider in PROVIDERS:
-                await _book_expired(conn, provider, now)
-                await self._check(conn, provider, day, now, amounts[provider])
-            for provider in PROVIDERS:
-                await conn.execute(
-                    "INSERT INTO spend_reservations (id, provider, day, usd, expires_at) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    (
-                        question_id,
-                        provider,
-                        day,
-                        amounts[provider],
-                        now + timedelta(seconds=RESERVATION_TTL_S),
-                    ),
-                )
-        return SpendScope(self, question_id, day, amounts)
+        worst = dict(amounts) if amounts is not None else self.worst(kind)
+        if conn is not None:
+            await self._reserve_in(conn, request_id, day, now, worst)
+        else:
+            async with self.db.connection() as own, own.transaction():
+                await self._reserve_in(own, request_id, day, now, worst)
+        return SpendScope(self, request_id, day, worst)
+
+    async def _reserve_in(
+        self,
+        conn: AsyncConnection,
+        request_id: UUID,
+        day: date,
+        now: datetime,
+        amounts: Mapping[str, Decimal],
+    ) -> None:
+        for provider in PROVIDERS:
+            await _lock_provider(conn, provider)
+        if await self._has_pause(conn, now):
+            raise AIPaused("month")
+        for provider in PROVIDERS:
+            await _book_expired(conn, provider, now)
+            await self._check(conn, provider, day, now, amounts[provider])
+        for provider in PROVIDERS:
+            await conn.execute(
+                "INSERT INTO spend_reservations (id, provider, day, usd, expires_at) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (
+                    request_id,
+                    provider,
+                    day,
+                    amounts[provider],
+                    now + timedelta(seconds=RESERVATION_TTL_S),
+                ),
+            )
 
     async def pause_provider(self, provider: str, now: datetime | None = None) -> None:
         now = now if now is not None else datetime.now(UTC)

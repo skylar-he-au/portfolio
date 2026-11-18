@@ -162,3 +162,49 @@ def test_feedback_database_down_is_unavailable(refused_url):
     with TestClient(create_app(settings), headers=guard_headers(settings)) as client:
         response = client.post("/api/feedback", json={"turn_id": str(uuid.uuid4())})
     assert response.status_code == 503 and response.json()["code"] == "unavailable"
+
+
+# --- step 6b2: thumbs-down on a job match ------------------------------------------------
+
+
+def seed_match(db_url, *, days=1):
+    match_id = uuid.uuid4()
+    with psycopg.connect(db_url) as conn:
+        conn.execute(
+            "INSERT INTO match_log (id, source, prompt_version, ip_hash, created_at) "
+            "VALUES (%s, 'text', 'match-v1', %s, now() - %s * interval '1 day')",
+            (match_id, b"hash", days),
+        )
+    return match_id
+
+
+@pytest.mark.parametrize("days, changed", [(1, True), (31, False)])
+def test_feedback_marks_only_recent_matches(db_url, days, changed):
+    migrate(db_url)
+    match_id = seed_match(db_url, days=days)
+    turn_id = seed_question(db_url)
+    settings = guard_settings(db_url)
+    with TestClient(create_app(settings), headers=guard_headers(settings)) as client:
+        assert client.post("/api/feedback", json={"match_id": str(match_id)}).status_code == 204
+    with psycopg.connect(db_url) as conn:
+        assert conn.execute("SELECT thumbs_down FROM match_log").fetchone() == (changed,)
+        # The question with no feedback is untouched.
+        row = conn.execute("SELECT thumbs_down FROM question_log WHERE id = %s", (turn_id,))
+        assert row.fetchone() == (False,)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"turn_id": str(uuid.uuid4()), "match_id": str(uuid.uuid4())},
+        {"match_id": None},
+        {"turn_id": None, "match_id": None},
+        {"match_id": "bad"},
+    ],
+)
+def test_feedback_needs_exactly_one_id(refused_url, body):
+    settings = guard_settings(refused_url)
+    pool = ExplodingPool()
+    with TestClient(create_app(settings, pool=pool), headers=guard_headers(settings)) as client:
+        assert client.post("/api/feedback", json=body).status_code == 422
+    assert pool.touched == []

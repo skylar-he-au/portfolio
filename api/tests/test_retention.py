@@ -191,3 +191,45 @@ async def test_records_isolates_insert_and_each_sweep_failure(monkeypatch, caplo
     assert len(caplog.records) == 5
     assert "RuntimeError" in caplog.text
     assert "secret-question-answer-token-ip" not in caplog.text
+
+
+# --- step 6b2: the job-match log ------------------------------------------------------------
+
+
+async def seed_matches(database, days):
+    ids = [uuid.uuid4() for _ in days]
+    async with database.connection() as conn:
+        for mid, age in zip(ids, days, strict=True):
+            await conn.execute(
+                "INSERT INTO match_log (id, source, prompt_version, ip_hash, created_at) "
+                "VALUES (%s, 'lever', 'match-v1', %s, now() - %s * interval '1 day')",
+                (mid, b"hash", age),
+            )
+        await conn.commit()
+    return ids
+
+
+async def test_matches_delete_after_30_days_up_to_limit(database):
+    ids = await seed_matches(database, (32, 31, 29))
+    assert await retention.delete_old_matches(database, 1) == 1
+    assert {r[0] for r in await rows(database, "SELECT id FROM match_log")} == set(ids[1:])
+    assert await retention.delete_old_matches(database, 20) == 1
+    assert await rows(database, "SELECT id FROM match_log") == [(ids[2],)]
+
+
+async def test_question_sweep_and_cleanup_also_delete_old_matches(database):
+    ids = await seed_matches(database, (40, 1))
+    assert await retention.delete_old_questions(database, 20) == 1
+    assert await rows(database, "SELECT id FROM match_log") == [(ids[1],)]
+
+
+async def test_match_record_write_sweeps_old_matches(database):
+    from app.records import MatchRecord, MatchRecords
+
+    old = await seed_matches(database, (35,))
+    new = MatchRecord(uuid.uuid4(), "text", "en", "match-v1", ["anthropic"], Decimal("0.01"), b"h")
+    await MatchRecords(database).write(new)
+    await MatchRecords(database).write(new)  # same id twice: one row
+    stored = await rows(database, "SELECT id, source, job_language, cost_usd FROM match_log")
+    assert stored == [(new.id, "text", "en", Decimal("0.010000"))]
+    assert old[0] not in {r[0] for r in stored}

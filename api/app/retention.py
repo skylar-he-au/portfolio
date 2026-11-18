@@ -1,6 +1,8 @@
-"""Small retention sweeps run after each question is recorded.
+"""Small retention sweeps run after each question or job match is recorded.
 
-Daily keys and counters keep today and yesterday (the privacy page says "two days")."""
+Daily keys and counters keep today and yesterday (the privacy page says "two days").
+Question records and job-match records keep 30 days and are deleted together
+(`delete_old_questions` sweeps both, so the cleanup endpoint covers `match_log` too)."""
 
 from typing import Any
 
@@ -8,10 +10,25 @@ from app.db import Database
 
 
 async def delete_old_questions(db: Database, limit: int) -> int:
+    """Delete up to `limit` question records and up to `limit` job-match records older than
+    30 days, oldest first; returns how many rows went in all."""
     async with db.connection() as conn:
         cursor = await conn.execute(
             "DELETE FROM question_log WHERE id IN ("
             "SELECT id FROM question_log WHERE created_at < now() - interval '30 days' "
+            "ORDER BY created_at LIMIT %s)",
+            (limit,),
+        )
+        await conn.commit()
+        deleted = cursor.rowcount
+    return deleted + await delete_old_matches(db, limit)
+
+
+async def delete_old_matches(db: Database, limit: int) -> int:
+    async with db.connection() as conn:
+        cursor = await conn.execute(
+            "DELETE FROM match_log WHERE id IN ("
+            "SELECT id FROM match_log WHERE created_at < now() - interval '30 days' "
             "ORDER BY created_at LIMIT %s)",
             (limit,),
         )

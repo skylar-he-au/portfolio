@@ -1,13 +1,15 @@
 ---
 title: Privacy
-summary: What happens to the questions you type, who else sees them, and how long each party keeps them.
-updated: 2026-11-18
+summary: What happens to the questions you type and the job ads you paste, who else sees them, and how long each party keeps them.
+updated: 2026-11-19
 rag: true
 ---
 
 ## Who sees your question
 
 This Privacy page of Skylar's portfolio explains where a question typed into the site goes. Your question is processed by up to five services: Anthropic (Claude rewrites your question and writes the answer), Google (Gemini checks the answer, takes over the other's job if one of the two fails, and Google Cloud Run also hosts this site's backend), OpenAI (embeddings, voice transcription and read-aloud), Cloudflare (bot check and request routing) and Neon (the database that stores the data described below).
+
+A job ad you paste into the job match goes to Anthropic and Google: Claude reads the ad and compares each requirement with the project pages, and Gemini checks the links in the guide (each takes over the other's job if one of the two fails). Only a short English search phrase for each requirement is sent to OpenAI, for embeddings. If you paste a Greenhouse or Lever job link instead of the text, the site fetches that one job ad from Greenhouse's or Lever's public job-board API; the request comes from the site's server, not from your browser.
 
 ## How long the AI providers keep it
 
@@ -21,14 +23,15 @@ This site (Skylar's portfolio) sends your text to outside services, and each one
 
 ## What this site stores and for how long
 
-Privacy on this site (Skylar's portfolio): this is everything the site stores about your visit. A scheduled cleanup runs once a day, and the site also deletes expired data whenever it saves a new question. Because the cleanup runs only once a day, each item is deleted at the first cleanup after it expires, which can be up to about a day later.
+Privacy on this site (Skylar's portfolio): this is everything the site stores about your visit. A scheduled cleanup runs once a day, and the site also deletes expired data whenever it saves a new question or job match. Because the cleanup runs only once a day, each item is deleted at the first cleanup after it expires, which can be up to about a day later.
 
 - **Question record**: your question is stored for 30 days with these fields only: time, question text, answer language, prompt version, which model providers were used, cost, a hash of your IP address for that day, and any thumbs-down you gave. The record does not contain the answer, any pasted job description, your session token or your IP address. It is deleted at the first cleanup after 30 days, so at most about 31 days after you asked.
-- **Conversation state**: answers and any pasted job description text are kept in the conversation for 24 hours, and so is the read-aloud audio cache. They are deleted at the first cleanup after 24 hours, so at most about 48 hours after you asked.
+- **Job-match record**: each job match is stored for 30 days with these fields only: time, source (a Greenhouse link, a Lever link or pasted text), the job ad's language, prompt version, which model providers were used, cost, a hash of your IP address for that day, and any thumbs-down you gave. Job ads you paste or link to aren't stored by this site; it keeps only the fields above, not the job ad, the requirements read from it or the guide. The record is deleted at the first cleanup after 30 days, so at most about 31 days after the match.
+- **Conversation state**: answers are kept in the conversation for 24 hours, and so is the read-aloud audio cache. They are deleted at the first cleanup after 24 hours, so at most about 48 hours after you asked.
 - **Session token**: when the bot check passes, the site gives your browser a session token that works for 24 hours. It is kept only in this browser tab (session storage), so closing the tab forgets it, and it is not saved in the site's database. The site counts requests using a hash of the token's random ID, not the token itself.
-- **Daily request counters**: how many requests each session (by token hash) and each daily IP hash made that day, used to enforce daily limits. Only today's and yesterday's counts are kept; older ones are deleted at the next cleanup.
+- **Daily request counters**: how many requests each session (by token hash) and each daily IP hash made that day (questions, job matches and job links fetched), used to enforce daily limits. Only today's and yesterday's counts are kept; older ones are deleted at the next cleanup.
 - **Spending records**: how much money was spent on each AI provider each day, used for monthly totals. They contain no personal data and are kept.
-- **Thumbs-down**: if you click the thumbs-down button under an answer, the site sends that answer's ID, plus your session token so it can apply the daily limit, and marks the matching question record. The mark lives in that record and is deleted with it after 30 days.
+- **Thumbs-down**: if you click the thumbs-down button under an answer or a job-match guide, the site sends that answer's or match's ID, plus your session token so it can apply the daily limit, and marks the matching question record or job-match record. The mark lives in that record and is deleted with it after 30 days.
 
 ## IP addresses
 
@@ -44,7 +47,7 @@ If you use the microphone on Skylar's portfolio site, the recording is not store
 
 ## Memory between visits
 
-Skylar's portfolio site remembers nothing between visits: the assistant remembers only within one conversation. A conversation is kept for 24 hours and deleted at the first daily cleanup after that, so within about 48 hours. It does not recognise you or remember anything from an earlier visit.
+Skylar's portfolio site remembers nothing between visits: the assistant remembers only within one conversation. A conversation is kept for 24 hours and deleted at the first daily cleanup after that, so within about 48 hours. It does not recognise you or remember anything from an earlier visit. A job match is not part of a conversation: each one stands alone and nothing from it is remembered.
 
 ## Questions used to test the assistant
 
@@ -52,4 +55,4 @@ Questions used to test the assistant on this site (Skylar's portfolio): a questi
 
 ## Deleting your data
 
-To have your data on this site (Skylar's portfolio) deleted, email me at TBD (address to be added) and include the exact text of your question so I can find it.
+To have your data on this site (Skylar's portfolio) deleted, email me at TBD (address to be added) and include the exact text of your question so I can find it. A job-match record holds no text, so for one of those tell me roughly when you ran the match.
