@@ -2,11 +2,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import Ask from '../../src/components/Ask';
+import { mockTurnstile, turnstileScripts } from './turnstile-mock';
 import HowItAnswered from '../../src/components/HowItAnswered';
 import type { AnswerTrace } from '../../src/components/HowItAnswered';
 
+let Ask: typeof import('../../src/components/Ask').default;
+let widget: ReturnType<typeof mockTurnstile>;
+
 const examples = ['First question?', 'Second question?', 'Third question?'];
+const unavailable = 'The assistant is unavailable right now — please try again later or email me.';
 
 function response(status = 200, body: unknown = {}, stream: ReadableStream<Uint8Array> | null = null) {
   return { status, ok: status >= 200 && status < 300, body: stream, json: async (): Promise<unknown> => body };
@@ -39,11 +43,13 @@ function mockEndpoints({
   ping = async () => response(),
   health = async () => response(200, { db: 'ok', pgvector: '0.8.0' }),
   ask = async () => eventResponse([['done', {}]]),
-}: { ping?: Endpoint; health?: Endpoint; ask?: Endpoint } = {}) {
+  session = async () => response(200, { token: 'session-token', expires_at: new Date(Date.now() + 3_600_000).toISOString() }),
+}: { ping?: Endpoint; health?: Endpoint; ask?: Endpoint; session?: Endpoint } = {}) {
   const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
     if (input === '/api/ping') return ping();
     if (input === '/api/health') return health();
     if (input === '/api/ask') return ask();
+    if (input === '/api/session') return session();
     throw new Error(`Unexpected request: ${String(input)}`);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -65,17 +71,267 @@ async function send(text = 'My question?') {
   draft(text);
   const button = screen.getByRole('button', { name: 'Send' });
   await waitFor(() => expect(button).toBeEnabled());
-  expect(fireEvent.submit(button.closest('form')!)).toBe(false);
+  await act(async () => { expect(fireEvent.submit(button.closest('form')!)).toBe(false); });
 }
 
-beforeEach(() => { vi.stubEnv('DEV', true); });
+beforeEach(async () => {
+  vi.resetModules();
+  sessionStorage.clear();
+  vi.stubEnv('DEV', true);
+  vi.stubEnv('PUBLIC_TURNSTILE_SITEKEY', 'test-sitekey');
+  widget = mockTurnstile();
+  Ask = (await import('../../src/components/Ask')).default;
+});
 
 afterEach(() => {
   cleanup();
+  for (const script of turnstileScripts()) script.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
+
+describe('Ask sessions and Turnstile', () => {
+  it('mounts without third-party requests or scripts, and keeps ping unauthenticated', async () => {
+    const { fetchMock } = await renderReady();
+    expect(turnstileScripts()).toHaveLength(0);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/ping', '/api/health']);
+    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('headers');
+    expect(widget.api.render).not.toHaveBeenCalled();
+  });
+
+  it('loads one script and renders one hidden widget on repeated focus', async () => {
+    await renderReady();
+    fireEvent.focus(screen.getByRole('textbox'));
+    fireEvent.focus(screen.getByRole('textbox'));
+    await waitFor(() => expect(widget.api.render).toHaveBeenCalledOnce());
+    expect(turnstileScripts()).toHaveLength(1);
+    const [container, options] = widget.api.render.mock.calls[0];
+    expect(container).not.toBeVisible();
+    expect(options).toMatchObject({ sitekey: 'test-sitekey', execution: 'execute', action: 'ask', appearance: 'execute' });
+    expect(widget.api.execute).not.toHaveBeenCalled();
+  });
+
+  it('loads the widget when an example is clicked', async () => {
+    await renderReady();
+    fireEvent.click(screen.getByRole('button', { name: examples[0] }));
+    await waitFor(() => expect(widget.api.render).toHaveBeenCalledOnce());
+    expect(turnstileScripts()).toHaveLength(1);
+  });
+
+  it('gets a session before asking, authorizes both questions, and reuses the token', async () => {
+    const { fetchMock } = await renderReady();
+    await send('First');
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    await send('Second');
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    const calls = fetchMock.mock.calls.filter(([url]) => url === '/api/session' || url === '/api/ask');
+    expect(calls.map(([url]) => url)).toEqual(['/api/session', '/api/ask', '/api/ask']);
+    expect(calls[0][1]).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ turnstile: 'turnstile-token' }) });
+    for (const call of calls.slice(1)) expect(call[1]?.headers).toMatchObject({ Authorization: 'Bearer session-token' });
+    expect(widget.api.execute).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('refreshes after auth once; repeated auth = %s', async (repeat) => {
+    sessionStorage.setItem('session', JSON.stringify({ token: 'old-token', expires_at: new Date(Date.now() + 3_600_000).toISOString() }));
+    const remove = vi.spyOn(Storage.prototype, 'removeItem');
+    const ask = vi.fn<Endpoint>().mockResolvedValueOnce(response(401, { code: 'auth' }))
+      .mockImplementation(async () => repeat ? response(401, { code: 'auth' }) : eventResponse([['answer', { text: 'Refreshed', citations: [] }], ['done', {}]]));
+    const { fetchMock } = await renderReady(ask);
+    await send('Same question');
+    if (repeat) expect(await screen.findByRole('alert')).toHaveTextContent('Please try again.');
+    else await screen.findByText('Refreshed');
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledWith('session');
+    expect(widget.api.reset).toHaveBeenCalledOnce();
+    expect(widget.api.execute).toHaveBeenCalledOnce();
+    expect(widget.api.reset.mock.invocationCallOrder[0]).toBeLessThan(widget.api.execute.mock.invocationCallOrder[0]);
+    const calls = fetchMock.mock.calls.filter(([url]) => url === '/api/ask');
+    expect(calls[0][1]?.headers).toMatchObject({ Authorization: 'Bearer old-token' });
+    expect(calls[1][1]?.headers).toMatchObject({ Authorization: 'Bearer session-token' });
+    expect(calls.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([{ question: 'Same question' }, { question: 'Same question' }]);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session')).toHaveLength(1);
+    if (repeat) expect((await import('../../src/lib/session')).getToken()).toBeNull();
+  });
+
+  it('refreshes a session created for the first question after auth rejection', async () => {
+    const ask = vi.fn<Endpoint>().mockResolvedValueOnce(response(401, { code: 'auth' }))
+      .mockResolvedValueOnce(eventResponse([['answer', { text: 'After refresh', citations: [] }], ['done', {}]]));
+    const { fetchMock } = await renderReady(ask);
+    await send();
+    await screen.findByText('After refresh');
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session' || url === '/api/ask').map(([url]) => url))
+      .toEqual(['/api/session', '/api/ask', '/api/session', '/api/ask']);
+    expect(widget.api.execute).toHaveBeenCalledTimes(2);
+    expect(widget.api.reset).toHaveBeenCalledOnce();
+  });
+
+  describe.each(['/api/ask', '/api/session'])('%s rejections', (endpoint) => {
+    it.each([
+      ['limit_day', 429, "Today's AI limit is reached — please email me"],
+      ['paused_month', 503, 'The AI is paused until next month — please email me'],
+      ['slow_down', 429, 'Too many requests — please wait a minute and try again.'],
+      ['forbidden', 403, 'Something went wrong — please try again.'],
+      ['unavailable', 503, unavailable],
+      ['auth', 401, 'Please try again.'],
+      ['unknown', 500, 'Something went wrong — please try again.'],
+    ] as const)('maps %s HTTP %i to its fixed message', async (code, status, message) => {
+      const reject = async () => response(status, { code, message: 'Untrusted server text' });
+      const fetchMock = mockEndpoints(endpoint === '/api/ask' ? { ask: reject } : { session: reject });
+      render(<Ask examples={examples} />);
+      await send();
+      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      expect(screen.queryByText('Untrusted server text')).not.toBeInTheDocument();
+      expect(screen.getByText('You asked:').parentElement).toHaveTextContent('My question?');
+      if (endpoint === '/api/session') {
+        expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session')).toHaveLength(1);
+        expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ask')).toHaveLength(0);
+      }
+    });
+
+    it('handles unparseable JSON with the generic message', async () => {
+      const reject = async () => ({ ...response(503), json: async () => { throw new SyntaxError('Bad JSON'); } });
+      mockEndpoints(endpoint === '/api/ask' ? { ask: reject } : { session: reject });
+      render(<Ask examples={examples} />);
+      await send();
+      expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong — please try again.');
+    });
+  });
+
+  it('stops if the refresh session itself replies auth', async () => {
+    sessionStorage.setItem('session', JSON.stringify({ token: 'old', expires_at: new Date(Date.now() + 3_600_000).toISOString() }));
+    const fetchMock = mockEndpoints({ ask: async () => response(401, { code: 'auth' }), session: async () => response(401, { code: 'auth' }) });
+    render(<Ask examples={examples} />);
+    await send();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Please try again.');
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ask')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session')).toHaveLength(1);
+    expect(widget.api.execute).toHaveBeenCalledOnce();
+  });
+
+  it('asks and reuses memory when sessionStorage get/set throw', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Blocked'); });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Blocked'); });
+    const { fetchMock } = await renderReady();
+    await send();
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    await send('Again');
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ask')).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session')).toHaveLength(1);
+  });
+
+  it.each([undefined, ''])('handles missing sitekey %j without loading a script, and warns once', async (sitekey) => {
+    vi.stubEnv('PUBLIC_TURNSTILE_SITEKEY', sitekey);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { fetchMock } = await renderReady();
+    fireEvent.focus(screen.getByRole('textbox'));
+    await send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(unavailable);
+    await send('Again');
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
+    expect(warn).toHaveBeenCalledOnce();
+    expect(turnstileScripts()).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/session' || url === '/api/ask')).toBe(false);
+  });
+
+  it('replaces a session expiring in less than five minutes', async () => {
+    sessionStorage.setItem('session', JSON.stringify({ token: 'expiring', expires_at: new Date(Date.now() + 299_000).toISOString() }));
+    const { fetchMock } = await renderReady();
+    await send();
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session')).toHaveLength(1);
+    expect(fetchMock.mock.calls.find(([url]) => url === '/api/ask')?.[1]?.headers).toMatchObject({ Authorization: 'Bearer session-token' });
+  });
+
+  it('resets the used widget when a later question needs a new session', async () => {
+    const { fetchMock } = await renderReady();
+    await send();
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    const session = await import('../../src/lib/session');
+    session.setToken({ token: 'expiring', expires_at: new Date(Date.now() + 299_000).toISOString() });
+    await send('Next question');
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    expect(widget.api.execute).toHaveBeenCalledTimes(2);
+    expect(widget.api.reset).toHaveBeenCalledOnce();
+    expect(widget.api.reset.mock.invocationCallOrder[0]).toBeLessThan(widget.api.execute.mock.invocationCallOrder[1]);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session')).toHaveLength(2);
+  });
+
+  it('waits for a loading widget before sending a session or question', async () => {
+    widget.api.ready.mockImplementation(() => {});
+    const { fetchMock } = await renderReady();
+    fireEvent.focus(screen.getByRole('textbox'));
+    await send();
+    expect(widget.api.execute).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/session' || url === '/api/ask')).toBe(false);
+    await act(async () => { widget.api.ready.mock.calls[0][0](); });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/ask')).toBe(true));
+    expect(widget.api.render).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the Turnstile failure retry budget across an auth refresh', async () => {
+    widget.api.execute.mockImplementationOnce(() => { widget.options()['error-callback'](); })
+      .mockImplementationOnce(() => { widget.options().callback('proof'); })
+      .mockImplementationOnce(() => { widget.options()['error-callback'](); });
+    const { fetchMock } = await renderReady(async () => response(401, { code: 'auth' }));
+    await send();
+    expect(await screen.findByRole('alert')).toHaveTextContent(unavailable);
+    expect(widget.api.execute).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/session')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ask')).toHaveLength(1);
+  });
+
+  it('aborts a pending session request and ignores its late JSON on unmount', async () => {
+    let resolveJson!: (body: unknown) => void;
+    const session = async () => ({ ...response(), json: () => new Promise<unknown>((resolve) => { resolveJson = resolve; }) });
+    const fetchMock = mockEndpoints({ session });
+    const { unmount } = render(<Ask examples={examples} />);
+    await send();
+    const signal = fetchMock.mock.calls.find(([url]) => url === '/api/session')?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
+    unmount();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { resolveJson({ token: 'late', expires_at: new Date(Date.now() + 3_600_000).toISOString() }); });
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ask')).toBe(false);
+    expect(sessionStorage.getItem('session')).toBeNull();
+  });
+
+  it.each([false, true])('retries a Turnstile failure once; repeated failure = %s', async (repeat) => {
+    widget.api.execute.mockImplementationOnce(() => { widget.options()['error-callback'](); });
+    if (repeat) widget.api.execute.mockImplementationOnce(() => { widget.options()['error-callback'](); });
+    const { fetchMock } = await renderReady();
+    await send();
+    if (repeat) expect(await screen.findByRole('alert')).toHaveTextContent(unavailable);
+    else await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    expect(widget.api.execute).toHaveBeenCalledTimes(2);
+    expect(widget.api.reset).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ask')).toHaveLength(repeat ? 0 : 1);
+  });
+
+  it('removes the widget on unmount and ignores a pending execution', async () => {
+    widget.api.execute.mockImplementation(() => {});
+    const { unmount, fetchMock } = await renderReady();
+    await send();
+    await waitFor(() => expect(widget.api.execute).toHaveBeenCalledOnce());
+    unmount();
+    expect(widget.api.remove).toHaveBeenCalledWith('widget-1');
+    await act(async () => { widget.options().callback('late-token'); });
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/session' || url === '/api/ask')).toBe(false);
+  });
+
+  it('does not render a widget when readiness finishes after unmount', async () => {
+    widget.api.ready.mockImplementation(() => {});
+    const { unmount } = await renderReady();
+    fireEvent.focus(screen.getByRole('textbox'));
+    await waitFor(() => expect(widget.api.ready).toHaveBeenCalled());
+    const ready = widget.api.ready.mock.calls[0][0];
+    unmount();
+    await act(async () => { ready(); });
+    expect(widget.api.render).not.toHaveBeenCalled();
+  });
+});
+
 
 describe('Ask readiness and retained behaviour', () => {
   it('keeps Send disabled until ping returns 200, with a labelled 500-character textarea', async () => {
@@ -297,7 +553,7 @@ describe('Ask streaming', () => {
     expect(screen.queryByRole('link', { name: '[2]' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '[9]' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Answer')).toHaveTextContent('<script>alert(1)</script>');
-    expect(document.querySelector('script')).toBeNull();
+    expect(screen.getByLabelText('Answer').querySelector('script')).toBeNull();
     await act(async () => {
       stream.emit('check', { passed: false, unsupported: ['Unsupported sentence.'], retried: true });
     });
@@ -411,10 +667,12 @@ describe('Ask streaming', () => {
     await screen.findByText('Second answer');
     const calls = fetchMock.mock.calls.filter(([input]) => input === '/api/ask');
     expect(calls).toHaveLength(2);
-    expect(calls[0][1]).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: expect.any(AbortSignal) });
+    expect(calls[0][1]).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer session-token' }, signal: expect.any(AbortSignal) });
     expect(JSON.parse(String(calls[0][1]?.body))).toEqual({ question: 'First question' });
     expect(JSON.parse(String(calls[1][1]?.body))).toEqual({ question: 'Second question', conversation_id: 'session-123' });
-    expect(storage).not.toHaveBeenCalled();
+    expect(storage).toHaveBeenCalledOnce();
+    expect(storage).toHaveBeenCalledWith('session', expect.any(String));
+    expect(JSON.parse(String(storage.mock.calls[0][1]))).toEqual({ token: 'session-token', expires_at: expect.any(String) });
     const turns = within(screen.getByRole('list', { name: 'Conversation' })).getAllByRole('listitem');
     expect(turns).toHaveLength(2);
     expect(turns[0]).toHaveTextContent('You asked: First question');

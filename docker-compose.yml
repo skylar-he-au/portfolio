@@ -58,6 +58,9 @@ services:
     command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 4321"
     environment:
       API_ORIGIN: http://api:8000
+      # Compose reads these from the host environment or the root .env.
+      ORIGIN_SECRET: ${ORIGIN_SECRET:-}
+      PUBLIC_TURNSTILE_SITEKEY: ${PUBLIC_TURNSTILE_SITEKEY:-}
       # No outbound calls from the dev server. The update check also writes
       # web/.astro/settings.json, which on a bind mount triggers a restart that
       # loses the content collection on a container's first start.
