@@ -3,8 +3,9 @@
 Every call gets one overall deadline (`deadline_s`, from `GraphDeps.call_timeout`: 30 s in
 production) that covers the SDK's own retries too. Any exception, the deadline or an
 empty/invalid reply counts as the provider failing; the next provider in the order then
-gets the same messages. If every provider fails the node raises `ModelsUnavailable` and
-the API sends `error unavailable`.
+gets the same messages. With a spending scope, provider budget errors pause AI and propagate
+immediately. If every provider fails the node raises `ModelsUnavailable` and the API sends
+`error unavailable`.
 Failures are logged by exception type only: no prompts, no answers, no keys.
 """
 
@@ -22,6 +23,7 @@ from langgraph.constants import TAG_NOSTREAM
 from pydantic import BaseModel
 
 from app.config import Settings
+from app.guard.usage import estimate_input_tokens, metered, raise_if_budget_exhausted
 from app.qa.output import message_text
 from app.rag.types import ModelsUnavailable
 
@@ -114,13 +116,24 @@ async def structured[T: BaseModel](
     last: BaseException | None = None
     for provider in order:
         try:
-            async with asyncio.timeout(deadline_s):
-                raw = await provider.chat.with_structured_output(schema).ainvoke(messages)
+            async with metered(
+                provider.name,
+                provider.model,
+                input_tokens=estimate_input_tokens(messages),
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+            ) as meter:
+                async with asyncio.timeout(deadline_s):
+                    chat = provider.chat.with_structured_output(schema)
+                    if meter.callbacks:
+                        raw = await chat.ainvoke(messages, config={"callbacks": meter.callbacks})
+                    else:
+                        raw = await chat.ainvoke(messages)
             if raw is None:
                 raise EmptyReply
             value = raw if isinstance(raw, schema) else schema.model_validate(raw)
             return value, provider
         except Exception as error:  # noqa: BLE001 - any provider failure means: try the next one
+            await raise_if_budget_exhausted(provider.name, error)
             _log_failure(node, provider, error)
             last = error
     raise ModelsUnavailable(f"{node}: every provider failed") from last
@@ -147,16 +160,28 @@ async def stream_text(
         parts: list[str] = []
         chat = provider.chat if visible else provider.chat.with_config(tags=[TAG_NOSTREAM])
         try:
-            async with asyncio.timeout(deadline_s):
-                async for chunk in chat.astream(messages):
-                    text = message_text(chunk)
-                    if text:
-                        parts.append(text)
+            async with metered(
+                provider.name,
+                provider.model,
+                input_tokens=estimate_input_tokens(messages),
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+            ) as meter:
+                async with asyncio.timeout(deadline_s):
+                    stream = (
+                        chat.astream(messages, config={"callbacks": meter.callbacks})
+                        if meter.callbacks
+                        else chat.astream(messages)
+                    )
+                    async for chunk in stream:
+                        text = message_text(chunk)
+                        if text:
+                            parts.append(text)
             answer = "".join(parts).strip()
             if not answer:
                 raise EmptyReply
             return answer, provider
         except Exception as error:  # noqa: BLE001 - any provider failure means: try the next one
+            await raise_if_budget_exhausted(provider.name, error)
             _log_failure(node, provider, error)
             last = error
             if on_switch is not None and index + 1 < len(order):
