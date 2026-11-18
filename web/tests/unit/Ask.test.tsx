@@ -908,6 +908,114 @@ describe('HowItAnswered', () => {
   });
 });
 
+describe('Ask feedback', () => {
+  it('posts once for the first meta turn ID, disables while sending, and replaces the button after success', async () => {
+    const { fetchMock } = await renderReady(async () => eventResponse([
+      ['meta', { conversation_id: 'conversation-1', turn_id: 'turn-1' }],
+      ['meta', { conversation_id: 'ignored', turn_id: 'turn-2' }],
+      ['answer', { text: 'Finished answer.', citations: [] }], ['done', {}],
+    ]));
+    await send();
+    let resolveFeedback!: (value: ReturnType<typeof response>) => void;
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { resolveFeedback = resolve; }));
+    const button = await screen.findByRole('button', { name: 'This answer is wrong' });
+    expect(button).toHaveAttribute('type', 'button');
+    expect(button).toHaveClass('ask-control');
+    expect(button.previousElementSibling).toBe(screen.getByLabelText('Answer'));
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    const calls = fetchMock.mock.calls.filter(([url]) => url === '/api/feedback');
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer session-token' },
+      body: JSON.stringify({ turn_id: 'turn-1' }),
+    });
+    await act(async () => { resolveFeedback(response(204)); });
+    expect(screen.getByRole('status')).toHaveTextContent('Thanks — noted');
+    expect(screen.getByRole('status')).toHaveClass('ask-checked');
+    expect(screen.queryByRole('button', { name: 'This answer is wrong' })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/feedback')).toHaveLength(1);
+  });
+
+  it.each([401, 429, 503, 'network'] as const)('silently re-enables feedback after failure %s and allows a retry', async (failure) => {
+    const { fetchMock } = await renderReady(async () => eventResponse([
+      ['meta', { conversation_id: 'conversation-1', turn_id: 'turn-1' }],
+      ['answer', { text: 'Finished answer.', citations: [] }], ['done', {}],
+    ]));
+    await send();
+    if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('Network failure'));
+    else fetchMock.mockResolvedValueOnce(response(failure));
+    const button = await screen.findByRole('button', { name: 'This answer is wrong' });
+    await act(async () => { fireEvent.click(button); });
+    expect(button).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Thanks — noted')).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/feedback')).toHaveLength(1);
+    fetchMock.mockResolvedValueOnce(response(204));
+    await act(async () => { fireEvent.click(button); });
+    expect(screen.getByRole('status')).toHaveTextContent('Thanks — noted');
+  });
+
+  it('waits for done before showing feedback, even after an answer and check', async () => {
+    const stream = controlledStream();
+    await renderReady(async () => response(200, {}, stream.body));
+    await send();
+    await act(async () => {
+      stream.emit('meta', { conversation_id: 'conversation-1', turn_id: 'turn-1' });
+      stream.emit('token', { text: 'Streaming answer.' });
+    });
+    expect(screen.queryByRole('button', { name: 'This answer is wrong' })).not.toBeInTheDocument();
+    await act(async () => {
+      stream.emit('answer', { text: 'Finished answer.', citations: [] });
+      stream.emit('check', { passed: true });
+    });
+    expect(screen.queryByRole('button', { name: 'This answer is wrong' })).not.toBeInTheDocument();
+    await act(async () => { stream.emit('done', {}); stream.close(); });
+    expect(screen.getByRole('button', { name: 'This answer is wrong' })).toBeEnabled();
+  });
+
+  it.each([undefined, null, 42, ''])('omits feedback for first meta turn ID %j, ignoring later meta', async (turnId) => {
+    await renderReady(async () => eventResponse([
+      ['meta', { conversation_id: 'conversation-1', turn_id: turnId }],
+      ['meta', { conversation_id: 'ignored', turn_id: 'turn-2' }],
+      ['answer', { text: 'Finished answer.', citations: [] }], ['done', {}],
+    ]));
+    await send();
+    await waitFor(() => expect(screen.queryByText('checking…')).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'This answer is wrong' })).not.toBeInTheDocument();
+  });
+
+  it.each(['error', 'dropped'])('omits feedback when the stream ends with %s instead of done', async (ending) => {
+    const stream = controlledStream();
+    await renderReady(async () => response(200, {}, stream.body));
+    await send();
+    await act(async () => {
+      stream.emit('meta', { conversation_id: 'conversation-1', turn_id: 'turn-1' });
+      stream.emit('answer', { text: 'Partial answer.', citations: [] });
+      if (ending === 'error') stream.emit('error', { code: 'internal' });
+      stream.close();
+    });
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'This answer is wrong' })).not.toBeInTheDocument();
+  });
+
+  it('ignores a feedback response after unmount', async () => {
+    const { fetchMock, unmount, container } = await renderReady(async () => eventResponse([
+      ['meta', { conversation_id: 'conversation-1', turn_id: 'turn-1' }],
+      ['answer', { text: 'Finished answer.', citations: [] }], ['done', {}],
+    ]));
+    await send();
+    let resolveFeedback!: (value: ReturnType<typeof response>) => void;
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { resolveFeedback = resolve; }));
+    fireEvent.click(await screen.findByRole('button', { name: 'This answer is wrong' }));
+    unmount();
+    await act(async () => { resolveFeedback(response(204)); });
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
 it('uses no literal colors and only existing CSS variables in both component sources and chat styles', () => {
   const tokens = readFileSync(join(process.cwd(), 'src/styles/tokens.css'), 'utf8');
   const defined = new Set(Array.from(tokens.matchAll(/^\s*(--[\w-]+)\s*:/gm), (match) => match[1]));
