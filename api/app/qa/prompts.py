@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.rag.types import RecalledTurn, Section
 
-PROMPT_VERSION = "v8"
+PROMPT_VERSION = "v9"
 
 # The one fixed sentence for a private question the About page can't answer. Defined here
 # because the private prompt quotes it; `graph` imports it (prompts must not import graph).
@@ -261,8 +261,8 @@ def private_answer_messages(
 
 
 class CheckOut(BaseModel):
-    # Reasoning comes first so the model reasons before it decides (SPEC "CoT").
-    reasoning: str = Field(description="Go through the answer sentence by sentence first")
+    # No reasoning field since v9: the step 4d2 comparison found the verdict alone as
+    # accurate, faster and cheaper, and nothing in the product read the reasoning.
     unsupported: list[str] = Field(
         description="Each unsupported sentence, copied exactly from the answer"
     )
@@ -288,9 +288,7 @@ A sentence is unsupported if it states a fact, number, name, cause or opinion th
 section states, even if it sounds plausible. Paraphrasing a section is fine. A sentence \
 whose [n] points at the wrong section is still supported if another section states it.
 
-Fill in, in this order:
-- reasoning: go through the answer sentence by sentence and say which section supports \
-each one, or that none does.
+Fill in:
 - unsupported: every unsupported sentence, copied exactly, character for character, from \
 the answer. Empty if there are none.
 - passed: true only if unsupported is empty."""

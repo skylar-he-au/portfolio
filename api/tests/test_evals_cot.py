@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from pydantic import SecretStr, ValidationError
 
 from app.qa import prompts
+from app.qa.models import gemini_thinking
 from app.rag.types import Section
 from evals import cot
 from evals.cost import Meter
@@ -91,8 +92,8 @@ def test_arms_use_their_prompt_schema_and_thinking_level() -> None:
     assert list(by_name) == ["reasoning_field", "thinking_medium", "no_reasoning"]
     a, b, c = by_name["reasoning_field"], by_name["thinking_medium"], by_name["no_reasoning"]
     assert (a.schema, a.messages, a.thinking_level) == (
-        prompts.CheckOut,
-        prompts.check_messages,
+        cot.V8CheckOut,
+        cot.v8_check_messages,
         "minimal",
     )
     assert (b.schema, b.thinking_level) == (cot.VerdictOut, "medium")
@@ -107,17 +108,40 @@ def test_b_and_c_prompt_and_schema_have_no_reasoning() -> None:
     system, human = cot.no_reasoning_messages("Q?", ANSWER, sections)
     assert "reasoning" not in system.content.lower()
     assert "in this order" not in system.content
-    # Everything else is the product prompt, word for word.
-    product = prompts._CHECK_SYSTEM.replace("Fill in, in this order:", "Fill in:")
-    assert cot.NO_REASONING_SYSTEM == "\n".join(
-        line for line in product.split("\n") if not line.startswith("- reasoning:")
-    )
     assert "<answer-" in human.content and ANSWER in human.content
 
 
-def test_changed_product_prompt_is_caught() -> None:
-    with pytest.raises(RuntimeError):
-        cot._without_reasoning("Fill in:\n- unsupported: x\n")
+def _v8_without_reasoning() -> str:
+    """What 4d2 ran in B and C: the v8 prompt minus the reasoning item and "in this order"."""
+    text = cot.V8_CHECK_SYSTEM.replace("Fill in, in this order:", "Fill in:")
+    return "\n".join(line for line in text.split("\n") if not line.startswith("- reasoning:"))
+
+
+def test_product_check_is_arm_c_word_for_word() -> None:
+    # The product's general check (v9 on) is what arm C ran in 4d2: prompt, schema and
+    # thinking level. If the product check changes, this fails: bump PROMPT_VERSION and
+    # keep cot.py's arms as they ran.
+    c = {arm.name: arm for arm in cot.arms(MODEL)}["no_reasoning"]
+    assert prompts._CHECK_SYSTEM == cot.NO_REASONING_SYSTEM == _v8_without_reasoning()
+    assert c.messages is prompts.check_messages and c.schema is prompts.CheckOut
+    assert list(prompts.CheckOut.model_fields) == ["unsupported", "passed"]
+    for name, info in prompts.CheckOut.model_fields.items():
+        v8 = cot.V8CheckOut.model_fields[name]
+        assert (info.annotation, info.description) == (v8.annotation, v8.description)
+    assert {"thinking_level": c.thinking_level} == gemini_thinking(MODEL)
+
+
+def test_arm_a_is_the_frozen_v8_check() -> None:
+    assert list(cot.V8CheckOut.model_fields) == ["reasoning", "unsupported", "passed"]
+    assert cot.V8_CHECK_SYSTEM.count("- reasoning:") == 1
+    assert "Fill in, in this order:" in cot.V8_CHECK_SYSTEM
+    sections = [cot._section_from_row(s) for s in _sections()]
+    system, human = cot.v8_check_messages("Q?", ANSWER, sections)
+    _, product_human = prompts.check_messages("Q?", ANSWER, sections)
+    marker = human.content.split("<question-")[1].split(">")[0]
+    assert system.content == cot.V8_CHECK_SYSTEM.format(data_rule=prompts._data_rule(marker))
+    other = product_human.content.split("<question-")[1].split(">")[0]
+    assert human.content == product_human.content.replace(other, marker)
 
 
 def test_make_chat_sets_thinking_level_and_product_limits() -> None:
@@ -134,8 +158,8 @@ def test_judge_passes_each_arm_its_messages_schema_and_raw() -> None:
     segment = _segment()
     meter = SimpleNamespace(callbacks=lambda: [])
     for arm in cot.arms(MODEL):
-        if arm.schema is prompts.CheckOut:
-            parsed = prompts.CheckOut(reasoning="r", unsupported=[S2], passed=False)
+        if arm.schema is cot.V8CheckOut:
+            parsed = cot.V8CheckOut(reasoning="r", unsupported=[S2], passed=False)
         else:
             parsed = cot.VerdictOut(unsupported=[S2], passed=False)
         chat = FakeChat([_reply(parsed)])
@@ -225,7 +249,7 @@ def test_compare_writes_rows_ledger_and_public_summary(tmp_path: Path) -> None:
     chats = {
         "reasoning_field": FakeChat(
             [
-                _reply(prompts.CheckOut(reasoning="r", unsupported=[], passed=True)),
+                _reply(cot.V8CheckOut(reasoning="r", unsupported=[], passed=True)),
                 _reply(None, error=ValueError("bad")),
             ]
         ),
