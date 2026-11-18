@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.rag.types import RecalledTurn, Section
 
-PROMPT_VERSION = "v7"
+PROMPT_VERSION = "v8"
 
 # The one fixed sentence for a private question the About page can't answer. Defined here
 # because the private prompt quotes it; `graph` imports it (prompts must not import graph).
