@@ -30,13 +30,15 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Protocol
 
 import psycopg
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from openai import APIError as OpenAIError
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app.config import Settings
 from app.db import Database
+from app.guard.limits import Admission
+from app.guard.session import Session, require_session
 from app.qa import memory
 from app.qa.graph import GraphDeps, build_deps, build_graph
 from app.qa.memory import Checkpoints, Conversations, StoredTurn
@@ -138,7 +140,7 @@ class AskService:
         return self._graph
 
     async def stream(
-        self, question: str, conversation_id: str | None
+        self, question: str, conversation_id: str | None, admission: Admission | None = None
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """(event, data) pairs for one question; always ends with `done` or `error`."""
         loop = asyncio.get_running_loop()
@@ -281,9 +283,18 @@ def _log_usage(state: dict[str, Any], started: float) -> None:
 def ask_router(service: AskService) -> APIRouter:
     router = APIRouter()
 
+    async def admit(
+        request: Request,
+        session: Annotated[Session, Depends(require_session)],
+        body: AskRequest,
+    ) -> Admission:
+        return await request.app.state.limits.admit("ask", session)
+
     @router.post("/api/ask", response_class=EventSourceResponse)
-    async def ask(body: AskRequest) -> AsyncIterator[ServerSentEvent]:
-        async for name, data in service.stream(body.question, body.conversation_id):
+    async def ask(
+        body: AskRequest, admission: Annotated[Admission, Depends(admit)]
+    ) -> AsyncIterator[ServerSentEvent]:
+        async for name, data in service.stream(body.question, body.conversation_id, admission):
             yield ServerSentEvent(event=name, data=data)
 
     return router
