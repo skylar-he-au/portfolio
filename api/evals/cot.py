@@ -5,11 +5,13 @@ question and output cap the product uses. A labelled sentence counts as judged
 unsupported when a quote kept by `verify_unsupported` overlaps it in the answer.
 
 Arms:
-- reasoning_field: the product's `check_messages` and `CheckOut` (reasoning written
+- reasoning_field: the v8 product check prompt and schema, frozen here (reasoning written
   before the verdict), thinking "minimal" (what `gemini_thinking` gives the product).
-- thinking_medium: the product prompt without the reasoning item and without "in this
-  order", an output schema without `reasoning`, thinking "medium".
-- no_reasoning: same prompt and schema as thinking_medium, thinking "minimal".
+- thinking_medium: the v8 prompt without the reasoning item and without "in this order",
+  an output schema without `reasoning`, thinking "medium". Since v9 this is the product's
+  `check_messages` and `CheckOut`.
+- no_reasoning: same prompt and schema as thinking_medium, thinking "minimal" (what the
+  product runs since v9).
 
 Usage (in site/api, caps are passed in, never written here):
     uv run --no-default-groups --group eval python -m evals.cot --labels ... \
@@ -21,7 +23,6 @@ import argparse
 import asyncio
 import json
 import math
-import re
 import statistics
 import sys
 import time
@@ -45,38 +46,55 @@ from evals.types import CapReached, MeterLike, UnknownModel
 LABELS = ("supported", "unsupported")
 
 
-# --- the prompt and schema for the two arms without a reasoning field -----------------
+# --- arm A: the v8 check prompt and schema, frozen here -------------------------------
+#
+# Prompt v9 adopted arm C in the product, so the product no longer has a reasoning field.
+# Arm A keeps the exact v8 system prompt and schema so the 4d2 run stays reproducible; the
+# human message (sections, question, answer) is the product's, unchanged since v8.
+
+V8_CHECK_SYSTEM = """\
+You check an answer that was written from numbered sections of Skylar He's portfolio site. \
+{data_rule}
+
+A sentence is unsupported if it states a fact, number, name, cause or opinion that no \
+section states, even if it sounds plausible. Paraphrasing a section is fine. A sentence \
+whose [n] points at the wrong section is still supported if another section states it.
+
+Fill in, in this order:
+- reasoning: go through the answer sentence by sentence and say which section supports \
+each one, or that none does.
+- unsupported: every unsupported sentence, copied exactly, character for character, from \
+the answer. Empty if there are none.
+- passed: true only if unsupported is empty."""
 
 
-def _without_reasoning(system: str) -> str:
-    """The product's check prompt with the reasoning item and "in this order" removed."""
-    text, ordered = re.subn(r"Fill in, in this order:", "Fill in:", system)
-    text, items = re.subn(r"- reasoning: [^\n]*\n", "", text)
-    if ordered != 1 or items != 1 or "reasoning" in text or "in this order" in text:
-        raise RuntimeError("the product check prompt changed; update evals/cot.py")
-    return text
+class V8CheckOut(BaseModel):
+    """The v8 product `CheckOut`: reasoning first, then the verdict."""
 
-
-NO_REASONING_SYSTEM = _without_reasoning(prompts._CHECK_SYSTEM)
-
-
-class VerdictOut(BaseModel):
-    """`CheckOut` without `reasoning`: same field descriptions."""
-
+    reasoning: str = Field(description="Go through the answer sentence by sentence first")
     unsupported: list[str] = Field(
-        description=prompts.CheckOut.model_fields["unsupported"].description
+        description="Each unsupported sentence, copied exactly from the answer"
     )
-    passed: bool = Field(description=prompts.CheckOut.model_fields["passed"].description)
+    passed: bool = Field(description="True only if no sentence is unsupported")
 
 
-def no_reasoning_messages(
-    question: str, answer: str, sections: Sequence[Section]
-) -> list[BaseMessage]:
+def v8_check_messages(question: str, answer: str, sections: Sequence[Section]) -> list[BaseMessage]:
     marker = prompts._marker()
     return [
-        SystemMessage(NO_REASONING_SYSTEM.format(data_rule=prompts._data_rule(marker))),
+        SystemMessage(V8_CHECK_SYSTEM.format(data_rule=prompts._data_rule(marker))),
         prompts._check_human(question, answer, sections, marker),
     ]
+
+
+# --- arms B and C: the product's check (v9 and later) ----------------------------------
+#
+# Since v9 the product prompt is the v8 one without the reasoning item and without "in this
+# order", and `CheckOut` has no reasoning field: exactly what B and C ran in 4d2
+# (tests/test_evals_cot.py checks it word for word).
+
+NO_REASONING_SYSTEM = prompts._CHECK_SYSTEM
+VerdictOut = prompts.CheckOut
+no_reasoning_messages = prompts.check_messages
 
 
 @dataclass(frozen=True)
@@ -95,8 +113,8 @@ def arms(check_model: str) -> list[Arm]:
             "reasoning_field",
             "Writes reasoning, then verdict",
             product_level,
-            prompts.CheckOut,
-            prompts.check_messages,
+            V8CheckOut,
+            v8_check_messages,
         ),
         Arm(
             "thinking_medium",

@@ -176,7 +176,7 @@ def rewrite_reply(
 
 def check_reply(unsupported: Sequence[str] = (), passed: bool | None = None) -> dict:
     ok = not unsupported if passed is None else passed
-    return {"reasoning": "Sentence by sentence...", "unsupported": list(unsupported), "passed": ok}
+    return {"unsupported": list(unsupported), "passed": ok}
 
 
 def private_check_reply(
@@ -348,8 +348,8 @@ async def test_general_tokens_are_only_the_answer_node():
     )
     assert run.tokens == GOOD_ANSWER
     assert '"query"' in run.raw_text("rewrite")
-    assert '"reasoning"' in run.raw_text("check")
-    assert '"query"' not in run.tokens and "reasoning" not in run.tokens
+    assert '"unsupported"' in run.raw_text("check")
+    assert '"query"' not in run.tokens and '"unsupported"' not in run.tokens
 
 
 # --- general questions -------------------------------------------------------------------

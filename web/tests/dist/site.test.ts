@@ -103,6 +103,17 @@ it('renders the Evals heading, and run tables when summaries exist or the empty 
   expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
 });
 
+it('explains prompt v9 and the cut-off medium-thinking verdicts on the evals page', () => {
+  const notes = [...readPage('/evals').querySelectorAll('main .note')].map((note) =>
+    note.textContent?.replace(/\s+/g, ' ').trim(),
+  );
+  expect(notes.some((note) => note?.startsWith('Prompt v9 only changed the output of the general answer check'))).toBe(true);
+  const cotRun = existsSync(join(root, '../content/evals/20261118T071804-v8-cot.json'));
+  expect(notes.includes(
+    'Medium thinking counts toward the 1024-token output cap and ran past it on 55 of 186 calls, so those verdicts were cut off.',
+  )).toBe(cotRun);
+});
+
 it('pins all 32 sections in document order', () => {
   expect(Object.keys(fixtures)).toEqual(Object.keys(pages));
   expect(Object.values(fixtures).map((sections) => sections.length)).toEqual([9, 9, 5, 9, 0]);

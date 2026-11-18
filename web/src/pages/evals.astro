@@ -16,6 +16,11 @@ const { qa, cot } = parseEvalFiles(Object.values(files));
 const judges = [...new Set(qa.map((run) => run.models.judge).filter((judge): judge is string => !!judge))];
 const judgeNames = judges.length ? judges.join(', ') : 'claude-sonnet-5-5';
 const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
+// Notes that explain one published CoT run's numbers, keyed by run_id.
+const cotNotes: Record<string, string> = {
+  '20261118T071804-v8-cot':
+    'Medium thinking counts toward the 1024-token output cap and ran past it on 55 of 186 calls, so those verdicts were cut off.',
+};
 ---
 
 <Base title="Evals" description="Public scores and counts measuring how well project answers are supported by the project pages.">
@@ -50,6 +55,10 @@ const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
     <p class="note">
       Prompt v8 only changed the code fallback for private answers; general answers are the same as in v7.
       It was checked on the 8 private questions × 3 passes and the full-time question 10 times, not with a full final run, so the newest full results below are v7.
+    </p>
+    <p class="note">
+      Prompt v9 only changed the output of the general answer check: it now gives its verdict without writing reasoning first, the approach that did best in the checker comparison below.
+      It was checked with one pass of the general tuning questions (code checks only) and one call to the backup checker, not with a full final run, so the newest full results are still v7.
       The next change to the prompts, chunking or content gets a full final run.
     </p>
   </div>
@@ -145,6 +154,7 @@ const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
               </tbody>
             </table>
           </div>
+          {cotNotes[run.run_id] && <p class="note">{cotNotes[run.run_id]}</p>}
         </article>
       ))}
     </section>
