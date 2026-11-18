@@ -17,10 +17,19 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function renderWidget() {
-  const controller = turnstile.renderWidget(document.createElement('div'), 'sitekey');
-  turnstileScripts()[0].dispatchEvent(new Event('load'));
+function startWidget() {
+  return turnstile.renderWidget(document.createElement('div'), 'sitekey');
+}
+
+async function loadScript() {
+  widget.load();
   await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function renderWidget() {
+  const controller = startWidget();
+  await loadScript();
   return controller;
 }
 
@@ -30,19 +39,31 @@ describe('Turnstile controller', () => {
     const first = turnstile.loadTurnstile();
     expect(turnstile.loadTurnstile()).toBe(first);
     expect(turnstileScripts()).toHaveLength(1);
-    expect(turnstileScripts()[0].src).toBe('https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit');
-    turnstileScripts()[0].dispatchEvent(new Event('load'));
+    const url = new URL(turnstileScripts()[0].src);
+    expect(url.origin + url.pathname).toBe('https://challenges.cloudflare.com/turnstile/v0/api.js');
+    expect(url.searchParams.get('render')).toBe('explicit');
+    expect(url.searchParams.get('onload')).toMatch(/^\w+$/);
+    expect(turnstileScripts()[0].async).toBe(true);
+    widget.load();
     await first;
     await turnstile.loadTurnstile();
     expect(turnstileScripts()).toHaveLength(1);
   });
 
-  it('waits for ready, executes by widget id, and resets/removes by id', async () => {
-    widget.api.ready.mockImplementation(() => {});
+  it('renders from the async script without turnstile.ready(), which the real api.js rejects', async () => {
     const controller = await renderWidget();
-    expect(widget.api.render).not.toHaveBeenCalled();
+    expect(await controller.execute()).toBe('turnstile-token');
+    expect(widget.api.ready).not.toHaveBeenCalled();
+    expect(widget.api.render).toHaveBeenCalledOnce();
+    controller.remove();
+  });
+
+  it('waits for the script, executes by widget id, and resets/removes by id', async () => {
+    const controller = startWidget();
+    await Promise.resolve();
     const execution = controller.execute();
-    widget.api.ready.mock.calls[0][0]();
+    expect(widget.api.render).not.toHaveBeenCalled();
+    await loadScript();
     expect(await execution).toBe('turnstile-token');
     expect(widget.api.execute).toHaveBeenCalledWith('widget-1');
     controller.reset();
@@ -70,30 +91,27 @@ describe('Turnstile controller', () => {
     controller.remove();
   });
 
-  it('queues a reset before readiness, then resets before executing', async () => {
-    widget.api.ready.mockImplementation(() => {});
-    const controller = await renderWidget();
+  it('queues a reset before the script loads, then resets before executing', async () => {
+    const controller = startWidget();
     controller.reset();
     const token = controller.execute();
-    widget.api.ready.mock.calls[0][0]();
+    await loadScript();
     expect(await token).toBe('turnstile-token');
     expect(widget.api.reset).toHaveBeenCalledWith('widget-1');
     expect(widget.api.reset.mock.invocationCallOrder[0]).toBeLessThan(widget.api.execute.mock.invocationCallOrder[0]);
     controller.remove();
   });
 
-  it('executes only the current attempt if readiness arrives after a timeout', async () => {
+  it('executes only the current attempt if the script loads after a timeout', async () => {
     vi.useFakeTimers();
-    widget.api.ready.mockImplementation(() => {});
-    const controller = await renderWidget();
+    const controller = startWidget();
     const expired = expect(controller.execute()).rejects.toThrow();
     await vi.advanceTimersByTimeAsync(20_000);
     await expired;
     controller.reset();
     widget.api.execute.mockImplementation(() => {});
     const token = controller.execute();
-    widget.api.ready.mock.calls[0][0]();
-    await Promise.resolve();
+    await loadScript();
     expect(widget.api.execute).toHaveBeenCalledOnce();
     widget.options().callback('turnstile-token');
     expect(await token).toBe('turnstile-token');
@@ -109,12 +127,11 @@ describe('Turnstile controller', () => {
     expect(turnstileScripts()).toHaveLength(1);
   });
 
-  it('cancels a pending execution on remove and ignores late readiness', async () => {
-    widget.api.ready.mockImplementation(() => {});
-    const controller = await renderWidget();
+  it('cancels a pending execution on remove and ignores a late script load', async () => {
+    const controller = startWidget();
     const rejected = expect(controller.execute()).rejects.toThrow();
     controller.remove();
-    widget.api.ready.mock.calls[0][0]();
+    await loadScript();
     await rejected;
     expect(widget.api.render).not.toHaveBeenCalled();
   });
