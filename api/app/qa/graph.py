@@ -36,11 +36,14 @@ from app.qa import memory, prompts
 from app.qa.models import CALL_TIMEOUT_S, ChatProvider, build_providers, stream_text, structured
 from app.qa.output import ANSWER_NODE, resolve_citations, verify_unsupported
 from app.qa.private import looks_private
+from app.qa.prompts import PRIVATE_FALLBACK
 from app.qa.state import QAInput, QAState, turn_defaults
 from app.rag.types import Embedder, Retriever, Section
 
 NOT_FOUND = "I couldn't find that in the project pages — please email me."
-PRIVATE_FALLBACK = "Please see the About page or email me."
+# A private draft that only declines (the fixed sentence, or the refusal the v2-v6 prompt
+# asked for) is sent as the fixed sentence by code, without the private check.
+_REFUSALS = {"i don't have that on my about page", PRIVATE_FALLBACK}
 ABOUT_CITATION = {"n": 1, "url": "/about", "heading": "About Skylar"}
 ABOUT_PAGES = ["/about"]
 MAX_SECTIONS = 6
@@ -103,6 +106,17 @@ def _emit_answer(writer: StreamWriter, text: str, citations: list[dict[str, Any]
 
 def _emit_check(writer: StreamWriter, check: dict[str, Any]) -> None:
     writer({"event": "check", "data": check})
+
+
+def _normalise(text: str) -> str:
+    return text.strip().replace("’", "'").casefold().rstrip(".!?。！？ ")  # noqa: RUF001
+
+
+_REFUSAL_KEYS = {_normalise(r) for r in _REFUSALS}
+
+
+def _is_refusal(text: str) -> bool:
+    return _normalise(text) in _REFUSAL_KEYS
 
 
 def _retry_query(state: QAState) -> str:
@@ -239,6 +253,16 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         )
         text, citations = resolve_citations(raw, sections)
         trace = node.end(provider.name, provider.model)
+        if _is_refusal(text):
+            check = {"passed": False, "unsupported": [], "retried": False, "reason": "not_in_about"}
+            _emit_answer(writer, PRIVATE_FALLBACK, [ABOUT_CITATION])
+            _emit_check(writer, check)
+            return {
+                "answer_text": PRIVATE_FALLBACK,
+                "citations": [ABOUT_CITATION],
+                "check": check,
+                "nodes": [*state["nodes"], trace],
+            }
         return {"answer_text": text, "citations": citations, "nodes": [*state["nodes"], trace]}
 
     async def check(state: QAState) -> dict[str, Any]:

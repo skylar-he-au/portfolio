@@ -635,6 +635,48 @@ async def test_private_check_says_passed_but_lists_a_real_quote_fails():
     assert run.state["check"]["passed"] is False
 
 
+@pytest.mark.parametrize(
+    "draft",
+    [
+        "I don't have that on my About page.",
+        "  i don’t have that on my about page  ",
+        PRIVATE_FALLBACK,
+        "please see the About page or email me!",
+    ],
+)
+async def test_private_refusal_draft_becomes_fixed_sentence_without_check(draft: str):
+    run = await ask(
+        "Which visa are you on?",
+        claude=[rewrite_reply("Skylar visa", private=True), draft],
+        gemini=[],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+    )
+    assert run.names == ["route", "answer", "check", "trace"]
+    assert run.data("answer") == [
+        {
+            "text": PRIVATE_FALLBACK,
+            "citations": [{"n": 1, "url": "/about", "heading": "About Skylar"}],
+        }
+    ]
+    assert run.data("check") == [
+        {"passed": False, "unsupported": [], "retried": False, "reason": "not_in_about"}
+    ]
+    assert run.gemini.calls == []  # the private check never ran
+    assert run.data("token") == []
+
+
+async def test_private_prompt_asks_for_the_fixed_sentence_word_for_word():
+    run = await ask(
+        "Which visa are you on?",
+        claude=[rewrite_reply("Skylar visa", private=True), PRIVATE_FALLBACK],
+        gemini=[],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+    )
+    private_prompt = system_prompt(run.claude, 1)
+    assert PRIVATE_FALLBACK in private_prompt
+    assert "I don't have that on my About page" not in private_prompt
+
+
 async def test_private_with_nothing_retrieved_gets_fixed_sentence_without_models():
     run = await ask(
         "Where are you based?",

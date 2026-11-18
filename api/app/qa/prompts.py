@@ -16,7 +16,11 @@ from pydantic import BaseModel, Field
 
 from app.rag.types import RecalledTurn, Section
 
-PROMPT_VERSION = "v6"
+PROMPT_VERSION = "v7"
+
+# The one fixed sentence for a private question the About page can't answer. Defined here
+# because the private prompt quotes it; `graph` imports it (prompts must not import graph).
+PRIVATE_FALLBACK = "Please see the About page or email me."
 
 _LANGUAGE_NAMES = {
     "en": "English",
@@ -232,7 +236,8 @@ or hours unless a section states it.
 - Keep dates and conditions exactly as a section words them. Do not link two facts with \
 "after", "because", "until" or "so" unless the section does: "full-time roles from early \
 2027" and "graduating in June 2027" do not make "full-time after I graduate".
-- If the sections do not answer the question, reply only: I don't have that on my About page.
+- If the sections do not answer the question, reply with exactly this sentence and \
+nothing else, in English whatever the visitor's language: {fallback}
 - Plain text only: no Markdown, no links, no lists."""
 
 
@@ -241,7 +246,9 @@ def private_answer_messages(
 ) -> list[BaseMessage]:
     marker = _marker()
     system = _PRIVATE_SYSTEM.format(
-        data_rule=_data_rule(marker), language=language_instruction(language)
+        data_rule=_data_rule(marker),
+        language=language_instruction(language),
+        fallback=PRIVATE_FALLBACK,
     )
     human = (
         f"Sections:\n\n{_sections_block(sections, marker)}\n\n"
