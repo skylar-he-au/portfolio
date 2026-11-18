@@ -45,6 +45,12 @@ def test_startup_and_ping_never_touch_pool(refused_url: str) -> None:
     assert pool.touched == []
 
 
+def test_default_pause_source_is_the_app_ledger(refused_url):
+    app = create_app(settings(refused_url))
+    assert app.state.limits._pause_source is app.state.ledger
+    assert app.state.ledger.db is app.state.db
+
+
 # --- /api/health -------------------------------------------------------------
 
 

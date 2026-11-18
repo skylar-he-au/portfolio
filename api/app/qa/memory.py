@@ -1,8 +1,9 @@
 """Conversation state and memory for "Ask about my projects".
 
-- **Conversations**: the id is random and made by the server (`conversations` table, which
-  only records `created_at`; step 5c deletes conversations and their checkpoints after 24
-  hours). An unknown, malformed or older-than-24-hours id gets a new conversation.
+- **Conversations**: the id is random and made by the server. The table also holds the
+  owner and expiry of the database lock for a running question. At write time,
+  `app.retention` deletes conversations and checkpoints after 24 hours, skipping locks
+  still in use. An unknown, malformed or older-than-24-hours id gets a new conversation.
 - **Checkpoints**: the graph state of each conversation (`thread_id` = conversation id) is
   kept by LangGraph's `AsyncPostgresSaver` on its own pool (`autocommit`, `dict_row`, as
   the saver needs). The pool is created closed; it opens, and `setup()` runs, on the first
@@ -141,6 +142,27 @@ class Conversations:
             await conn.execute("INSERT INTO conversations (id) VALUES (%s)", (new,))
             await conn.commit()
         return str(new)
+
+    async def acquire(self, conversation_id: str, owner: uuid.UUID) -> bool:
+        async with self._db.connection() as conn:
+            cursor = await conn.execute(
+                "UPDATE conversations SET running_owner = %s, "
+                "running_until = now() + interval '150 seconds' WHERE id = %s "
+                "AND (running_until IS NULL OR running_until < now()) RETURNING id",
+                (owner, conversation_id),
+            )
+            acquired = await cursor.fetchone() is not None
+            await conn.commit()
+        return acquired
+
+    async def release(self, conversation_id: str, owner: uuid.UUID) -> None:
+        async with self._db.connection() as conn:
+            await conn.execute(
+                "UPDATE conversations SET running_owner = NULL, running_until = NULL "
+                "WHERE id = %s AND running_owner = %s",
+                (conversation_id, owner),
+            )
+            await conn.commit()
 
 
 def _parse_id(value: str | None) -> uuid.UUID | None:

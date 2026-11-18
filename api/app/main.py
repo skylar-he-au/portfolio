@@ -13,10 +13,12 @@ from app.api.ask import AskService, ask_router
 from app.api.session import session_router
 from app.config import Settings, get_settings
 from app.db import Database, make_pool
+from app.guard.ledger import Ledger, SpendLimits
 from app.guard.limits import Limits, PauseSource
 from app.guard.session import Rejected, require_origin
 from app.guard.turnstile import TurnstileVerifier
 from app.qa.memory import make_checkpoint_pool
+from app.qa.models import MAX_OUTPUT_TOKENS
 
 logger = logging.getLogger(__name__)
 # Routes that skip the Worker secret check (`/api/cleanup` is added by the cleanup step).
@@ -36,6 +38,7 @@ def create_app(
     checkpoint_pool: Any | None = None,
     ask_service: AskService | None = None,
     limits: Limits | None = None,
+    ledger: Ledger | None = None,
     pause_source: PauseSource | None = None,
     turnstile_client: httpx.AsyncClient | None = None,
 ) -> FastAPI:
@@ -52,11 +55,18 @@ def create_app(
             raise RuntimeError(f"Missing required variables: {', '.join(missing)}")
     database_url = settings.database_url.get_secret_value()
     db = Database(pool if pool is not None else make_pool(database_url))
+    ledger = (
+        ledger
+        if ledger is not None
+        else Ledger(db, SpendLimits.from_settings(settings), MAX_OUTPUT_TOKENS)
+    )
+    pause_source = pause_source if pause_source is not None else ledger
     if ask_service is None:
         ask_service = AskService.for_app(
             settings,
             db,
             checkpoint_pool if checkpoint_pool is not None else make_checkpoint_pool(database_url),
+            ledger,
         )
 
     @asynccontextmanager
@@ -81,6 +91,7 @@ def create_app(
 
     app.state.settings = settings
     app.state.db = db
+    app.state.ledger = ledger
     app.state.limits = limits if limits is not None else Limits(db, settings, pause_source)
     app.state.turnstile_verifier = TurnstileVerifier(settings, turnstile_client)
 

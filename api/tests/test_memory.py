@@ -2,15 +2,19 @@
 
 import logging
 import math
+import uuid
 from dataclasses import dataclass
 
 import pytest
 from langgraph.checkpoint.serde import jsonplus
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
+from app.db import Database, make_pool
+from app.migrate import migrate
 from app.qa import memory
 from app.qa.memory import (
     MAX_STORED_TURNS,
+    Conversations,
     StoredTurn,
     add_turn,
     checkpoint_serde,
@@ -146,3 +150,52 @@ def test_checkpoint_serializer_refuses_other_types():
         ("app.rag.types", "Section"),
         ("app.rag.types", "RecalledTurn"),
     ]
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_conversation_lock_expiry_and_owner_release(db_url):
+    migrate(db_url)
+    db = Database(make_pool(db_url))
+    conversations = Conversations(db)
+    first, second = uuid.uuid4(), uuid.uuid4()
+    try:
+        cid = await conversations.resolve(None)
+        assert await conversations.acquire(cid, first)
+        assert not await conversations.acquire(cid, second)
+        async with db.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT running_owner, running_until > now(), "
+                "running_until <= now() + interval '150 seconds' FROM conversations WHERE id = %s",
+                (cid,),
+            )
+            assert await cursor.fetchone() == (first, True, True)
+            await conn.execute(
+                "UPDATE conversations SET running_until = now() - interval '1 second' "
+                "WHERE id = %s",
+                (cid,),
+            )
+            await conn.commit()
+        assert await conversations.acquire(cid, second)
+        await conversations.release(cid, first)
+        async with db.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT running_owner, running_until IS NOT NULL FROM conversations WHERE id = %s",
+                (cid,),
+            )
+            assert await cursor.fetchone() == (second, True)
+        await conversations.release(cid, second)
+        await conversations.release(cid, second)
+        async with db.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT running_owner, running_until FROM conversations WHERE id = %s", (cid,)
+            )
+            assert await cursor.fetchone() == (None, None)
+        assert await conversations.acquire(cid, first)
+        assert not await conversations.acquire(str(uuid.uuid4()), first)
+    finally:
+        await db.close()
