@@ -54,7 +54,7 @@ function stageMessage(data: Extract<MatchEvent, { event: 'stage' }>['data']): st
     case 'fetching': return 'Fetching the job ad…';
     case 'reading': return 'Reading the job ad…';
     case 'matching': return data.count === undefined ? 'Matching requirements to my project pages…'
-      : `Matching ${data.count} requirements to my project pages…`;
+      : `Matching ${data.count} ${data.count === 1 ? 'requirement' : 'requirements'} to my project pages…`;
     case 'writing': return 'Writing the guide…';
     case 'checking': return 'Checking the guide…';
   }
@@ -180,7 +180,7 @@ export default function Match() {
       {done && result?.match_id && !error && (
         feedback === 'sent'
           ? <span className="ask-checked" role="status">Thanks — noted</span>
-          : <button type="button" className="ask-control" aria-label="This guide is wrong" disabled={feedback === 'sending'} onClick={() => { void recordFeedback(); }}>👎</button>
+          : <button type="button" className="ask-control" style={{ justifySelf: 'start' }} aria-label="This guide is wrong" disabled={feedback === 'sending'} onClick={() => { void recordFeedback(); }}>👎</button>
       )}
       {error && <p className="ask-error" role="alert">{error}</p>}
       {notes && <HowItMatched notes={notes} />}
