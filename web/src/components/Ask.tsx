@@ -2,6 +2,7 @@ import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type { SubmitEvent } from 'react';
 import { answerSegments, unreferencedCitations } from '../lib/answer';
 import type { Citation, InlineSegment } from '../lib/answer';
+import { sendFeedback } from '../lib/feedback';
 import { parseSse } from '../lib/sse';
 import { clearToken, getToken, isSession, setToken } from '../lib/session';
 import { renderWidget } from '../lib/turnstile';
@@ -11,6 +12,9 @@ import type { AnswerTrace, CheckResult } from './HowItAnswered';
 
 interface Turn {
   id: number;
+  turnId?: string;
+  finished: boolean;
+  feedback: 'idle' | 'sending' | 'sent';
   question: string;
   text: string;
   citations: Citation[];
@@ -151,6 +155,14 @@ export default function Ask({ examples }: { examples: string[] }) {
     if (import.meta.env.PUBLIC_TURNSTILE_SITEKEY) getWidget();
   }
 
+  async function recordFeedback(turn: Turn) {
+    if (!mounted.current || !turn.turnId || turn.feedback !== 'idle') return;
+    setTurns((previous) => previous.map((item) => item.id === turn.id ? { ...item, feedback: 'sending' } : item));
+    const sent = await sendFeedback(turn.turnId);
+    if (!mounted.current) return;
+    setTurns((previous) => previous.map((item) => item.id === turn.id ? { ...item, feedback: sent ? 'sent' : 'idle' } : item));
+  }
+
   async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = question.trim();
@@ -163,6 +175,7 @@ export default function Ask({ examples }: { examples: string[] }) {
     setQuestion('');
     setTurns((previous) => [...previous, {
       id, question: trimmed, text: '', citations: [], unsupported: [], checking: true, incomplete: false,
+      finished: false, feedback: 'idle',
     }]);
 
     function update(change: (turn: Turn) => Turn) {
@@ -174,6 +187,7 @@ export default function Ask({ examples }: { examples: string[] }) {
     let terminal = false;
     let privateRoute = false;
     let receivedMeta = false;
+    let receivedTurnMeta = false;
     let verificationRetries = 0;
 
     async function createSession(reset = false): Promise<string> {
@@ -248,6 +262,11 @@ export default function Ask({ examples }: { examples: string[] }) {
               setConversationId(data.conversation_id);
               receivedMeta = true;
             }
+            if (!receivedTurnMeta) {
+              const turnId = data.turn_id;
+              if (typeof turnId === 'string') update((turn) => ({ ...turn, turnId }));
+              receivedTurnMeta = true;
+            }
             break;
           case 'route':
             privateRoute = data.private === true;
@@ -286,6 +305,7 @@ export default function Ask({ examples }: { examples: string[] }) {
           }
           case 'done':
             terminal = true;
+            update((turn) => ({ ...turn, finished: true }));
             break;
           case 'error':
             terminal = true;
@@ -339,6 +359,11 @@ export default function Ask({ examples }: { examples: string[] }) {
                   </p>
                 )}
               </div>
+              {turn.finished && turn.turnId && !turn.error && (
+                turn.feedback === 'sent'
+                  ? <span className="ask-checked" role="status">Thanks — noted</span>
+                  : <button type="button" className="ask-control" aria-label="This answer is wrong" disabled={turn.feedback === 'sending'} onClick={() => { void recordFeedback(turn); }}>👎</button>
+              )}
               {turn.error && <p className="ask-error" role="alert">{turn.error}</p>}
               <HowItAnswered trace={turn.trace} checkResult={turn.checkResult} />
             </li>
