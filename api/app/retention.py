@@ -1,4 +1,6 @@
-"""Small retention sweeps run after each question is recorded."""
+"""Small retention sweeps run after each question is recorded.
+
+Daily keys and counters keep today and yesterday (the privacy page says "two days")."""
 
 from typing import Any
 
@@ -44,7 +46,7 @@ async def delete_expired_conversations(db: Database, saver: Any, limit: int) -> 
 async def delete_old_daily_keys(db: Database) -> int:
     async with db.connection() as conn:
         cursor = await conn.execute(
-            "DELETE FROM daily_keys WHERE day < (now() AT TIME ZONE 'Australia/Sydney')::date"
+            "DELETE FROM daily_keys WHERE day < (now() AT TIME ZONE 'Australia/Sydney')::date - 1"
         )
         await conn.commit()
         return cursor.rowcount
@@ -53,7 +55,8 @@ async def delete_old_daily_keys(db: Database) -> int:
 async def delete_old_counters(db: Database) -> int:
     async with db.connection() as conn:
         cursor = await conn.execute(
-            "DELETE FROM usage_counters WHERE day < (now() AT TIME ZONE 'Australia/Sydney')::date"
+            "DELETE FROM usage_counters "
+            "WHERE day < (now() AT TIME ZONE 'Australia/Sydney')::date - 1"
         )
         await conn.commit()
         return cursor.rowcount

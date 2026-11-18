@@ -283,8 +283,7 @@ async def test_busy_and_setup_failure_settle_without_a_record():
         if conversation is None:
             conversations.resolve = AsyncMock(side_effect=psycopg.OperationalError("secret"))
         events = [
-            event
-            async for event in service.stream(EXAMPLE_Q, conversation, admission, scope=scope)
+            event async for event in service.stream(EXAMPLE_Q, conversation, admission, scope=scope)
         ]
         assert events[0][0] == "error"
         assert events[0][1]["code"] == ("busy" if conversation else "unavailable")

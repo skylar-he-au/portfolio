@@ -36,8 +36,8 @@ import psycopg
 from fastapi import APIRouter, Depends, Request
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from openai import APIError as OpenAIError
-from pydantic import BaseModel, ConfigDict, StringConstraints
 from psycopg_pool import PoolTimeout
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app.config import Settings
 from app.db import Database

@@ -1,4 +1,4 @@
-"""Bounded, Sydney-day retention and checkpoint-first deletion."""
+"""Bounded, Sydney-day retention (today and yesterday kept) and checkpoint-first deletion."""
 
 import uuid
 from collections.abc import AsyncIterator
@@ -127,8 +127,8 @@ async def test_daily_keys_and_counters_use_sydney_today(database):
                 (offset, b""),
             )
         await conn.commit()
-    assert await retention.delete_old_daily_keys(database) == 2
-    assert await retention.delete_old_counters(database) == 2
+    assert await retention.delete_old_daily_keys(database) == 1  # only day -2
+    assert await retention.delete_old_counters(database) == 1
     keys = await rows(
         database,
         "SELECT day - (now() AT TIME ZONE 'Australia/Sydney')::date FROM daily_keys ORDER BY day",
@@ -138,7 +138,7 @@ async def test_daily_keys_and_counters_use_sydney_today(database):
         "SELECT day - (now() AT TIME ZONE 'Australia/Sydney')::date "
         "FROM usage_counters ORDER BY day",
     )
-    assert keys == counters == [(0,), (1,)]
+    assert keys == counters == [(-1,), (0,), (1,)]
     assert await retention.delete_old_daily_keys(database) == 0
     assert await retention.delete_old_counters(database) == 0
 
