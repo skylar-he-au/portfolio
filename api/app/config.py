@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     turnstile_secret: SecretStr | None = None
     turnstile_hostnames: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    cleanup_audience: str | None = None
+    cleanup_invoker_email: str | None = None
+
     ask_limit_token: int = Field(default=20, ge=1)
     ask_limit_ip: int = Field(default=20, ge=1)
     ask_limit_site: int = Field(default=300, ge=1)
@@ -64,6 +67,8 @@ class Settings(BaseSettings):
         "origin_secret",
         "session_secret",
         "turnstile_secret",
+        "cleanup_audience",
+        "cleanup_invoker_email",
         "spend_daily_usd_anthropic",
         "spend_daily_usd_google",
         "spend_daily_usd_openai",
