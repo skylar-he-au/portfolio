@@ -115,6 +115,109 @@ def build_summary(
     }
 
 
+MATCH_SCORES = ("recall", "precision", "not_covered_accuracy")
+MATCH_FAITH_FLOOR = 0.7
+
+
+def _spread(values_by_pass: dict[int, list[float]]) -> dict[str, Any]:
+    """Mean of each pass's mean, and the lowest and highest pass mean."""
+    pass_means = [mean(values) for values in values_by_pass.values() if values]
+    return {
+        "mean": round(mean(pass_means), 6) if pass_means else None,
+        "min": round(min(pass_means), 6) if pass_means else None,
+        "max": round(max(pass_means), 6) if pass_means else None,
+        "scored": sum(len(values) for values in values_by_pass.values()),
+    }
+
+
+def _match_scores(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    scores: dict[str, Any] = {}
+    for name in MATCH_SCORES:
+        by_pass: dict[int, list[float]] = {}
+        for row in rows:
+            value = (row.get("scores") or {}).get(name)
+            if value is not None:
+                by_pass.setdefault(row["repeat"], []).append(value)
+        scores[name] = _spread(by_pass)
+    faith: dict[int, list[float]] = {}
+    for row in rows:
+        if row.get("faithfulness") is not None:
+            faith.setdefault(row["repeat"], []).append(row["faithfulness"])
+    scores["faithfulness"] = {
+        **_spread(faith),
+        "below_floor": sum(v < MATCH_FAITH_FLOOR for values in faith.values() for v in values),
+        "missing": sum(
+            row.get("faith_scored", False) and row.get("faithfulness") is None for row in rows
+        ),
+    }
+    return scores
+
+
+def build_match_summary(
+    rows: list[dict[str, Any]],
+    *,
+    run_id: str,
+    date: str,
+    prompt_version: str,
+    route: str,
+    split: str,
+    repeats: int,
+    questions: int,
+    models: dict[str, str | None],
+) -> dict[str, Any]:
+    """Aggregates of a job-match run, no job ad, requirement or guide text."""
+    from evals.match_checks import CODE_CHECKS, KINDS
+
+    groups = {
+        "tune": [row for row in rows if not row["held_out"]],
+        "held_out": [row for row in rows if row["held_out"]],
+    }
+    ok = [row for row in rows if row["status"] == "ok"]
+    return {
+        "kind": "match",
+        "run_id": run_id,
+        "date": date,
+        "prompt_version": prompt_version,
+        "route": route,
+        "split": split,
+        "repeats": repeats,
+        "questions": questions,
+        "samples": len(rows),
+        "errors": len(rows) - len(ok),
+        "fallback_samples": sum(bool(row["fallback"]) for row in rows),
+        "models": {
+            key: models.get(key)
+            for key in ("answer", "check", "embed", "judge_align", "judge_faithfulness")
+        },
+        "scores": {group: _match_scores(samples) for group, samples in groups.items() if samples},
+        "code_checks": {
+            "all": {"passed": sum(row["passed"] for row in rows), "total": len(rows)},
+            **{
+                name: {
+                    "passed": sum(row["code_checks"].get(name, False) for row in rows),
+                    "total": len(rows),
+                }
+                for name in CODE_CHECKS
+            },
+        },
+        "by_kind": {
+            kind: {
+                "passed": sum(row["passed"] for row in rows if row["kind"] == kind),
+                "total": sum(row["kind"] == kind for row in rows),
+            }
+            for kind in KINDS
+            if any(row["kind"] == kind for row in rows)
+        },
+        "requirements": {
+            "read": sum(len(row["requirements"]) for row in ok),
+            "unchecked": sum((row["result"] or {}).get("unchecked", 0) for row in ok),
+            "extra": sum(len((row["scores"] or {}).get("extra", [])) for row in ok),
+            "missing": sum(len((row["scores"] or {}).get("missing", [])) for row in ok),
+        },
+        "cost_usd": round(sum(row["cost_usd"] for row in rows), 6),
+    }
+
+
 def write_summary(summary: dict[str, Any], out: Path) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{summary['run_id']}.json"

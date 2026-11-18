@@ -383,3 +383,36 @@ def test_callbacks_and_wrappers_swallow_metering_errors(
     handler = meter.callbacks()[0]
     handler.on_llm_end(LLMResult(generations=[[ChatGeneration(message=message)]]))
     handler.on_llm_end(SimpleNamespace(generations=None))
+
+
+def test_eval_prices_are_the_app_price_table() -> None:
+    from app.guard import prices as app_prices
+
+    for model, (input_price, output_price) in app_prices._PRICES.items():
+        price = price_for(model)
+        assert (price.input_per_m, price.output_per_m) == (float(input_price), float(output_price))
+        assert cost_usd(model, 1234, 56) == pytest.approx(
+            float(app_prices.cost_usd(model, {"input_tokens": 1234, "output_tokens": 56}))
+        )
+
+
+def test_app_unknown_model_becomes_the_eval_exception() -> None:
+    from app.guard import prices as app_prices
+
+    with pytest.raises(UnknownModel) as caught:
+        cost_usd("claude-opus-unpriced", 1, 1)
+    assert type(caught.value) is UnknownModel
+    assert not isinstance(caught.value, app_prices.UnknownModel)
+
+
+def test_a_priced_model_without_a_pool_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    from decimal import Decimal
+
+    from app.guard import prices as app_prices
+
+    monkeypatch.setitem(app_prices._PRICES, "mistral-small", (Decimal("1"), Decimal("1")))
+    assert app_prices.cost_usd("mistral-small", {"input_tokens": 1}) > 0
+    with pytest.raises(UnknownModel, match="mistral-small"):
+        price_for("mistral-small")
+    with pytest.raises(UnknownModel, match="mistral-small"):
+        cost_usd("mistral-small", 1, 1)
