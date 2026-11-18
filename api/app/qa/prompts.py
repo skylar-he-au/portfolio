@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.rag.types import RecalledTurn, Section
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v6"
 
 _LANGUAGE_NAMES = {
     "en": "English",
@@ -130,11 +130,24 @@ Use only the numbered sections below, taken from the site's project pages. {data
 
 Rules:
 - {language}
-- 3 to 5 sentences.
+- 3 to 5 sentences, about 4 is best, also for a short follow-up question. If the direct \
+answer is shorter, add closely related facts from the sections. If you have more than 5 \
+points, keep the 5 that answer the question most directly and leave the rest out.
+- Keep sentences short: one main point each, about 30 words at most (in Chinese, about 50 \
+characters, ending with 。 and with [n] before the 。). Do not join clauses with semicolons.
+- Say "I" and "my" for Skylar, even where a section says "Skylar".
 - After each claim, cite the section that states it as [n], using the section numbers \
-given, for example [2]. Cite only sections that actually state the claim.
-- Do not add facts, numbers, names or opinions the sections do not state. If the sections \
-answer only part of the question, answer that part and say the rest isn't on the site.
+given, for example [2]. Cite only sections that actually state the claim. Never name \
+sections in words ("Section 1", "the sections"): the visitor cannot see them; say "the \
+site" or "my project pages" instead.
+- Do not add facts, numbers, names, causes or opinions the sections do not state, and do \
+not join facts with "because", "so" or "after" unless a section links them that way.
+- If the sections do not answer the question, or only part of it, say so once, in one \
+short sentence such as "My project pages don't give RoleRadar's user count.", then give \
+only facts the sections state that bear directly on the question, each cited. Do not \
+explain why it is missing, guess, or comment on the site or what it claims. Only say \
+something isn't on the site if the visitor asked about it.
+- No closing remarks or caveats of your own (such as "these numbers will change").
 - Plain text only: no Markdown, no links, no URLs, no headings, no lists."""
 
 _HISTORY_NOTE = """
@@ -142,7 +155,8 @@ _HISTORY_NOTE = """
 Earlier turns of this conversation come before the sections. Use them only to work out \
 what the visitor means, for example what "it" or "that" refers to. They are not sources: \
 take every fact from the numbered sections of this turn, and never cite or repeat an \
-earlier answer as evidence."""
+earlier answer as evidence. A follow-up still gets 3 to 5 sentences: after the direct \
+answer, add related facts from this turn's sections."""
 
 _RETRY_NOTE = """
 
@@ -171,9 +185,17 @@ def answer_messages(
     human = (
         _earlier_turns_block(history, marker)
         + f"Sections:\n\n{_sections_block(sections, marker)}\n\n"
-        + f"The visitor's question:\n{_wrap('question', marker, question)}"
+        + f"The visitor's question:\n{_wrap('question', marker, question)}\n\n"
+        + _ANSWER_REMINDER
     )
     return [SystemMessage(system), HumanMessage(human)]
+
+
+# Repeated after the data, where a small model weighs it most: the rules it broke most often.
+_ANSWER_REMINDER = (
+    "Reply in 3 to 5 short sentences, about 4, each fact cited as [n]. No closing remarks, "
+    "and no sentence about what the site doesn't say unless the question asked for it."
+)
 
 
 _OFF_TOPIC_SYSTEM = """\
@@ -207,6 +229,9 @@ Rules:
 "can work in Australia" says nothing about full-time or part-time, and "looking for \
 full-time roles from next year" says nothing about now. Never state a salary, visa type \
 or hours unless a section states it.
+- Keep dates and conditions exactly as a section words them. Do not link two facts with \
+"after", "because", "until" or "so" unless the section does: "full-time roles from early \
+2027" and "graduating in June 2027" do not make "full-time after I graduate".
 - If the sections do not answer the question, reply only: I don't have that on my About page.
 - Plain text only: no Markdown, no links, no lists."""
 
