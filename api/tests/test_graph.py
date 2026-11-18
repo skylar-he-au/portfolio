@@ -635,6 +635,87 @@ async def test_private_check_says_passed_but_lists_a_real_quote_fails():
     assert run.state["check"]["passed"] is False
 
 
+@pytest.mark.parametrize(
+    "draft",
+    [
+        "I don't have that on my About page.",
+        "  i don’t have that on my about page  ",
+        PRIVATE_FALLBACK,
+        "please see the About page or email me!",
+        "Please see the About page or email me [1].",
+        "I don't have that on my About page. Please see the About page or email me.",
+    ],
+)
+async def test_private_refusal_draft_becomes_fixed_sentence_without_check(draft: str):
+    run = await ask(
+        "Which visa are you on?",
+        claude=[rewrite_reply("Skylar visa", private=True), draft],
+        gemini=[],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+    )
+    assert run.names == ["route", "answer", "check", "trace"]
+    assert run.data("answer") == [
+        {
+            "text": PRIVATE_FALLBACK,
+            "citations": [{"n": 1, "url": "/about", "heading": "About Skylar"}],
+        }
+    ]
+    assert run.data("check") == [
+        {"passed": False, "unsupported": [], "retried": False, "reason": "not_in_about"}
+    ]
+    assert run.gemini.calls == []  # the private check never ran
+    assert run.data("token") == []
+
+
+@pytest.mark.parametrize(
+    ("draft", "kept"),
+    [
+        # fixed sentence tacked on after a real answer
+        (
+            "I can work in Australia [1]. Please see the About page or email me.",
+            "I can work in Australia [1].",
+        ),
+        # fixed sentence in the middle, with a citation of its own
+        (
+            "I can work in Australia [1]. Please see the About page or email me [1]. "
+            "I'm studying in Sydney [1].",
+            "I can work in Australia [1]. I'm studying in Sydney [1].",
+        ),
+        # in a Chinese answer, with no space after 。
+        (
+            "我可以在澳大利亚工作[1]。Please see the About page or email me.",
+            "我可以在澳大利亚工作[1]。",
+        ),
+    ],
+)
+async def test_private_draft_drops_the_fixed_sentence_and_checks_the_rest(draft: str, kept: str):
+    run = await ask(
+        "What are your work rights?",
+        claude=[rewrite_reply("work rights", private=True), draft],
+        gemini=[private_check_reply(enough_info=True)],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+    )
+    # The private check ran on the answer without the fixed sentence, and passed it.
+    checked = "\n".join(str(m.content) for m in run.gemini.calls[0])
+    assert kept in checked and PRIVATE_FALLBACK not in checked
+    assert run.data("answer") == [
+        {"text": kept, "citations": [{"n": 1, "url": WORK_RIGHTS.url, "heading": "Work rights"}]}
+    ]
+    assert run.state["check"]["passed"] is True
+
+
+async def test_private_prompt_asks_for_the_fixed_sentence_word_for_word():
+    run = await ask(
+        "Which visa are you on?",
+        claude=[rewrite_reply("Skylar visa", private=True), PRIVATE_FALLBACK],
+        gemini=[],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+    )
+    private_prompt = system_prompt(run.claude, 1)
+    assert PRIVATE_FALLBACK in private_prompt
+    assert "I don't have that on my About page" not in private_prompt
+
+
 async def test_private_with_nothing_retrieved_gets_fixed_sentence_without_models():
     run = await ask(
         "Where are you based?",

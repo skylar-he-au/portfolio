@@ -22,6 +22,7 @@ Nodes send the `route`, `status`, `reset`, `answer`, `check` and `trace` events 
 item 7) through `get_stream_writer()`; the API adds `meta`, `token`, `done` and `error`.
 """
 
+import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -36,11 +37,15 @@ from app.qa import memory, prompts
 from app.qa.models import CALL_TIMEOUT_S, ChatProvider, build_providers, stream_text, structured
 from app.qa.output import ANSWER_NODE, resolve_citations, verify_unsupported
 from app.qa.private import looks_private
+from app.qa.prompts import PRIVATE_FALLBACK
 from app.qa.state import QAInput, QAState, turn_defaults
 from app.rag.types import Embedder, Retriever, Section
 
 NOT_FOUND = "I couldn't find that in the project pages — please email me."
-PRIVATE_FALLBACK = "Please see the About page or email me."
+# Refusal sentences are dropped from a private draft by code (v8); a draft that was only
+# refusals (the fixed sentence, or the line the v2-v6 prompt asked for) is sent as the
+# fixed sentence without the private check.
+_REFUSALS = {"i don't have that on my about page", PRIVATE_FALLBACK}
 ABOUT_CITATION = {"n": 1, "url": "/about", "heading": "About Skylar"}
 ABOUT_PAGES = ["/about"]
 MAX_SECTIONS = 6
@@ -103,6 +108,32 @@ def _emit_answer(writer: StreamWriter, text: str, citations: list[dict[str, Any]
 
 def _emit_check(writer: StreamWriter, check: dict[str, Any]) -> None:
     writer({"event": "check", "data": check})
+
+
+_CITE = re.compile(r"\s*\[\d{1,3}(?:\s*,\s*\d{1,3})*\]")
+# A sentence: text up to its end marks, then any citations and the space after them.
+_SENTENCE = re.compile(r"[^.!?。！？]+[.!?。！？]*(?:\s*\[[\d,\s]+\])*\s*")  # noqa: RUF001
+
+
+def _normalise(text: str) -> str:
+    text = _CITE.sub("", text).strip().replace("’", "'")  # noqa: RUF001
+    return text.casefold().rstrip(".!?。！？ ")  # noqa: RUF001
+
+
+_REFUSAL_KEYS = {_normalise(r) for r in _REFUSALS}
+
+
+def _is_refusal(text: str) -> bool:
+    return _normalise(text) in _REFUSAL_KEYS
+
+
+def _drop_refusals(raw: str) -> str:
+    """The draft without any sentence that is only a refusal (the model sometimes adds the
+    fixed sentence after a real answer). Empty if nothing else is left."""
+    sentences = _SENTENCE.findall(raw)
+    if "".join(sentences) != raw:  # could not split it cleanly: leave it to the check
+        return "" if _is_refusal(raw) else raw
+    return "".join(s for s in sentences if not _is_refusal(s)).strip()
 
 
 def _retry_query(state: QAState) -> str:
@@ -237,8 +268,18 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         raw, provider = await stream_text(
             PRIVATE_ANSWER_NODE, answer_order, messages, deadline_s=timeout, visible=False
         )
-        text, citations = resolve_citations(raw, sections)
+        text, citations = resolve_citations(_drop_refusals(raw), sections)
         trace = node.end(provider.name, provider.model)
+        if not text:
+            check = {"passed": False, "unsupported": [], "retried": False, "reason": "not_in_about"}
+            _emit_answer(writer, PRIVATE_FALLBACK, [ABOUT_CITATION])
+            _emit_check(writer, check)
+            return {
+                "answer_text": PRIVATE_FALLBACK,
+                "citations": [ABOUT_CITATION],
+                "check": check,
+                "nodes": [*state["nodes"], trace],
+            }
         return {"answer_text": text, "citations": citations, "nodes": [*state["nodes"], trace]}
 
     async def check(state: QAState) -> dict[str, Any]:

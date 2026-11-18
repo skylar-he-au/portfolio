@@ -47,6 +47,11 @@ const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
     <p class="note">
       Code checks are plain rule checks: has a citation, sentence count, language, route, fixed reply, and required/forbidden text.
     </p>
+    <p class="note">
+      Prompt v8 only changed the code fallback for private answers; general answers are the same as in v7.
+      It was checked on the 8 private questions × 3 passes and the full-time question 10 times, not with a full final run, so the newest full results below are v7.
+      The next change to the prompts, chunking or content gets a full final run.
+    </p>
   </div>
 
   {qa.length === 0 && cot.length === 0 && <p>No eval runs published yet.</p>}
