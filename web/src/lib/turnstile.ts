@@ -1,3 +1,5 @@
+const ONLOAD = 'portfolioTurnstileOnload';
+
 interface TurnstileOptions {
   sitekey: string;
   execution: 'execute';
@@ -8,8 +10,9 @@ interface TurnstileOptions {
   'expired-callback': () => void;
 }
 
+// No `ready()`: the real api.js throws from it when its script tag is async, and a script
+// inserted from JavaScript always is. Rendering starts from the `onload` callback instead.
 interface Turnstile {
-  ready: (callback: () => void) => void;
   render: (container: HTMLElement, options: TurnstileOptions) => string;
   execute: (widgetId: string) => void;
   reset: (widgetId: string) => void;
@@ -19,6 +22,7 @@ interface Turnstile {
 declare global {
   interface Window {
     turnstile?: Turnstile;
+    [ONLOAD]?: () => void;
   }
 }
 
@@ -30,17 +34,23 @@ export interface WidgetController {
 
 let scriptPromise: Promise<Turnstile> | undefined;
 
+// Explicit rendering with an onload callback, as in Cloudflare's client-side rendering docs:
+// api.js calls `window[ONLOAD]` once `turnstile.render` can be used.
 export function loadTurnstile(): Promise<Turnstile> {
   if (!scriptPromise) {
     scriptPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      script.async = true;
-      script.addEventListener('load', () => {
+      window[ONLOAD] = () => {
+        delete window[ONLOAD];
         if (window.turnstile) resolve(window.turnstile);
         else reject(new Error('Turnstile is unavailable'));
+      };
+      const script = document.createElement('script');
+      script.src = `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=${ONLOAD}`;
+      script.async = true;
+      script.addEventListener('error', () => {
+        delete window[ONLOAD];
+        reject(new Error('Turnstile failed to load'));
       }, { once: true });
-      script.addEventListener('error', () => reject(new Error('Turnstile failed to load')), { once: true });
       document.head.appendChild(script);
     });
   }
@@ -69,29 +79,22 @@ export function renderWidget(container: HTMLElement, sitekey: string): WidgetCon
   void loadTurnstile().then((loaded) => {
     if (removed) return;
     api = loaded;
-    api.ready(() => {
-      if (removed) return;
-      try {
-        widgetId = loaded.render(container, {
-          sitekey,
-          execution: 'execute',
-          action: 'ask',
-          appearance: 'execute',
-          callback: (token) => {
-            if (!pending) return;
-            clearTimeout(pending.timer);
-            pending.resolve(token);
-            pending = undefined;
-          },
-          'error-callback': () => fail(new Error('Turnstile failed')),
-          'expired-callback': () => fail(new Error('Turnstile expired')),
-        });
-        if (resetOnReady) loaded.reset(widgetId);
-        resolveReady();
-      } catch (error) {
-        rejectReady(error);
-      }
+    widgetId = loaded.render(container, {
+      sitekey,
+      execution: 'execute',
+      action: 'ask',
+      appearance: 'execute',
+      callback: (token) => {
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        pending.resolve(token);
+        pending = undefined;
+      },
+      'error-callback': () => fail(new Error('Turnstile failed')),
+      'expired-callback': () => fail(new Error('Turnstile expired')),
     });
+    if (resetOnReady) loaded.reset(widgetId);
+    resolveReady();
   }).catch(rejectReady);
 
   return {

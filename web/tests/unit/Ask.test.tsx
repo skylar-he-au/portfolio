@@ -259,13 +259,13 @@ describe('Ask sessions and Turnstile', () => {
   });
 
   it('waits for a loading widget before sending a session or question', async () => {
-    widget.api.ready.mockImplementation(() => {});
+    widget.holdLoad();
     const { fetchMock } = await renderReady();
     fireEvent.focus(screen.getByRole('textbox'));
     await send();
     expect(widget.api.execute).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/session' || url === '/api/ask')).toBe(false);
-    await act(async () => { widget.api.ready.mock.calls[0][0](); });
+    await act(async () => { widget.load(); });
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/ask')).toBe(true));
     expect(widget.api.render).toHaveBeenCalledOnce();
   });
@@ -320,14 +320,13 @@ describe('Ask sessions and Turnstile', () => {
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/session' || url === '/api/ask')).toBe(false);
   });
 
-  it('does not render a widget when readiness finishes after unmount', async () => {
-    widget.api.ready.mockImplementation(() => {});
+  it('does not render a widget when the script loads after unmount', async () => {
+    widget.holdLoad();
     const { unmount } = await renderReady();
     fireEvent.focus(screen.getByRole('textbox'));
-    await waitFor(() => expect(widget.api.ready).toHaveBeenCalled());
-    const ready = widget.api.ready.mock.calls[0][0];
+    await waitFor(() => expect(turnstileScripts()).toHaveLength(1));
     unmount();
-    await act(async () => { ready(); });
+    await act(async () => { widget.load(); });
     expect(widget.api.render).not.toHaveBeenCalled();
   });
 });
