@@ -10,6 +10,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from app.api.ask import AskService, ask_router
+from app.api.cleanup import cleanup_router
+from app.api.feedback import feedback_router
 from app.api.session import session_router
 from app.config import Settings, get_settings
 from app.db import Database, make_pool
@@ -17,12 +19,13 @@ from app.guard.ledger import Ledger, SpendLimits
 from app.guard.limits import Limits, PauseSource
 from app.guard.session import Rejected, require_origin
 from app.guard.turnstile import TurnstileVerifier
-from app.qa.memory import make_checkpoint_pool
+from app.logging_setup import configure_logging
+from app.qa.memory import Checkpoints, make_checkpoint_pool
 from app.qa.models import MAX_OUTPUT_TOKENS
 
 logger = logging.getLogger(__name__)
-# Routes that skip the Worker secret check (`/api/cleanup` is added by the cleanup step).
-ORIGIN_EXEMPT_PATHS = frozenset({"/api/ping", "/api/health"})
+# Probes and the scheduler skip the Worker secret; cleanup verifies Google OIDC instead.
+ORIGIN_EXEMPT_PATHS = frozenset({"/api/ping", "/api/health", "/api/cleanup"})
 REQUIRED_SECRETS = ("origin_secret", "session_secret", "turnstile_secret")
 REQUIRED_CAPS = tuple(
     f"spend_{period}_usd_{provider}"
@@ -36,14 +39,15 @@ def create_app(
     pool: Any | None = None,
     *,
     checkpoint_pool: Any | None = None,
+    cleanup_checkpoints: Any | None = None,
     ask_service: AskService | None = None,
     limits: Limits | None = None,
     ledger: Ledger | None = None,
     pause_source: PauseSource | None = None,
     turnstile_client: httpx.AsyncClient | None = None,
 ) -> FastAPI:
-    """Build the app. Tests can inject fake pools or a whole `AskService`; by default both
-    pools are made closed (the app's, and the checkpointer's for `/api/ask`)."""
+    """Build the app. Tests can inject pools or services; all default pools start closed."""
+    configure_logging()
     settings = settings or get_settings()
     if settings.app_env == "prod":
         missing = [
@@ -55,6 +59,11 @@ def create_app(
             raise RuntimeError(f"Missing required variables: {', '.join(missing)}")
     database_url = settings.database_url.get_secret_value()
     db = Database(pool if pool is not None else make_pool(database_url))
+    cleanup_checkpoints = (
+        cleanup_checkpoints
+        if cleanup_checkpoints is not None
+        else Checkpoints(make_checkpoint_pool(database_url))
+    )
     ledger = (
         ledger
         if ledger is not None
@@ -78,7 +87,10 @@ def create_app(
         # The pools still open only on first use.
         yield
         await ask_service.close()
-        await db.close()
+        try:
+            await cleanup_checkpoints.close()
+        finally:
+            await db.close()
 
     app = FastAPI(
         title="portfolio-api",
@@ -118,6 +130,8 @@ def create_app(
 
     app.include_router(ask_router(ask_service))
     app.include_router(session_router())
+    app.include_router(feedback_router())
+    app.include_router(cleanup_router(cleanup_checkpoints))
 
     @app.get("/api/ping")
     async def ping() -> dict[str, str]:
