@@ -26,9 +26,9 @@ Privacy on this site (Skylar's portfolio): this is everything the site stores ab
 - **Question record**: your question is stored for 30 days with these fields only: time, question text, answer language, prompt version, which model providers were used, cost, a hash of your IP address for that day, and any thumbs-down you gave. The record does not contain the answer, any pasted job description, your session token or your IP address. It is deleted at the first cleanup after 30 days, so at most about 31 days after you asked.
 - **Conversation state**: answers and any pasted job description text are kept in the conversation for 24 hours, and so is the read-aloud audio cache. They are deleted at the first cleanup after 24 hours, so at most about 48 hours after you asked.
 - **Session token**: when the bot check passes, the site gives your browser a session token that works for 24 hours. It is kept only in this browser tab (session storage), so closing the tab forgets it, and it is not saved in the site's database. The site counts requests using a hash of the token's random ID, not the token itself.
-- **Daily request counters**: how many requests each session (by token hash) and each daily IP hash made that day, used to enforce daily limits. They are deleted after two days.
+- **Daily request counters**: how many requests each session (by token hash) and each daily IP hash made that day, used to enforce daily limits. Only today's and yesterday's counts are kept; older ones are deleted at the next cleanup.
 - **Spending records**: how much money was spent on each AI provider each day, used for monthly totals. They contain no personal data and are kept.
-- **Thumbs-down**: if you click the thumbs-down button under an answer, the site sends only that answer's ID and marks the matching question record. The mark lives in that record and is deleted with it after 30 days.
+- **Thumbs-down**: if you click the thumbs-down button under an answer, the site sends that answer's ID, plus your session token so it can apply the daily limit, and marks the matching question record. The mark lives in that record and is deleted with it after 30 days.
 
 ## IP addresses
 
