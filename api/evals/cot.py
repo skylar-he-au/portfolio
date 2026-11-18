@@ -115,15 +115,20 @@ def arms(check_model: str) -> list[Arm]:
     ]
 
 
-def make_chat(settings: Any, thinking_level: str) -> Any:
-    """The product's Gemini check model (`build_providers`) with one thinking level."""
+def make_chat(
+    settings: Any, thinking_level: str, max_output_tokens: int = MAX_OUTPUT_TOKENS
+) -> Any:
+    """The product's Gemini check model (`build_providers`) with one thinking level.
+
+    `max_output_tokens` other than the product's is only for side runs (no public summary).
+    """
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     key = settings.gemini_api_key
     return ChatGoogleGenerativeAI(
         model=settings.check_model,
         google_api_key=key.get_secret_value() if key else "missing",
-        max_output_tokens=MAX_OUTPUT_TOKENS,
+        max_output_tokens=max_output_tokens,
         timeout=CALL_TIMEOUT_S,
         max_retries=1,
         thinking_level=thinking_level,
@@ -550,6 +555,12 @@ def _parser() -> argparse.ArgumentParser:
         parser.add_argument(f"--{flag}", type=_positive_float, required=True)
     parser.add_argument("--repeats", type=_positive_int, default=3)
     parser.add_argument("--summary-out", type=Path)
+    parser.add_argument("--arms", help="comma-separated arm names (default: all three)")
+    parser.add_argument(
+        "--max-output-tokens",
+        type=_positive_int,
+        help="side runs only: a cap other than the product's; no public summary",
+    )
     parser.add_argument(
         "--probe",
         action="store_true",
@@ -559,7 +570,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    side_run = args.arms is not None or args.max_output_tokens is not None
+    if side_run and args.summary_out is not None:
+        parser.error("--summary-out only with all arms at the product's output cap")
     try:
         segments = load_segments(args.labels, args.source_run)
     except (OSError, ValueError, KeyError) as error:
@@ -570,16 +585,23 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = get_settings()
     started = datetime.now(UTC)
-    run_id = f"{started:%Y%m%dT%H%M%S}-{prompts.PROMPT_VERSION}-cot" + (
-        "-probe" if args.probe else ""
-    )
+    cap = args.max_output_tokens or MAX_OUTPUT_TOKENS
+    run_id = f"{started:%Y%m%dT%H%M%S}-{prompts.PROMPT_VERSION}-cot"
+    run_id += f"-out{cap}" if cap != MAX_OUTPUT_TOKENS else ""
+    run_id += "-probe" if args.probe else ""
     caps = {
         "real": (args.pass_cap, args.total_cap),
         "credit": (args.credit_pass_cap, args.credit_total_cap),
     }
     arm_list = arms(settings.check_model)
+    if args.arms is not None:
+        wanted = args.arms.split(",")
+        unknown = set(wanted) - {arm.name for arm in arm_list}
+        if unknown:
+            parser.error(f"unknown arms: {', '.join(sorted(unknown))}")
+        arm_list = [arm for arm in arm_list if arm.name in wanted]
     meter = Meter(caps, args.ledger, run_id)
-    chats = {arm.name: make_chat(settings, arm.thinking_level) for arm in arm_list}
+    chats = {arm.name: make_chat(settings, arm.thinking_level, cap) for arm in arm_list}
     if args.probe:
         segments, repeats, summary_out = segments[:1], 1, None
     else:

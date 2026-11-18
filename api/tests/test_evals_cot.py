@@ -360,3 +360,15 @@ def test_caps_are_required() -> None:
 def test_verdict_schema_rejects_missing_fields() -> None:
     with pytest.raises(ValidationError):
         cot.VerdictOut.model_validate({"passed": True})
+
+
+def test_side_run_options_never_publish() -> None:
+    base = ["--labels", "l", "--source-run", "r", "--out", "o", "--ledger", "s",
+            "--pass-cap", "1", "--total-cap", "2", "--credit-pass-cap", "1",
+            "--credit-total-cap", "2"]  # fmt: skip
+    with pytest.raises(SystemExit):
+        cot.main([*base, "--max-output-tokens", "2048", "--summary-out", "x"])
+    with pytest.raises(SystemExit):
+        cot.main([*base, "--arms", "thinking_medium", "--summary-out", "x"])
+    settings = SimpleNamespace(check_model=MODEL, gemini_api_key=SecretStr("test-key"))
+    assert cot.make_chat(settings, "medium", 2048).max_output_tokens == 2048

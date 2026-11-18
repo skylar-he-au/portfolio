@@ -1,0 +1,79 @@
+{
+  "kind": "cot",
+  "run_id": "20261118T071804-v8-cot",
+  "date": "2026-11-18",
+  "model": "gemini-3.5-flash-lite",
+  "sentences": 150,
+  "repeats": 3,
+  "arms": [
+    {
+      "name": "reasoning_field",
+      "label": "Writes reasoning, then verdict",
+      "thinking_level": "minimal",
+      "accuracy": {
+        "mean": 0.955556,
+        "min": 0.946667,
+        "max": 0.966667
+      },
+      "unsupported_precision": {
+        "mean": 0.987179,
+        "min": 0.961538,
+        "max": 1.0
+      },
+      "unsupported_recall": {
+        "mean": 0.802083,
+        "min": 0.78125,
+        "max": 0.84375
+      },
+      "invalid": 0,
+      "ms_median": 1360,
+      "cost_usd": 0.226009
+    },
+    {
+      "name": "thinking_medium",
+      "label": "Model thinking (medium), verdict only",
+      "thinking_level": "medium",
+      "accuracy": {
+        "mean": 0.76,
+        "min": 0.706667,
+        "max": 0.793333
+      },
+      "unsupported_precision": {
+        "mean": 0.942892,
+        "min": 0.9375,
+        "max": 0.95
+      },
+      "unsupported_recall": {
+        "mean": 0.520833,
+        "min": 0.46875,
+        "max": 0.59375
+      },
+      "invalid": 55,
+      "ms_median": 2852,
+      "cost_usd": 0.531553
+    },
+    {
+      "name": "no_reasoning",
+      "label": "Verdict only",
+      "thinking_level": "minimal",
+      "accuracy": {
+        "mean": 0.966667,
+        "min": 0.966667,
+        "max": 0.966667
+      },
+      "unsupported_precision": {
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "unsupported_recall": {
+        "mean": 0.84375,
+        "min": 0.84375,
+        "max": 0.84375
+      },
+      "invalid": 0,
+      "ms_median": 1132,
+      "cost_usd": 0.171692
+    }
+  ]
+}
