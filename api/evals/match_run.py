@@ -217,12 +217,19 @@ def fallback_nodes(calls: Sequence[Mapping[str, Any]], route: str) -> list[str]:
 @dataclasses.dataclass(frozen=True)
 class GraphRun:
     sample: MatchSample
-    section_texts: dict[str, str]  # url -> text of every retrieved section (not stored)
+    section_texts: dict[str, str]  # url -> judge context of every retrieved section (not stored)
+
+
+def judge_context(section: Any) -> str:
+    """A section as the Faithfulness judge sees it: with its page and heading, as the writer
+    saw it. The guide names sections ("the 'Access control by role' section"); with the body
+    alone the judge marks every such statement unsupported (6e1b, 2026-11-19)."""
+    return f'Skylar\'s project page {section.page}, section "{section.heading}":\n{section.text}'
 
 
 def _sample(events: list[dict[str, Any]], final: Mapping[str, Any]) -> GraphRun:
     retrieved = final.get("retrieved") or {}
-    texts = {s.url: s.text for found in retrieved.values() if found for s in found}
+    texts = {s.url: judge_context(s) for found in retrieved.values() if found for s in found}
     result = final.get("result")
     return GraphRun(
         MatchSample(
@@ -363,7 +370,11 @@ def faith_input(sample: MatchSample, section_texts: Mapping[str, str]) -> ScoreI
     if not items:
         return None
     text_of = {r["id"]: r["text"] for r in sample.requirements}
-    lines = [f'For "{text_of.get(item["requirement_id"], "")}": {item["text"]}' for item in items]
+    # Only the guide's own sentences: with a 'For "<requirement>":' prefix the judge turns
+    # each line into "the X requirement is shown in ..." and marks it unsupported, since the
+    # contexts are project pages, not the ad (6e1b, 2026-11-19). The ad's requirements are in
+    # user_input; whether a line fits its requirement is scored by code, not here.
+    lines = [item["text"] for item in items]
     urls = list(dict.fromkeys(s["url"] for item in items for s in item["sections"]))
     return ScoreInput(
         user_input=(

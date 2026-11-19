@@ -20,6 +20,7 @@ from test_match_graph import FakeSearch, Script, kind, section
 from app.match.graph import MatchDeps
 from app.match.prompts import SYSTEM_PROMPT_PROBES
 from app.qa.models import ChatProvider
+from app.rag.types import Section
 from evals.match_checks import (
     CODE_CHECKS,
     GoldRequirement,
@@ -34,6 +35,7 @@ from evals.match_checks import (
 from evals.match_run import (
     CallLog,
     MatchMeter,
+    _sample,
     align_request,
     align_worst,
     evaluate_match,
@@ -396,8 +398,20 @@ def test_faith_input_is_the_guide_against_its_linked_sections() -> None:
     assert value is not None
     assert value.metrics == ("faithfulness",)
     assert value.retrieved_contexts == ["Section A text.", "X text."]
-    assert value.response.splitlines() == ['For "Python": Built in Python.', 'For "SQL": Uses SQL.']
+    assert value.response.splitlines() == ["Built in Python.", "Uses SQL."]
+    assert value.user_input.endswith("requirements? Python; SQL")
     assert faith_input(_with_result(items=[]), {}) is None
+
+
+def test_judge_context_carries_the_page_and_heading() -> None:
+    found = Section("/projects/oncallops", "access", "Access control by role", "Four roles.")
+    run = _sample([], {"retrieved": {"r1": [found], "r2": None}})
+    assert run.section_texts == {
+        "/projects/oncallops#access": (
+            'Skylar\'s project page /projects/oncallops, section "Access control by role":\n'
+            "Four roles."
+        )
+    }
 
 
 # --- spending -------------------------------------------------------------------------------
@@ -595,10 +609,13 @@ async def test_runner_runs_the_real_graph_and_keeps_everything(tmp_path: Path) -
     assert row["scores"]["precision"] == pytest.approx(1 / 2)
     assert row["scores"]["not_covered_accuracy"] == 1.0
     assert row["faithfulness"] == 0.9
-    assert scorer.inputs[0].retrieved_contexts == [
+    contexts = scorer.inputs[0].retrieved_contexts
+    assert [c.split("\n", 1)[1] for c in contexts] == [
         "Skylar built it in Python.",
         "Postgres queries.",
     ]
+    assert all(c.startswith("Skylar's project page /projects/") for c in contexts)
+    assert 'section "Heading python":' in contexts[0]
     assert row["cost_usd"] > 0
     lines = (tmp_path / "runs" / "run-1.jsonl").read_text(encoding="utf-8").splitlines()
     assert [json.loads(line)["repeat"] for line in lines] == [1, 2]
