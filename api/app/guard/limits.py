@@ -1,6 +1,6 @@
 """Bounded process sieves followed by atomic daily database counters.
 
-Kinds: `ask`, `match`, `tts`, and `fetch` (fetching a job ad by link, which also has an
+Kinds: `ask`, `match`, and `fetch` (fetching a job ad by link, which also has an
 in-process per-minute window per token and per IP). The job match uses three extra steps:
 `sieve` (the in-process checks alone, once per request), `peek` (read-only: would one more
 fit today?) and `refund` (take back one count, for a job ad with no requirements); `admit`
@@ -31,8 +31,9 @@ COUNTER_SQL = """
     ON CONFLICT (day, kind, scope, key) DO UPDATE SET count = usage_counters.count + 1
     WHERE usage_counters.count < %s RETURNING count
 """
-KINDS = frozenset({"ask", "match", "tts", "fetch"})
+KINDS = frozenset({"ask", "match", "fetch"})
 SCOPES = ("token", "ip", "site")
+DEV_MARK_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,7 @@ class Limits:
         self._clock = clock
         self._process_key = os.urandom(32)
         self._marked_day: date | None = None
-        self._marks: set[tuple[str, str, bytes]] = set()
+        self._marks: dict[tuple[str, str, bytes], float] = {}
         self._daily_keys: dict[date, bytes] = {}
         self._issuing = SlidingWindow(10, 3600)
         self._coarse = SlidingWindow(30, 60)
@@ -132,6 +133,15 @@ class Limits:
             (kind, "site", self._private_key(b"")),
         )
 
+    def _mark_live(self, mark: tuple[str, str, bytes], now: datetime) -> bool:
+        added_at = self._marks.get(mark)
+        if added_at is None:
+            return False
+        if self._settings.app_env == "dev" and now.timestamp() - added_at >= DEV_MARK_SECONDS:
+            self._marks.pop(mark, None)
+            return False
+        return True
+
     def sieve(self, kind: str, session: Session) -> None:
         """The in-process checks of `admit`, once per request: a known full count for this
         kind today (`limit_day`), then the per-IP coarse window (`slow_down`)."""
@@ -139,7 +149,7 @@ class Limits:
             raise ValueError("unknown admission kind")
         now = self._clock()
         marks = self._marks_for(kind, session, now.astimezone(SYDNEY).date())
-        if any(mark in self._marks for mark in marks):
+        if any(self._mark_live(mark, now) for mark in marks):
             raise Rejected("limit_day")
         if not self._coarse.allow(marks[1][2], now.timestamp()):
             raise Rejected("slow_down")
@@ -171,7 +181,7 @@ class Limits:
         now = self._clock()
         day = now.astimezone(SYDNEY).date()
         marks = self._marks_for(kind, session, day)
-        if any(mark in self._marks for mark in marks):
+        if any(self._mark_live(mark, now) for mark in marks):
             raise Rejected("limit_day")
         if not self._db_budget.allow(b"", now.timestamp()):
             raise Rejected("slow_down")
@@ -193,7 +203,7 @@ class Limits:
             if keys.get(scope) != bytes(key):
                 continue
             if count >= getattr(self._settings, f"{kind}_limit_{scope}"):
-                self._marks.add(marks[SCOPES.index(scope)])
+                self._marks[marks[SCOPES.index(scope)]] = self._clock().timestamp()
                 raise Rejected("limit_day")
 
     async def refund(self, admission: Admission, session: Session) -> None:
@@ -212,7 +222,7 @@ class Limits:
             raise Rejected("unavailable") from None
         if self._marked_day == admission.day:
             for mark in self._marks_for(admission.kind, session, admission.day):
-                self._marks.discard(mark)
+                self._marks.pop(mark, None)
 
     async def admit(
         self,
@@ -236,7 +246,7 @@ class Limits:
         now = self._clock()
         day = now.astimezone(SYDNEY).date()
         marks = self._marks_for(kind, session, day)
-        if any(mark in self._marks for mark in marks):
+        if any(self._mark_live(mark, now) for mark in marks):
             raise Rejected("limit_day")
         if not sieved and not self._coarse.allow(marks[1][2], now.timestamp()):
             raise Rejected("slow_down")
@@ -275,7 +285,7 @@ class Limits:
             return Admission(kind, session.token_key, ip_hash, day)
         except Rejected:
             if failed_mark is not None and self._marked_day == day:
-                self._marks.add(failed_mark)
+                self._marks[failed_mark] = self._clock().timestamp()
             raise
         except (psycopg.Error, PoolTimeout, OSError, TimeoutError):
             raise Rejected("unavailable") from None

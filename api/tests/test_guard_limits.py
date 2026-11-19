@@ -4,7 +4,9 @@ import asyncio
 import hashlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from shutil import copyfile
 
+import psycopg
 import pytest
 from guard_helpers import Clock, guard_settings
 from test_api import ExplodingPool
@@ -12,7 +14,7 @@ from test_api import ExplodingPool
 from app.db import Database, make_pool
 from app.guard.limits import SYDNEY, Admission, Limits, SlidingWindow
 from app.guard.session import Rejected, Session
-from app.migrate import migrate
+from app.migrate import DEFAULT_DIR, discover, migrate
 
 pytestmark = pytest.mark.anyio
 
@@ -150,6 +152,151 @@ async def test_sydney_midnight_clears_marks(database, db_url):
     second = await limits.admit("ask", visitor())
     assert second.day > first.day
     assert second.ip_hash != first.ip_hash
+
+
+@pytest.mark.parametrize("scope", ["token", "ip"])
+@pytest.mark.parametrize("method", ["sieve", "peek", "admit"])
+async def test_dev_marks_expire_after_counters_are_deleted(database, db_url, scope, method):
+    clock = Clock()
+    counted = CountingDatabase(database)
+    settings = guard_settings(db_url, **{f"ask_limit_{scope}": 1})
+    limits = Limits(counted, settings, clock=clock)
+    await limits.admit("ask", visitor())
+    session = visitor() if scope == "token" else visitor(2)
+    mark_method = limits.peek if method == "peek" else limits.admit
+    with pytest.raises(Rejected, match="limit_day"):
+        await mark_method("ask", session)
+    calls = counted.calls
+    async with database.connection() as conn, conn.transaction():
+        await conn.execute("DELETE FROM usage_counters")
+
+    clock.advance(seconds=29)
+    with pytest.raises(Rejected, match="limit_day"):
+        await limits.admit("ask", session)
+    with pytest.raises(Rejected, match="limit_day"):
+        await limits.peek("ask", session)
+    with pytest.raises(Rejected, match="limit_day"):
+        limits.sieve("ask", session)
+    assert counted.calls == calls
+
+    clock.advance(seconds=2)
+    if method == "sieve":
+        limits.sieve("ask", session)
+    else:
+        await getattr(limits, method)("ask", session)
+    if method != "admit":
+        await limits.admit("ask", session)
+    assert counted.calls > calls
+    assert {row[4] for row in await rows(database)} == {1}
+
+
+@pytest.mark.parametrize("scope", ["token", "ip"])
+@pytest.mark.parametrize("method", ["peek", "admit"])
+async def test_dev_marks_are_reset_if_counters_remain_full(database, db_url, scope, method):
+    clock = Clock()
+    counted = CountingDatabase(database)
+    settings = guard_settings(db_url, **{f"ask_limit_{scope}": 1})
+    limits = Limits(counted, settings, clock=clock)
+    await limits.admit("ask", visitor())
+    session = visitor() if scope == "token" else visitor(2)
+    mark_method = getattr(limits, method)
+    with pytest.raises(Rejected, match="limit_day"):
+        await mark_method("ask", session)
+    assert counted.calls == 2
+
+    clock.advance(seconds=30)
+    with pytest.raises(Rejected, match="limit_day"):
+        await mark_method("ask", session)
+    assert counted.calls == 3  # expired mark was checked against the still-full database
+    async with database.connection() as conn, conn.transaction():
+        await conn.execute("DELETE FROM usage_counters")
+
+    clock.advance(seconds=29)
+    with pytest.raises(Rejected, match="limit_day"):
+        await limits.admit("ask", session)
+    with pytest.raises(Rejected, match="limit_day"):
+        limits.sieve("ask", session)
+    assert counted.calls == 3  # the replacement mark has its own 30-second lifetime
+    clock.advance(seconds=1)
+    await limits.admit("ask", session)
+    assert counted.calls == 4
+
+
+@pytest.mark.parametrize("scope", ["token", "ip"])
+@pytest.mark.parametrize("method", ["peek", "admit"])
+async def test_prod_marks_last_until_sydney_midnight(database, db_url, scope, method):
+    clock = Clock()
+    counted = CountingDatabase(database)
+    settings = guard_settings(db_url, app_env="prod", **{f"ask_limit_{scope}": 1})
+    limits = Limits(counted, settings, clock=clock)
+    first = await limits.admit("ask", visitor())
+    session = visitor() if scope == "token" else visitor(2)
+    with pytest.raises(Rejected, match="limit_day"):
+        await getattr(limits, method)("ask", session)
+    calls = counted.calls
+    async with database.connection() as conn, conn.transaction():
+        await conn.execute("DELETE FROM usage_counters")
+
+    for seconds in (30, 1, 3569):  # 30 seconds, 31 seconds and one hour since marking
+        clock.advance(seconds=seconds)
+        with pytest.raises(Rejected, match="limit_day"):
+            await limits.admit("ask", session)
+        with pytest.raises(Rejected, match="limit_day"):
+            await limits.peek("ask", session)
+        with pytest.raises(Rejected, match="limit_day"):
+            limits.sieve("ask", session)
+        assert counted.calls == calls
+
+    # January is UTC+11: 13:00 UTC is the next Sydney day.
+    clock.now = datetime(2026, 1, 1, 13, tzinfo=UTC)
+    second = await limits.admit("ask", session)
+    assert second.day > first.day
+    assert counted.calls == calls + 1
+
+
+async def test_counter_kinds_exclude_tts(database, db_url):
+    statement = (
+        "INSERT INTO usage_counters (day, kind, scope, key, count) "
+        "VALUES ('2026-01-01', %s, 'site', %s, 1)"
+    )
+    async with database.connection() as conn, conn.transaction():
+        for kind in ("ask", "match", "fetch"):
+            await conn.execute(statement, (kind, b""))
+    assert {row[1] for row in await rows(database)} == {"ask", "match", "fetch"}
+    with pytest.raises(psycopg.errors.CheckViolation) as caught:
+        async with database.connection() as conn, conn.transaction():
+            await conn.execute(statement, ("tts", b""))
+    assert caught.value.diag.constraint_name == "usage_counters_kind_check"
+    limits = Limits(database, guard_settings(db_url), clock=Clock())
+    with pytest.raises(ValueError, match="unknown admission kind"):
+        await limits.admit("tts", visitor())
+
+
+def test_drop_tts_migration_deletes_existing_rows(db_url, tmp_path):
+    versions = []
+    for version, path in discover(DEFAULT_DIR):
+        if version <= "0007":
+            copyfile(path, tmp_path / path.name)
+            versions.append(version)
+    assert migrate(db_url, tmp_path) == versions
+    statement = (
+        "INSERT INTO usage_counters (day, kind, scope, key, count) "
+        "VALUES ('2026-01-01', %s, 'site', %s, 1)"
+    )
+    with psycopg.connect(db_url) as conn:
+        for kind in ("ask", "match", "tts", "fetch"):
+            conn.execute(statement, (kind, b""))
+
+    assert migrate(db_url) == ["0008"]
+    with psycopg.connect(db_url) as conn:
+        assert conn.execute("SELECT kind FROM usage_counters ORDER BY kind").fetchall() == [
+            ("ask",),
+            ("fetch",),
+            ("match",),
+        ]
+        with pytest.raises(psycopg.errors.CheckViolation) as caught, conn.transaction():
+            conn.execute(statement, ("tts", b""))
+        assert caught.value.diag.constraint_name == "usage_counters_kind_check"
 
 
 async def test_ip_hashes_and_daily_key_cache(database, db_url):

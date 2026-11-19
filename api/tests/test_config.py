@@ -43,7 +43,7 @@ def test_comma_separated_hostnames_from_environment(monkeypatch):
     assert settings.turnstile_hostnames == ["a.com", "b.com"]
 
 
-@pytest.mark.parametrize("kind", ["ask", "match", "tts"])
+@pytest.mark.parametrize("kind", ["ask", "match"])
 @pytest.mark.parametrize("scope", ["token", "ip", "site"])
 def test_daily_limits_must_be_positive(kind, scope):
     with pytest.raises(ValidationError):

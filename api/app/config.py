@@ -51,9 +51,6 @@ class Settings(BaseSettings):
     match_limit_token: int = Field(default=3, ge=1)
     match_limit_ip: int = Field(default=3, ge=1)
     match_limit_site: int = Field(default=30, ge=1)
-    tts_limit_token: int = Field(default=5, ge=1)
-    tts_limit_ip: int = Field(default=5, ge=1)
-    tts_limit_site: int = Field(default=30, ge=1)
     # Fetching a job ad by link (SPEC "职位对照" 输入): per day, and per minute in-process.
     fetch_limit_token: int = Field(default=10, ge=1)
     fetch_limit_ip: int = Field(default=10, ge=1)
