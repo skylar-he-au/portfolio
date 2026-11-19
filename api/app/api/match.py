@@ -140,11 +140,11 @@ def match_worst(
 
 def match_worst_steps(models: match_models.MatchModels, embed_model: str) -> dict[str, Decimal]:
     """What one match can cost on its main path, per provider pool, from the real prompts
-    at their largest: the read step reads a 20,000-character ad, 8 match agents see 6
-    sections each, the write step writes the guide (8 findings x 3 sections), the check
-    checks 24 (requirement, section) pairs; OpenAI embeds 8 search phrases. Each step is
-    charged to its first model's provider at that model's price and the step's own output
-    cap. A switch of provider is not reserved here: it tops up before its call
+    at their largest: the read step reads a 20,000-character ad, 12 (`MAX_REQUIREMENTS`)
+    match agents see 6 sections each, the write step writes the guide (12 findings x 3
+    sections), the check checks 36 (requirement, section) pairs; OpenAI embeds 12 search
+    phrases. Each step is charged to its first model's provider at that model's price and
+    the step's own output cap. A switch of provider is not reserved here: it tops up before its call
     (`SpendScope.ensure`)."""
     marker = "0" * 16
     requirement = Requirement(

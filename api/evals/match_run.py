@@ -62,14 +62,15 @@ from evals.types import CapReached, MeterLike, ScoreInput, UnknownModel
 SAMPLE_TIMEOUT_S = 150.0  # the API's whole-match deadline is 120 s
 JUDGE_MODEL = "claude-sonnet-5-5"
 ALIGN_MAX_TOKENS = 2048
-ALIGN_INPUT_TOKENS = 2500  # system + 8 read + 8 gold requirements, generously
+ALIGN_INPUT_TOKENS = 2500  # system + 12 read + 12 gold requirements (~40 tokens each)
 # RAGAS Faithfulness: statements, then verdicts; one more for a retry. Each call may use
 # the judge's max_tokens (evals.ragas_score.make_llm: 4096).
 FAITH_CALLS = 3
 FAITH_MAX_TOKENS = 4096
 FAITH_OVERHEAD_CHARS = 6000  # RAGAS's own instructions and examples per call
-MAX_GUIDE_CHARS = 8 * 400  # 8 items, requirement + sentence
-MAX_CONTEXT_CHARS = 24 * 2400  # 8 items x 3 links x the longest section estimate (6b2)
+MAX_GUIDE_CHARS = MAX_REQUIREMENTS * 400  # one item per requirement + sentence
+# every item x 3 links x the longest section estimate (6b2)
+MAX_CONTEXT_CHARS = MAX_REQUIREMENTS * 3 * 2400
 ROUTES = ("default", "gemini-answer")
 STEPS = ("read", "match", "check", "write")
 

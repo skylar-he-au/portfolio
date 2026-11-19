@@ -40,7 +40,7 @@ from app.rag.types import Section
 # The rule for "shows" is unchanged. One column in `match_log`, so the two go together.
 PROMPT_VERSION = "match-v5+check-v2"
 
-# The read agent may list more than the graph keeps; more than 8 means "Top 8".
+# The read agent may list more than the graph keeps; more than 12 means "Top 12".
 READ_LIMIT = 12
 
 _LANGUAGE_NAMES = {

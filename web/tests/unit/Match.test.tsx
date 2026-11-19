@@ -216,7 +216,7 @@ describe('Match streaming and guide', () => {
     const notCovered = screen.getByRole('list', { name: 'Not covered on the pages' });
     expect([...notCovered.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Kubernetes', 'Java']);
     expect(screen.getByText("1 requirement couldn't be checked")).toBeInTheDocument();
-    expect(screen.getByText('Top 8 requirements of the job ad shown.')).toBeInTheDocument();
+    expect(screen.getByText('Top 12 requirements of the job ad shown.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'This guide is wrong' })).not.toBeInTheDocument();
     await act(async () => { stream.emit('done', {}); stream.close(); });
     const feedback = screen.getByRole('button', { name: 'This guide is wrong' });
@@ -239,7 +239,7 @@ describe('Match streaming and guide', () => {
     expect(screen.queryByText('Where my pages cover this role:')).not.toBeInTheDocument();
     expect(screen.queryByText(result.items[0].text)).not.toBeInTheDocument();
     expect(screen.queryByText(/Not covered on the pages/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Top 8 requirements/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Top 12 requirements/)).not.toBeInTheDocument();
   });
 
   it('lists each not-covered requirement on its own line, keeping commas inside one', async () => {

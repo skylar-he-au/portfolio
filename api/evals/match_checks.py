@@ -231,7 +231,7 @@ def _final_states(sample: MatchSample) -> dict[str, str]:
 
 def _schema_ok(sample: MatchSample, max_requirements: int = MAX_REQUIREMENTS) -> bool:
     """The guide fits `Guide`, the requirement ids are r1..rN with N at most this run's
-    `max_requirements` (8 on the live graph; a replay may read more), the guide's counts add
+    `max_requirements` (12 on the live graph; a replay may read 8), the guide's counts add
     up, and every stream event has an agreed shape."""
     if sample.result is None:
         return False

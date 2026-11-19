@@ -24,9 +24,9 @@ from app.rag.types import Section
 
 logger = logging.getLogger(__name__)
 
-MAX_REQUIREMENTS = 8
+MAX_REQUIREMENTS = 12  # 8 until step 6 round 2 (read 0.943 vs 0.899 of the gold)
 MAX_REQUIREMENT_CHARS = 120
-REQUIREMENT_ID = re.compile(r"r[1-8]")  # MAX_REQUIREMENTS
+REQUIREMENT_ID = re.compile(r"r([1-9]|1[0-2])")  # r1..r<MAX_REQUIREMENTS>
 
 Stage = Literal["reading", "matching", "checking", "writing"]
 Status = Literal["found", "not_found", "unchecked"]
@@ -70,7 +70,7 @@ class Guide(BaseModel):
     items: list[GuideItem]
     not_covered: list[str]  # requirement texts the pages don't show
     unchecked: int  # requirements that couldn't be checked
-    top8: bool
+    top8: bool  # the ad had more than MAX_REQUIREMENTS (name kept: SSE, match_log, eval rows)
     language: str
 
 

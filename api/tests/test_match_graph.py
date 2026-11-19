@@ -34,6 +34,7 @@ from app.match.graph import (
 )
 from app.match.prompts import Verdict
 from app.match.state import (
+    MAX_REQUIREMENTS,
     Finding,
     Guide,
     NotesBoard,
@@ -258,7 +259,8 @@ def test_merge_findings_rejects_duplicates_and_malformed_ids_and_sorts() -> None
     right = [
         finding("r1"),
         finding("r3", "not_found"),
-        finding("r9"),
+        finding("r13"),
+        finding("r0"),
         finding("x1"),
         finding("r1", "unchecked"),
         finding("r2"),
@@ -285,6 +287,26 @@ def test_board_uses_the_same_reducer() -> None:
     board.add(finding("r1"))
     board.add(finding("r1", "not_found"))
     assert [f["status"] for f in board.snapshot()["findings"]] == ["found"]
+
+
+def test_findings_r9_to_r12_are_kept_and_sorted_by_number() -> None:
+    """Up to 12 requirements: r9..r12 are well formed and sort after r8 (not as text)."""
+    ids = [f"r{n}" for n in (12, 2, 10, 9, 1, 11)]
+    merged = merge_findings([], [finding(rid) for rid in ids])
+    assert [f.requirement_id for f in merged] == ["r1", "r2", "r9", "r10", "r11", "r12"]
+    board = NotesBoard(
+        [Requirement(id=f"r{n}", text=f"Skill {n}", query="q") for n in range(1, 13)]
+    )
+    for rid in ids:
+        board.add(finding(rid))
+    assert [f["requirement_id"] for f in board.snapshot()["findings"]] == [
+        "r1",
+        "r2",
+        "r9",
+        "r10",
+        "r11",
+        "r12",
+    ]
 
 
 @pytest.mark.parametrize("node", ["search", "match", "write", "check"])
@@ -708,17 +730,33 @@ async def test_zero_requirements_ends_with_not_a_job() -> None:
     assert search.calls == []
 
 
-async def test_twelve_requirements_keep_the_first_eight_and_set_top8() -> None:
-    names = [f"Skill {i}" for i in range(1, 13)]
+async def test_thirteen_requirements_keep_the_first_twelve_and_set_top8() -> None:
+    names = [f"Skill {i}" for i in range(1, 14)]
     script = Script(reqs(*names))
     search = one_section_each(names)
     deps, _, _ = make_deps(script, search=search)
     custom, final = await run(deps, JD)
-    assert [r.id for r in final["requirements"]] == [f"r{i}" for i in range(1, 9)]
-    assert [r.text for r in final["requirements"]] == names[:8]
-    assert final["result"].top8 is True
-    assert ("matching", 8) in stages(custom)
-    assert search.calls == [([f"q {n}" for n in names[:8]], "/projects/")]
+    assert MAX_REQUIREMENTS == 12
+    assert [r.id for r in final["requirements"]] == [f"r{i}" for i in range(1, 13)]
+    assert [r.text for r in final["requirements"]] == names[:12]
+    assert final["result"].top8 is True  # the ad had more than 12: "Top 12" on the page
+    assert ("matching", 12) in stages(custom)
+    assert search.calls == [([f"q {n}" for n in names[:12]], "/projects/")]
+    # r9..r12 made it through the reducer, the board and the check into the guide
+    assert [f.requirement_id for f in final["findings"]] == [f"r{i}" for i in range(1, 13)]
+    assert [item.requirement_id for item in final["result"].items] == [
+        f"r{i}" for i in range(1, 13)
+    ]
+    last_notes = [c["notes"] for c in custom if "notes" in c][-1]
+    assert [f["requirement_id"] for f in last_notes["findings"]] == [f"r{i}" for i in range(1, 13)]
+
+
+async def test_twelve_requirements_are_all_kept_without_top8() -> None:
+    names = [f"Skill {i}" for i in range(1, 13)]
+    deps, _, _ = make_deps(Script(reqs(*names)), search=one_section_each(names))
+    _, final = await run(deps, JD)
+    assert [r.id for r in final["requirements"]] == [f"r{i}" for i in range(1, 13)]
+    assert final["result"].top8 is False
 
 
 async def test_requirements_are_trimmed_and_deduplicated_by_code() -> None:
@@ -1397,15 +1435,16 @@ async def test_check_step_marks_every_pair_missing_when_the_check_fails() -> Non
     assert nothing.verdicts == []
 
 
-async def test_read_step_can_read_twelve_for_replays_the_graph_keeps_eight() -> None:
+async def test_read_step_keeps_twelve_and_replays_may_read_eight() -> None:
     names = [f"Skill {i}" for i in range(1, 15)]
     script = Script(reqs(*names))
     deps, _, _ = make_deps(script)
-    out = await read_step(JD, deps, max_requirements=12)
-    assert [r.id for r in out["requirements"]] == [f"r{i}" for i in range(1, 13)]
+    out = await read_step(JD, deps, max_requirements=8)
+    assert [r.id for r in out["requirements"]] == [f"r{i}" for i in range(1, 9)]
     assert out["top8"] is True  # the ad had more than the limit
     default = await read_step(JD, deps)
-    assert [r.id for r in default["requirements"]] == [f"r{i}" for i in range(1, 9)]
+    assert [r.id for r in default["requirements"]] == [f"r{i}" for i in range(1, 13)]
+    assert default["top8"] is True
 
 
 async def test_match_one_and_write_step_run_outside_the_graph() -> None:

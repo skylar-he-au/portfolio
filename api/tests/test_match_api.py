@@ -299,10 +299,10 @@ def real_worst() -> dict[str, Decimal]:
     read = estimate_input_tokens(prompts.read_messages("x" * 20_000, marker))
     one_match = estimate_input_tokens(prompts.match_messages(req, [sec] * 6, marker))
     write = estimate_input_tokens(
-        prompts.write_messages([(n, req, [sec] * 3) for n in range(1, 9)], "en", marker)
+        prompts.write_messages([(n, req, [sec] * 3) for n in range(1, 13)], "en", marker)
     )
     check = estimate_input_tokens(
-        prompts.check_messages([(n, req, sec) for n in range(1, 25)], marker)
+        prompts.check_messages([(n, req, sec) for n in range(1, 37)], marker)
     )
 
     def call(model: str, tokens: int) -> Decimal:
@@ -310,22 +310,25 @@ def real_worst() -> dict[str, Decimal]:
 
     haiku, flash = MODELS["anthropic"], MODELS["google"]
     return {
-        # read 1 + match 8 + write 1, all on Claude (the main path)
-        "anthropic": call(haiku, read) + 8 * call(haiku, one_match) + call(haiku, write),
-        # check: one Gemini call for 8 requirements x 3 links
+        # read 1 + match 12 + write 1, all on Claude (the main path)
+        "anthropic": call(haiku, read) + 12 * call(haiku, one_match) + call(haiku, write),
+        # check: one Gemini call for 12 requirements x 3 links
         "google": call(flash, check),
-        # one embedding call for 8 search phrases of at most 200 characters
-        "openai": cost_usd(MODELS["openai"], {"input_tokens": (8 * 200 + 2) // 3}),
+        # one embedding call for 12 search phrases of at most 200 characters
+        "openai": cost_usd(MODELS["openai"], {"input_tokens": (12 * 200 + 2) // 3}),
     }
 
 
 def test_worst_path_comes_from_the_real_prompts() -> None:
     assert match_worst(MODELS["anthropic"], MODELS["google"], MODELS["openai"]) == real_worst()
     worst = real_worst()
-    # The SPEC estimates (read ~7k, each match ~3.5k input tokens) are below these: the
-    # reservation assumes the longest JD and the longest sections.
+    # The reservation assumes the longest JD and the longest sections, 12 requirements.
     assert worst["anthropic"] < Decimal("0.02")
-    assert worst["google"] < Decimal("0.01")
+    assert worst["google"] < Decimal("0.015")
+    # SPEC "费用有上限": under the daily caps 8 fit on Anthropic, 7 on Google (fills first)
+    fits = {p: int(SPEC_DAILY[p] // worst[p]) for p in PROVIDERS}
+    assert (fits["anthropic"], fits["google"]) == (8, 7)
+    assert min(fits.values()) == fits["google"]
 
 
 def test_worst_path_per_step_equals_the_old_numbers_with_the_default_models() -> None:
@@ -352,12 +355,12 @@ def test_worst_path_follows_each_steps_model_and_cap(monkeypatch: pytest.MonkeyP
     worst = match_api.match_worst_steps(luna, MODELS["openai"])
     assert worst["anthropic"] == base["anthropic"]
     assert worst["google"] == 0
-    # the check's 24 pairs at Luna's price and the 1024 cap, on top of the embedding
+    # the check's 36 pairs at Luna's price and the 1024 cap, on top of the embedding
     marker = "f" * 16
     req = Requirement(id="r1", text="x" * 120, query="x" * 200)
     sec = Section("/projects/" + "x" * 30, "x" * 40, "x" * 80, "x" * SECTION_CHARS_ESTIMATE, 0)
     check = estimate_input_tokens(
-        prompts.check_messages([(n, req, sec) for n in range(1, 25)], marker)
+        prompts.check_messages([(n, req, sec) for n in range(1, 37)], marker)
     )
     assert worst["openai"] == base["openai"] + cost_usd(
         "gpt-6-luna", {"input_tokens": check, "output_tokens": 1024}

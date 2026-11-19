@@ -181,7 +181,7 @@ export default function Match({ pageTitles = {} }: { pageTitles?: PageTitles }) 
             </ul>
           </>}
           {result.unchecked > 0 && <p>{result.unchecked} {result.unchecked === 1 ? 'requirement' : 'requirements'} couldn't be checked</p>}
-          {result.top8 && <p>Top 8 requirements of the job ad shown.</p>}
+          {result.top8 && <p>Top 12 requirements of the job ad shown.</p>}
         </div>
       )}
       {done && result?.match_id && !error && (

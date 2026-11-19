@@ -440,8 +440,9 @@ def test_worst_cases_are_in_the_right_pools() -> None:
     worst = graph_worst(
         "claude-haiku-5-5", "gemini-3.5-flash-lite", "text-embedding-3-small", "default"
     )
-    assert worst["credit"] == pytest.approx(0.012716, abs=1e-6)  # match-v5+check-v2 lengths
-    assert worst["real"] == pytest.approx(0.009308 + 2 * 0.000011, abs=2e-6)
+    # match-v5+check-v2 lengths, 12 requirements (8 until step 6 round 2: 0.012716, 0.009330)
+    assert worst["credit"] == pytest.approx(0.018153, abs=1e-6)
+    assert worst["real"] == pytest.approx(0.012599 + 2 * 0.000016, abs=2e-6)
     forced = graph_worst(
         "claude-haiku-5-5", "gemini-3.5-flash-lite", "text-embedding-3-small", "gemini-answer"
     )
@@ -848,17 +849,20 @@ def test_openai_models_are_paid_in_real_money() -> None:
     assert price_for("gpt-6-luna").output_per_m > 0
 
 
-def _nine_requirements() -> MatchSample:
+def _requirements(count: int) -> MatchSample:
     sample = good_sample()
-    extra = tuple({"id": f"r{n}", "text": f"Skill {n}", "query": "q"} for n in range(4, 10))
+    extra = tuple({"id": f"r{n}", "text": f"Skill {n}", "query": "q"} for n in range(4, count + 1))
     return good_sample(
-        requirements=(*sample.requirements, *extra), result={**_result(sample), "unchecked": 6}
+        requirements=(*sample.requirements, *extra),
+        result={**_result(sample), "unchecked": count - 3},
     )
 
 
 def test_schema_takes_this_runs_requirement_count() -> None:
-    assert not run_match_checks(JOB, _nine_requirements())["schema"]
-    assert run_match_checks(JOB, _nine_requirements(), max_requirements=12)["schema"]
+    assert run_match_checks(JOB, _requirements(12))["schema"]  # the live graph's 12
+    assert not run_match_checks(JOB, _requirements(13))["schema"]
+    assert run_match_checks(JOB, _requirements(9))["schema"]
+    assert not run_match_checks(JOB, _requirements(9), max_requirements=8)["schema"]
 
 
 def test_one_read_requirement_may_map_to_several_gold_ids() -> None:
@@ -889,7 +893,7 @@ async def test_runner_stores_section_texts_checked_findings_and_content_hash(
     ]
     meta = json.loads((tmp_path / "runs" / "run-1.meta.json").read_text(encoding="utf-8"))
     assert meta["content_hash"] == content_hash() and meta["content_hash"].startswith("sha256:")
-    assert meta["grader"] == "api" and meta["max_requirements"] == 8
+    assert meta["grader"] == "api" and meta["max_requirements"] == 12
     summary = json.loads((tmp_path / "summary" / "run-1.json").read_text(encoding="utf-8"))
     assert "grader" not in summary and "grading" not in summary  # API-judged: as before
 

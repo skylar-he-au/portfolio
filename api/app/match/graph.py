@@ -4,9 +4,9 @@
                    +-> search -> Send x N -> match -+-> check -> write -> END
                                   (one per requirement, in parallel)
 
-- read (Claude Haiku 5.5, Gemini as fallback): reads the job ad, lists at most 8
-  requirements, each with an English search phrase. Code numbers them r1..r8, trims them
-  and sets `top8` when the ad had more.
+- read (Claude Haiku 5.5, Gemini as fallback): reads the job ad, lists at most 12
+  requirements, each with an English search phrase. Code numbers them r1..r12, trims them
+  and sets `top8` when the ad had more (the name predates round 2, when the limit was 8).
 - search (code): one batch retrieval for all requirements: one embedding call, one
   connection, project pages only (`PROJECT_PAGE_PREFIX`; not About, Privacy, Home).
 - match (one agent per requirement, run in parallel with `Send`): sees only its own
@@ -427,7 +427,8 @@ async def read_step(
     config: RunnableConfig | None = None,
 ) -> dict[str, Any]:
     """Read the ad: `{"requirements", "language", "top8", "board"}` (the read node's
-    update). The graph keeps `max_requirements` at 8; replays may try more (12)."""
+    update). The graph keeps `max_requirements` at `MAX_REQUIREMENTS` (12); replays may
+    try fewer (8, the round-1 limit)."""
     send = writer or _no_stream
     send({"stage": "reading", "count": None})
     marker = prompts.new_marker()
