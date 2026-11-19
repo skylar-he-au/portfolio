@@ -447,6 +447,7 @@ def expected_events(*, fetched: bool, truncated: bool) -> list[Event]:
         notes([PY_FOUND, K8S_NOT_FOUND], truncated),
         ("stage", {"stage": "writing", "count": None}),
         ("stage", {"stage": "checking", "count": 1}),
+        notes([PY_FOUND, K8S_NOT_FOUND], truncated),  # again after the check (nothing changed)
         ("result", RESULT),
         ("done", {}),
     ]

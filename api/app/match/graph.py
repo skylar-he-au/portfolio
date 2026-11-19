@@ -19,6 +19,8 @@
   finding number; the links, "not covered" and the counts come from code.
 - check (Gemini 3.5 Flash-Lite, `match-v1`): one call for every link of the guide; a link
   it does not pass is removed, an item left without links becomes `unchecked` (see `check`).
+  Then the notes are sent once more with those changes (`check.checked_findings`), so the
+  panel and the guide agree.
 
 Who reads and writes which note is fixed in `NOTE_ACCESS` and enforced by `guard_node`.
 Every model call uses structured output with `method="json_schema"`. Each stage has its own
@@ -66,6 +68,7 @@ from app.match.state import (
     SectionRef,
     Stage,
     known_findings,
+    notes_snapshot,
 )
 from app.qa.models import CALL_TIMEOUT_S, MAX_OUTPUT_TOKENS, ChatProvider, build_providers
 from app.rag.retrieve import SEARCH_SQL
@@ -258,7 +261,7 @@ NOTE_ACCESS: Mapping[str, tuple[frozenset[str], frozenset[str]]] = {
         frozenset({"requirements", "findings", "retrieved", "language", "top8"}),
         frozenset({"result"}),
     ),
-    "check": (frozenset({"result", "requirements", "retrieved"}), frozenset({"result"})),
+    "check": (frozenset({"result", "requirements", "retrieved", "board"}), frozenset({"result"})),
 }
 
 type NodeFn = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -522,8 +525,21 @@ def build_match_graph(deps: MatchDeps) -> CompiledStateGraph[Any, Any, Any, Any]
         pairs = match_check.check_pairs(
             guide, view["requirements"], _sections_by_url(view.get("retrieved") or {})
         )
+        checked = await run_check(guide, pairs)
+        # The panel shows the notes; send them once more so they agree with the checked guide.
+        board: NotesBoard = view["board"]
+        get_stream_writer()(
+            {
+                "notes": notes_snapshot(
+                    board.requirements, match_check.checked_findings(board.findings, checked)
+                )
+            }
+        )
+        return {"result": checked}
+
+    async def run_check(guide: Guide, pairs: list[tuple[int, Requirement, Section]]) -> Guide:
         if not pairs:
-            return {"result": match_check.fail_all(guide)}
+            return match_check.fail_all(guide)
         try:
             out, _ = await ask_json(
                 "check",
@@ -534,8 +550,8 @@ def build_match_graph(deps: MatchDeps) -> CompiledStateGraph[Any, Any, Any, Any]
                 call_timeout=deps.call_timeout,
             )
         except ModelsUnavailable:
-            return {"result": match_check.fail_all(guide)}
-        return {"result": match_check.apply_verdicts(guide, pairs, out.verdicts)}
+            return match_check.fail_all(guide)
+        return match_check.apply_verdicts(guide, pairs, out.verdicts)
 
     def after_read(state: MatchState) -> str:
         return "search" if state["requirements"] else END

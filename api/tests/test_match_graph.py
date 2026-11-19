@@ -226,8 +226,10 @@ async def test_five_requirements_run_in_parallel_and_link_retrieved_sections() -
         ("checking", 5),
     ]
     notes = [c["notes"] for c in custom if "notes" in c]
-    assert len(notes) == 6  # after read, then once per finished match agent
-    assert [len(n["findings"]) for n in notes] == [0, 1, 2, 3, 4, 5]
+    assert len(notes) == 7  # after read, once per finished match agent, once after the check
+    assert [len(n["findings"]) for n in notes] == [0, 1, 2, 3, 4, 5, 5]
+    assert notes[-1] == notes[-2]  # the check passed everything: nothing changed
+    assert custom[-2:] == [{"stage": "checking", "count": 5}, {"notes": notes[-1]}]
     assert notes[1]["findings"][0]["requirement_id"] == "r2"  # SQL finished first
     assert [f["requirement_id"] for f in notes[-1]["findings"]] == ["r1", "r2", "r3", "r4", "r5"]
     # Every model call asked for native structured output; the check went to Gemini.
@@ -511,12 +513,52 @@ async def test_a_failed_check_makes_the_item_unchecked_not_not_covered() -> None
 
     script.check = check  # type: ignore[method-assign]
     deps, _, gemini = make_deps(script, search=one_section_each(["Python", "SQL"]))
-    _, final = await run(deps, JD)
+    custom, final = await run(deps, JD)
     guide: Guide = final["result"]
     assert [i.requirement_id for i in guide.items] == ["r1"]
     assert guide.unchecked == 1
     assert guide.not_covered == ["Kubernetes"]
     assert [kind(c) for c in gemini.calls] == ["check"]
+
+    # The panel agrees with the guide: the last notes, sent after the check, show r2 as
+    # unchecked without its section; r1 and r3, which the check did not change, are the same
+    # as in the notes before it.
+    notes = [c["notes"] for c in custom if "notes" in c]
+    before, after = notes[-2]["findings"], notes[-1]["findings"]
+    assert custom[-1] == {"notes": notes[-1]}
+    assert [(f["requirement_id"], f["status"]) for f in before] == [
+        ("r1", "found"),
+        ("r2", "found"),
+        ("r3", "not_found"),
+    ]
+    assert after[1] == {**before[1], "status": "unchecked", "sections": []}
+    assert after[0] == before[0] and after[2] == before[2]
+    assert notes[-1]["requirements"] == notes[-2]["requirements"]
+
+
+async def test_links_the_check_removes_leave_the_last_notes_too() -> None:
+    script = Script(reqs("Python"))
+
+    async def match(messages: list[BaseMessage]) -> Any:
+        return {"reasoning": "r", "found": True, "sections": [1, 2]}
+
+    async def check(messages: list[BaseMessage]) -> Any:
+        return {"verdicts": [{"n": 1, "shows": False}, {"n": 2, "shows": True}]}
+
+    script.match = match  # type: ignore[method-assign]
+    script.check = check  # type: ignore[method-assign]
+    search = FakeSearch({"q Python": [section("roleradar", "a"), section("oncallops", "b")]})
+    deps, _, _ = make_deps(script, search=search)
+    custom, final = await run(deps, JD)
+    assert [s.url for s in final["result"].items[0].sections] == ["/projects/oncallops#b"]
+    notes = [c["notes"] for c in custom if "notes" in c]
+    assert [s["url"] for s in notes[-2]["findings"][0]["sections"]] == [
+        "/projects/roleradar#a",
+        "/projects/oncallops#b",
+    ]
+    last = notes[-1]["findings"][0]
+    assert last["status"] == "found"
+    assert last["sections"] == [{"url": "/projects/oncallops#b", "title": "Heading b"}]
 
 
 async def test_check_unavailable_marks_every_item_unchecked() -> None:
@@ -527,8 +569,10 @@ async def test_check_unavailable_marks_every_item_unchecked() -> None:
 
     script.check = check  # type: ignore[method-assign]
     deps, _, _ = make_deps(script, search=one_section_each(["Python", "SQL"]))
-    _, final = await run(deps, JD)
+    custom, final = await run(deps, JD)
     assert final["result"].items == [] and final["result"].unchecked == 2
+    last = [c["notes"] for c in custom if "notes" in c][-1]
+    assert [(f["status"], f["sections"]) for f in last["findings"]] == [("unchecked", [])] * 2
 
 
 def test_apply_verdicts_keeps_only_passed_links_and_missing_verdicts_fail() -> None:

@@ -5,12 +5,14 @@ pair is one requirement and the one section linked for it, nothing else. A link 
 does not pass is removed; a guide item left with no link becomes "couldn't be checked"
 (`unchecked`), never "not covered": the pages may well show it, we just could not confirm.
 No retry. A pair the check gives no verdict for counts as not passed.
+After the check the graph sends the notes once more with `checked_findings`, so the panel
+shows the same thing as the guide.
 """
 
 from collections.abc import Mapping, Sequence
 
 from app.match.prompts import Verdict
-from app.match.state import Guide, Requirement
+from app.match.state import Finding, Guide, Requirement
 from app.rag.types import Section
 
 
@@ -55,6 +57,28 @@ def apply_verdicts(
         else:
             failed += 1
     return guide.model_copy(update={"items": items, "unchecked": guide.unchecked + failed})
+
+
+def checked_findings(findings: Sequence[Finding], guide: Guide) -> list[Finding]:
+    """The findings as the panel should show them after the check, so it agrees with the
+    guide: a `found` finding keeps only the links the check passed (those in its guide item);
+    one whose item the check dropped becomes `unchecked` with no links. Other findings are
+    returned unchanged."""
+    kept = {item.requirement_id: item.sections for item in guide.items}
+    out: list[Finding] = []
+    for finding in findings:
+        if finding.status != "found":
+            out.append(finding)
+        elif finding.requirement_id in kept:
+            sections = kept[finding.requirement_id]
+            out.append(
+                finding
+                if sections == finding.sections
+                else finding.model_copy(update={"sections": sections})
+            )
+        else:
+            out.append(finding.model_copy(update={"status": "unchecked", "sections": []}))
+    return out
 
 
 def fail_all(guide: Guide) -> Guide:
