@@ -287,7 +287,7 @@ def test_drop_tts_migration_deletes_existing_rows(db_url, tmp_path):
         for kind in ("ask", "match", "tts", "fetch"):
             conn.execute(statement, (kind, b""))
 
-    assert migrate(db_url) == ["0008"]
+    assert migrate(db_url) == [version for version, _ in discover(DEFAULT_DIR) if version > "0007"]
     with psycopg.connect(db_url) as conn:
         assert conn.execute("SELECT kind FROM usage_counters ORDER BY kind").fetchall() == [
             ("ask",),

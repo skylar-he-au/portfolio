@@ -468,7 +468,7 @@ class MatchService:
                 await self.limits.refund(run.admission, run.session)
             except Exception as error:  # noqa: BLE001 - still attempt the record
                 logger.warning("match refund failed: %s", type(error).__name__)
-        if run.admission is not None and self._records is not None:
+        if run.admission is not None and self._records is not None and not run.session.patrol:
             scope = run.scope
             try:
                 await self._records.write(

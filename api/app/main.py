@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 # Probes and the scheduler skip the Worker secret; cleanup verifies Google OIDC instead.
 ORIGIN_EXEMPT_PATHS = frozenset({"/api/ping", "/api/health", "/api/cleanup"})
 REQUIRED_SECRETS = ("origin_secret", "session_secret", "turnstile_secret")
+REQUIRED_PRODUCTION = (
+    "turnstile_hostnames",
+    "anthropic_api_key",
+    "gemini_api_key",
+    "openai_api_key",
+    "patrol_secret",
+)
 REQUIRED_CAPS = tuple(
     f"spend_{period}_usd_{provider}"
     for period in ("daily", "monthly")
@@ -51,11 +58,12 @@ def create_app(
     """Build the app. Tests can inject pools or services; all default pools start closed."""
     configure_logging()
     settings = settings or get_settings()
-    if settings.app_env == "prod":
+    if settings.app_env != "dev":
         missing = [
             name.upper()
-            for name in (*REQUIRED_SECRETS, *REQUIRED_CAPS)
+            for name in (*REQUIRED_SECRETS, *REQUIRED_PRODUCTION, *REQUIRED_CAPS)
             if getattr(settings, name) is None
+            or (name == "turnstile_hostnames" and not settings.turnstile_hostnames)
         ]
         if missing:
             raise RuntimeError(f"Missing required variables: {', '.join(missing)}")

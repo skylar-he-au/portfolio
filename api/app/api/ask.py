@@ -341,7 +341,7 @@ class AskService:
                 await scope.settle()
             except Exception as error:  # noqa: BLE001 - still attempt the question record
                 logger.warning("ask settle failed: %s", type(error).__name__)
-        if self._records is not None and admission is not None:
+        if self._records is not None and admission is not None and admission.kind != "patrol":
             language = None
             try:
                 state = (await graph.aget_state(config)).values

@@ -110,7 +110,7 @@ def test_siteverify_transport_error(refused_url, error):
 
 @pytest.mark.parametrize(
     ("ip", "canonical"),
-    [("::ffff:192.0.2.1", "192.0.2.1"), ("2001:db8::2", "2001:db8::/64")],
+    [("::ffff:192.0.2.1", "192.0.2.1"), ("2001:db8::2", "2001:db8::2")],
 )
 def test_session_test_secret_and_canonical_remoteip(refused_url, ip, canonical):
     settings = guard_settings(refused_url)

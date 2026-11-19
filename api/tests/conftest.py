@@ -21,6 +21,11 @@ os.environ.setdefault("DATABASE_URL", "postgresql://nobody@127.0.0.1:1/none")
 os.environ.setdefault("ORIGIN_SECRET", "test-origin")
 os.environ.setdefault("SESSION_SECRET", "test-session")
 os.environ.setdefault("TURNSTILE_SECRET", "1x0000000000000000000000000000000AA")
+os.environ.setdefault("TURNSTILE_HOSTNAMES", "example.com")
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-anthropic")
+os.environ.setdefault("GEMINI_API_KEY", "test-gemini")
+os.environ.setdefault("OPENAI_API_KEY", "test-openai")
+os.environ.setdefault("PATROL_SECRET", "test-patrol")
 for period, cap in (("DAILY", "1"), ("MONTHLY", "10")):
     for provider in ("ANTHROPIC", "GOOGLE", "OPENAI"):
         os.environ.setdefault(f"SPEND_{period}_USD_{provider}", cap)

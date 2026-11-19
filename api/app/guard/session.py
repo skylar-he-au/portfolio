@@ -37,6 +37,7 @@ class Rejected(Exception):
 class Session:
     token_key: bytes
     ip: str
+    patrol: bool = False
 
 
 def _signature(secret: str, payload: str) -> str:
@@ -44,19 +45,25 @@ def _signature(secret: str, payload: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def sign_token(secret: str, now: int | float) -> tuple[str, int]:
+def sign_token(secret: str, now: int | float, *, patrol: bool = False) -> tuple[str, int]:
     exp = int(now) + 24 * 60 * 60
-    payload = f"v1.{secrets.token_hex(16)}.{exp}"
+    version = "p1" if patrol else "v1"
+    payload = f"{version}.{secrets.token_hex(16)}.{exp}"
     return f"{payload}.{_signature(secret, payload)}", exp
 
 
 def verify_token(secret: str, token: str, now: int | float) -> bytes | None:
+    verified = verify_token_ex(secret, token, now)
+    return None if verified is None else verified[0]
+
+
+def verify_token_ex(secret: str, token: str, now: int | float) -> tuple[bytes, bool] | None:
     parts = token.split(".")
     if len(parts) != 4:
         return None
     version, token_id, exp, signature = parts
     if (
-        version != "v1"
+        version not in ("v1", "p1")
         or re.fullmatch(r"[0-9a-f]{32}", token_id) is None
         or re.fullmatch(r"[0-9]+", exp) is None
         or len(exp) > 20
@@ -67,7 +74,22 @@ def verify_token(secret: str, token: str, now: int | float) -> bytes | None:
         signature, _signature(secret, ".".join(parts[:3]))
     ):
         return None
-    return hashlib.sha256(token_id.encode("ascii")).digest()
+    return hashlib.sha256(token_id.encode("ascii")).digest(), version == "p1"
+
+
+def raw_client_ip(request: Request) -> str:
+    """The full client address for Turnstile; counting still uses the IPv6 /64."""
+    try:
+        raw = request.headers.get("X-Client-IP", "")
+        # Zone IDs are interface names, not public visitor addresses.
+        if "%" in raw:
+            raise ValueError("scoped address")
+        address = ipaddress.ip_address(raw)
+    except ValueError:
+        raise Rejected("forbidden") from None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return str(address.ipv4_mapped)
+    return str(address)
 
 
 def require_origin(request: Request) -> str:
@@ -79,17 +101,8 @@ def require_origin(request: Request) -> str:
         supplied.encode(), expected.get_secret_value().encode()
     ):
         raise Rejected("forbidden")
-    try:
-        raw = request.headers.get("X-Client-IP", "")
-        # Zone IDs are interface names, not public visitor addresses.
-        if "%" in raw:
-            raise ValueError("scoped address")
-        address = ipaddress.ip_address(raw)
-    except ValueError:
-        raise Rejected("forbidden") from None
+    address = ipaddress.ip_address(raw_client_ip(request))
     if isinstance(address, ipaddress.IPv6Address):
-        if address.ipv4_mapped is not None:
-            return str(address.ipv4_mapped)
         return str(ipaddress.ip_network(f"{address}/64", strict=False))
     return str(address)
 
@@ -104,7 +117,10 @@ def require_session(request: Request) -> Session:
         or authorization[0].lower() != "bearer"
     ):
         raise Rejected("auth")
-    key = verify_token(settings.session_secret.get_secret_value(), authorization[1], time.time())
-    if key is None:
+    verified = verify_token_ex(
+        settings.session_secret.get_secret_value(), authorization[1], time.time()
+    )
+    if verified is None:
         raise Rejected("auth")
-    return Session(key, ip)
+    key, patrol = verified
+    return Session(key, ip, patrol)

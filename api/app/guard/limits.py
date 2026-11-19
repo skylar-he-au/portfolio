@@ -1,7 +1,8 @@
 """Bounded process sieves followed by atomic daily database counters.
 
-Kinds: `ask`, `match`, and `fetch` (fetching a job ad by link, which also has an
-in-process per-minute window per token and per IP). The job match uses three extra steps:
+Kinds: `ask`, `match`, `patrol` (shared patrol asks and matches), and `fetch` (fetching a
+job ad by link, which also has an in-process per-minute window per token and per IP).
+The job match uses three extra steps:
 `sieve` (the in-process checks alone, once per request), `peek` (read-only: would one more
 fit today?) and `refund` (take back one count, for a job ad with no requirements); `admit`
 can run a `hold` callback (the spending reservation) in the transaction that adds to the
@@ -31,7 +32,7 @@ COUNTER_SQL = """
     ON CONFLICT (day, kind, scope, key) DO UPDATE SET count = usage_counters.count + 1
     WHERE usage_counters.count < %s RETURNING count
 """
-KINDS = frozenset({"ask", "match", "fetch"})
+KINDS = frozenset({"ask", "match", "fetch", "patrol"})
 SCOPES = ("token", "ip", "site")
 DEV_MARK_SECONDS = 30
 
@@ -90,6 +91,12 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _counter_kind(kind: str, session: Session) -> str:
+    if kind not in KINDS:
+        raise ValueError("unknown admission kind")
+    return "patrol" if session.patrol and kind in ("ask", "match") else kind
+
+
 class Limits:
     def __init__(
         self,
@@ -145,8 +152,7 @@ class Limits:
     def sieve(self, kind: str, session: Session) -> None:
         """The in-process checks of `admit`, once per request: a known full count for this
         kind today (`limit_day`), then the per-IP coarse window (`slow_down`)."""
-        if kind not in KINDS:
-            raise ValueError("unknown admission kind")
+        kind = _counter_kind(kind, session)
         now = self._clock()
         marks = self._marks_for(kind, session, now.astimezone(SYDNEY).date())
         if any(self._mark_live(mark, now) for mark in marks):
@@ -176,8 +182,7 @@ class Limits:
     async def peek(self, kind: str, session: Session) -> None:
         """Read-only: raise `limit_day` if this token, IP or the site has no count of `kind`
         left today. Never adds to a count (the job match calls it before fetching a job ad)."""
-        if kind not in KINDS:
-            raise ValueError("unknown admission kind")
+        kind = _counter_kind(kind, session)
         now = self._clock()
         day = now.astimezone(SYDNEY).date()
         marks = self._marks_for(kind, session, day)
@@ -187,10 +192,13 @@ class Limits:
             raise Rejected("slow_down")
         try:
             async with self._db.connection() as conn:
-                day_key = await self._day_key(conn, day, create=False)
-                keys = {"token": session.token_key, "site": b""}
-                if day_key is not None:
-                    keys["ip"] = hmac.digest(day_key, session.ip.encode(), "sha256")
+                if kind == "patrol":
+                    keys = {"site": b""}
+                else:
+                    day_key = await self._day_key(conn, day, create=False)
+                    keys = {"token": session.token_key, "site": b""}
+                    if day_key is not None:
+                        keys["ip"] = hmac.digest(day_key, session.ip.encode(), "sha256")
                 cursor = await conn.execute(
                     "SELECT scope, key, count FROM usage_counters WHERE day = %s AND kind = %s "
                     "AND scope = ANY(%s) AND key = ANY(%s)",
@@ -202,12 +210,17 @@ class Limits:
         for scope, key, count in rows:
             if keys.get(scope) != bytes(key):
                 continue
-            if count >= getattr(self._settings, f"{kind}_limit_{scope}"):
+            limit = (
+                self._settings.patrol_limit_day
+                if kind == "patrol"
+                else getattr(self._settings, f"{kind}_limit_{scope}")
+            )
+            if count >= limit:
                 self._marks[marks[SCOPES.index(scope)]] = self._clock().timestamp()
                 raise Rejected("limit_day")
 
     async def refund(self, admission: Admission, session: Session) -> None:
-        """Take back the count `admission` added (all three scopes), e.g. for a pasted text
+        """Take back the counts `admission` added, e.g. for a pasted text
         that turned out not to be a job ad. Clears this request's marks for that kind."""
         try:
             async with self._db.connection() as conn, conn.transaction():
@@ -234,6 +247,8 @@ class Limits:
     ) -> Admission:
         """Add one to today's `kind` count for this token, this IP hash and the site.
 
+        Patrol asks and matches use only the shared `patrol` site counter.
+
         `sieved`: the caller already ran `sieve` for this request, so the per-IP coarse
         window is not counted again (the known-full marks of `kind` are still checked).
         `hold`: run in the same transaction after the counts are added; if it raises, the
@@ -241,8 +256,7 @@ class Limits:
         `hold` does its own). `fetch` has no pause check either: the job match checked
         before (`Ledger.paused(now, "match")`).
         """
-        if kind not in KINDS:
-            raise ValueError("unknown admission kind")
+        kind = _counter_kind(kind, session)
         now = self._clock()
         day = now.astimezone(SYDNEY).date()
         marks = self._marks_for(kind, session, day)
@@ -265,23 +279,32 @@ class Limits:
                 if paused is not None:
                     raise Rejected("limit_day" if paused == "day" else "paused_month")
             async with self._db.connection() as conn, conn.transaction():
-                day_key = await self._day_key(conn, day, create=True)
-                if day_key is None:
-                    raise Rejected("unavailable")
-                ip_hash = hmac.digest(day_key, session.ip.encode(), "sha256")
-                for index, (scope, key) in enumerate(
-                    (("token", session.token_key), ("ip", ip_hash), ("site", b""))
-                ):
-                    limit = getattr(self._settings, f"{kind}_limit_{scope}")
+                day_key = None
+                if kind == "patrol":
+                    ip_hash = b""
+                    counters = (("site", b""),)
+                else:
+                    day_key = await self._day_key(conn, day, create=True)
+                    if day_key is None:
+                        raise Rejected("unavailable")
+                    ip_hash = hmac.digest(day_key, session.ip.encode(), "sha256")
+                    counters = (("token", session.token_key), ("ip", ip_hash), ("site", b""))
+                for scope, key in counters:
+                    limit = (
+                        self._settings.patrol_limit_day
+                        if kind == "patrol"
+                        else getattr(self._settings, f"{kind}_limit_{scope}")
+                    )
                     cursor = await conn.execute(COUNTER_SQL, (day, kind, scope, key, limit))
                     if await cursor.fetchone() is None:
-                        failed_mark = marks[index]
+                        failed_mark = marks[SCOPES.index(scope)]
                         # Raising inside transaction() rolls back earlier increments too.
                         raise Rejected("limit_day")
                 if hold is not None:
                     await hold(conn)
             # A key from a rolled-back insertion must never escape into the cache.
-            self._cache_day_key(day, day_key)
+            if day_key is not None:
+                self._cache_day_key(day, day_key)
             return Admission(kind, session.token_key, ip_hash, day)
         except Rejected:
             if failed_mark is not None and self._marked_day == day:

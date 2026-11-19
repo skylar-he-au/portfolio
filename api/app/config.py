@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     turnstile_secret: SecretStr | None = None
     turnstile_hostnames: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    patrol_secret: SecretStr | None = None
+    patrol_limit_day: int = Field(default=10, ge=1)
 
     cleanup_audience: str | None = None
     cleanup_invoker_email: str | None = None
@@ -66,9 +68,13 @@ class Settings(BaseSettings):
     spend_input_tokens_estimate: int = 12000
 
     @field_validator(
+        "anthropic_api_key",
+        "gemini_api_key",
+        "openai_api_key",
         "origin_secret",
         "session_secret",
         "turnstile_secret",
+        "patrol_secret",
         "cleanup_audience",
         "cleanup_invoker_email",
         "spend_daily_usd_anthropic",
