@@ -28,7 +28,10 @@ from app.rag.types import Section
 # from the best section's own words. match-v3: search phrases are key terms joined by "or"
 # (the full-text half of retrieval ANDs plain words, so long phrases rarely matched a
 # section's stack line); a named method or certification must be named in the section.
-PROMPT_VERSION = "match-v3"
+# match-v4: the write agent states what the sections show ("The Dashboard pages show ...")
+# instead of telling the reader what to look at; v3's imperative lines ("Check the ...")
+# were read by the Faithfulness judge as claims the sections do not make.
+PROMPT_VERSION = "match-v4"
 
 # The read agent may list more than the graph keeps; more than 8 means "Top 8".
 READ_LIMIT = 12
@@ -200,7 +203,7 @@ def match_messages(
 
 class WriteItem(BaseModel):
     finding: int = Field(description="The finding's number")
-    text: str = Field(description="One short sentence: what the recruiter will see there")
+    text: str = Field(description="One short statement of what the sections show")
 
 
 class WriteOut(BaseModel):
@@ -214,9 +217,12 @@ it. {data_rule}
 
 For every finding write one item:
 - finding: its number.
-- text: one short sentence (at most 25 words) telling the recruiter what to look for in \
-those sections for this requirement. Build it from the first section (the best match); \
-add another section only in a few words. Use only facts the sections state, with their \
+- text: one short statement (at most 25 words) of what those sections show for this \
+requirement, e.g. "The Dashboard pages show per-role access checks in the FastAPI \
+backend." Write it as a plain statement about the project, not an instruction to the \
+reader: never start with or use "Check", "See", "Look at", "Look for", "Note" or any \
+other command. Build it from the first section (the best match); add another section \
+only in a few words. Use only facts the sections state, with their \
 own names and numbers; do not add, guess or generalise, and do not say what is missing. \
 If the requirement lists alternatives, name the ones the sections show. No links or URLs \
 (they are added for you), no scores, no verdict on whether Skylar fits the job, no \
