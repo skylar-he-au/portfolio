@@ -37,6 +37,9 @@ from evals.summary import build_summary, write_summary
 from evals.types import METRICS, CapReached, MeterLike, ScoreInput, UnknownModel
 
 SAMPLE_TIMEOUT_S = 180.0
+# The RAGAS judges of one sample (up to four metrics, each a few calls) together; past it
+# the sample's scores are missing like any judge failure, never 0.
+SCORE_TIMEOUT_S = 300.0
 JUDGE_MODEL = "claude-sonnet-5-5"  # the default `judge_model` of evals.ragas_score.score
 type Scorer = Callable[[ScoreInput, MeterLike], Awaitable[dict[str, float | None]]]
 
@@ -256,12 +259,14 @@ async def evaluate(
                 for question, repeat in samples:
                     recorded = False
                     try:
-                        meter.check()
+                        # Ledger reads and writes off the loop: another process holding the
+                        # ledger's lock must not stall the event loop (evals/cost.py).
+                        await asyncio.to_thread(meter.check)
                         result = SampleResult()
                         error_name = None
                         for attempt in range(2):
                             if attempt:
-                                meter.check()
+                                await asyncio.to_thread(meter.check)
                             try:
                                 result = await _attempt(question, graph, meter)
                                 break
@@ -287,7 +292,7 @@ async def evaluate(
                         )
                         ragas = None
                         if requested:
-                            meter.check()
+                            await asyncio.to_thread(meter.check)
                             value = ScoreInput(
                                 user_input=question.scored_question or question.turns[-1],
                                 response=result.answer,
@@ -298,12 +303,13 @@ async def evaluate(
                             try:
                                 if scorer is None:
                                     raise ValueError("a scorer is required unless no_ragas is set")
-                                ragas = await scorer(value, meter)
+                                async with asyncio.timeout(SCORE_TIMEOUT_S):
+                                    ragas = await scorer(value, meter)
                             except (CapReached, UnknownModel):
                                 raise
                             except Exception:  # noqa: BLE001 - judge failure becomes missing scores
                                 ragas = dict.fromkeys(METRICS)
-                        cost = meter.record(question.id, repeat)
+                        cost = await asyncio.to_thread(meter.record, question.id, repeat)
                         recorded = True
                         row = {
                             "run_id": run_id,

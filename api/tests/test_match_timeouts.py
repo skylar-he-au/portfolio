@@ -346,7 +346,12 @@ async def test_the_client_timeout_ends_a_call_to_a_silent_server(
     choice: mm.ModelChoice, partial: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without the graph's deadline the client's own timeout ends the call, after the
-    number of attempts it is set to (Gemini: the seconds reach the SDK as milliseconds)."""
+    number of attempts it is set to (Gemini: the seconds reach the SDK as milliseconds).
+
+    What the client raises depends on its transport: google-genai uses aiohttp when it is
+    installed (the eval group brings it in with ragas), and aiohttp's own timeout is a
+    `TimeoutError`; with httpx (CI, the Docker image) it is the SDK's error. So the test
+    asks the backstop whether it fired instead of looking at the exception's type."""
     monkeypatch.setattr(mm, "RETRY_TIMEOUT_S", 0.3)
     monkeypatch.setattr(mm, "CLIENT_BUDGET_S", 0.6)
     server = SilentServer(partial)
@@ -355,11 +360,12 @@ async def test_the_client_timeout_ends_a_call_to_a_silent_server(
         chat = mm.build_chat(choice, settings(), 64)
         structured = chat.with_structured_output(prompts.CheckOut, method="json_schema")
         started = time.monotonic()
+        backstop = asyncio.timeout(10)  # only a backstop: must not be what fires
         with pytest.raises(Exception) as caught:
-            async with asyncio.timeout(10):  # only a backstop: must not be what fires
+            async with backstop:
                 await structured.ainvoke([("user", "hi")])
         took = time.monotonic() - started
-    assert not isinstance(caught.value, TimeoutError | asyncio.TimeoutError), caught.value
+    assert not backstop.expired(), caught.value
     assert server.requests == mm.client_attempts(choice)
     timeout, _ = mm.client_limits(choice)
     assert took < mm.client_attempts(choice) * timeout + 1.5  # + the retry's backoff
@@ -395,3 +401,76 @@ async def test_ask_json_ends_a_silent_provider_at_the_stage_deadline_and_falls_b
     assert used is answers and out.verdicts[0].shows
     assert server.requests == 1
     assert 0.5 <= took < 1.0
+
+
+# --- the API judges of the eval runners (step 7 7t) --------------------------------------------
+
+JUDGE_LIMIT = 0.2  # every judge's time limit in these tests, seconds
+
+
+async def test_a_match_judge_that_never_answers_is_a_judge_error_not_a_zero(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`evals/match_run.py`: the alignment call and the Faithfulness score each end at their
+    limit; the item keeps its row with the score missing (`judge_errors`), and the summary
+    counts it as missing, not as 0. Before the fix both waited forever."""
+    import json
+
+    from test_evals_match import EvalScript, FakeAligner, FakeScorer, _evaluate, eval_deps
+
+    from evals import match_run
+
+    class Hangs:
+        calls = 0
+
+        async def __call__(self, *args: Any) -> Any:
+            self.calls += 1
+            await forever()
+
+    monkeypatch.setattr(match_run, "ALIGN_TIMEOUT_S", JUDGE_LIMIT)
+    monkeypatch.setattr(match_run, "FAITH_TIMEOUT_S", JUDGE_LIMIT)
+    for aligner, scorer, errors in (
+        (Hangs(), FakeScorer(0.9), ["align: TimeoutError"]),
+        (FakeAligner(), Hangs(), ["faithfulness: TimeoutError"]),
+    ):
+        out = tmp_path / str(len(errors[0]))
+        started = time.monotonic()
+        async with asyncio.timeout(5):  # only a backstop
+            outcome = await _evaluate(out, eval_deps(EvalScript()), aligner=aligner, scorer=scorer)
+        took = time.monotonic() - started
+        row = outcome.rows[0]
+        assert outcome.status == "complete" and row["status"] == "ok"
+        assert row["judge_errors"] == errors
+        summary = json.loads((out / "summary" / "run-1.json").read_text(encoding="utf-8"))
+        if errors[0].startswith("align"):
+            assert row["scores"] is None and row["faithfulness"] == 0.9
+            assert summary["scores"]["tune"]["faithfulness"]["missing"] == 0
+        else:
+            assert row["scores"] is not None and row["faithfulness"] is None
+            assert summary["scores"]["tune"]["faithfulness"]["missing"] == 1
+        assert took < JUDGE_LIMIT + 1.0
+
+
+async def test_a_qa_judge_that_never_answers_leaves_the_scores_missing(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`evals/run.py`: the RAGAS scorer of one sample ends at `SCORE_TIMEOUT_S` and the
+    sample's scores are missing, like any judge failure."""
+    from test_evals_run import run_eval, summary
+
+    from evals import run as qa_run
+    from evals.types import METRICS
+
+    async def hangs(*args: Any) -> Any:
+        await forever()
+
+    monkeypatch.setattr(qa_run, "SCORE_TIMEOUT_S", JUDGE_LIMIT)
+    started = time.monotonic()
+    async with asyncio.timeout(5):  # only a backstop
+        outcome = await run_eval(tmp_path, scorer=hangs, no_ragas=False)
+    took = time.monotonic() - started
+    row = outcome.rows[0]
+    assert outcome.status == "complete" and row["status"] == "ok"
+    assert row["ragas"] == dict.fromkeys(METRICS)
+    assert summary(outcome.rows)["ragas_nulls"] == len(METRICS)
+    assert took < JUDGE_LIMIT + 1.0

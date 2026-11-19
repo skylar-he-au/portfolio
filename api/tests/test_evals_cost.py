@@ -2,7 +2,12 @@
 
 import asyncio
 import csv
+import fcntl
 import multiprocessing
+import threading
+import time
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,7 +17,8 @@ import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from evals.cost import Meter, meter_anthropic, meter_openai
+from evals import cost
+from evals.cost import LedgerLocked, Meter, meter_anthropic, meter_openai
 from evals.pricing import POOLS, Price, cost_usd, price_for
 from evals.types import CapReached, UnknownModel
 
@@ -416,3 +422,171 @@ def test_a_priced_model_without_a_pool_is_unknown(monkeypatch: pytest.MonkeyPatc
         price_for("mistral-small")
     with pytest.raises(UnknownModel, match="mistral-small"):
         cost_usd("mistral-small", 1, 1)
+
+
+# --- a ledger another process keeps locked (step 7 7t) -----------------------------------------
+
+LOCK_WAIT = 0.3  # `LOCK_TIMEOUT_S` in these tests, seconds
+BACKSTOP = 3.0  # only so that a blocking `flock` fails the test instead of hanging it
+
+
+@contextmanager
+def held_lock(path: Path, *, release_after: float | None = None) -> Iterator[None]:
+    """Another holder of the ledger's exclusive lock: a second open file, so `flock` treats
+    it like another process. `release_after` lets go from a timer thread (the loop itself
+    may be blocked by then)."""
+    if not path.exists():
+        _append_ledger(path, [("real", 0.5)])
+    holder = path.open("a", encoding="utf-8")
+    fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+    released = threading.Event()
+
+    def release() -> None:
+        if not released.is_set():
+            released.set()
+            fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+
+    timer = threading.Timer(release_after, release) if release_after is not None else None
+    if timer is not None:
+        timer.start()
+    try:
+        yield
+    finally:
+        if timer is not None:
+            timer.cancel()
+        release()
+        holder.close()
+
+
+async def run_with_ticker(work: Callable[[], Awaitable[Any]]) -> tuple[Any, int, float]:
+    """Run `work` next to a coroutine that ticks every 10 ms: (result or error, ticks, s)."""
+    ticks = 0
+    stop = asyncio.Event()
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while not stop.is_set():
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    task = asyncio.create_task(ticker())
+    started = time.monotonic()
+    try:
+        async with asyncio.timeout(BACKSTOP):
+            outcome: Any = await work()
+    except Exception as error:  # noqa: BLE001 - the test looks at what came out
+        outcome = error
+    took = time.monotonic() - started
+    stop.set()
+    await task
+    return outcome, ticks, took
+
+
+@pytest.mark.parametrize("call", ["check", "record"])
+def test_a_held_ledger_lock_ends_check_and_record_in_time_while_the_loop_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, call: str
+) -> None:
+    """Another process holding the ledger: `check` and `record` give up after
+    `LOCK_TIMEOUT_S` with a readable error, and (run off the loop, as the runners do) the
+    other coroutines keep going. Before the fix the blocking `flock` never returned."""
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", LOCK_WAIT)
+    path = tmp_path / "ledger.csv"
+    meter = Meter(CAPS, path, "run-7t")
+    meter.add_usage("claude-haiku-5-5", 1_000_000, 0)  # $0.10 credit, not recorded yet
+    with held_lock(path, release_after=BACKSTOP + 1):
+        method = meter.check if call == "check" else lambda: meter.record("q", 0)
+        outcome, ticks, took = asyncio.run(run_with_ticker(lambda: asyncio.to_thread(method)))
+    assert isinstance(outcome, LedgerLocked), repr(outcome)
+    assert isinstance(outcome, CapReached)  # every runner stops on it like on a cap
+    assert str(outcome) == f"ledger {path} stayed locked by another process for 0.3 s"
+    assert LOCK_WAIT <= took < LOCK_WAIT + 0.5
+    assert ticks >= 10  # the loop was free the whole time
+    assert [row["run_id"] for row in _read_ledger(path)] == ["older-run"]
+    # nothing lost: the unrecorded cost is written once the ledger is free again
+    assert meter.record("q", 0) == pytest.approx(0.10)
+    assert [r["cost_usd"] for r in _read_ledger(path) if r["run_id"] == "run-7t"] == [
+        "0.0",
+        "0.1",
+    ]
+
+
+def test_a_lock_let_go_within_the_limit_is_waited_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", 2.0)
+    path = tmp_path / "ledger.csv"
+    meter = Meter(CAPS, path, "run-7t")
+    with held_lock(path, release_after=0.2):
+        started = time.monotonic()
+        meter.check()
+        meter.record("q", 0)
+        took = time.monotonic() - started
+    assert 0.15 <= took < 1.5
+    assert [row["run_id"] for row in _read_ledger(path)] == ["older-run", "run-7t", "run-7t"]
+
+
+def test_readers_share_the_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A shared lock (another run's `check`) does not hold up this run's `check`."""
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", LOCK_WAIT)
+    path = tmp_path / "ledger.csv"
+    _append_ledger(path, [("real", 0.5)])
+    with path.open(encoding="utf-8") as reader:
+        fcntl.flock(reader.fileno(), fcntl.LOCK_SH)
+        started = time.monotonic()
+        Meter(CAPS, path, "run-7t").check()
+        assert time.monotonic() - started < 0.1
+
+
+def test_waiting_for_the_ledger_does_not_hold_up_usage_callbacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The usage callbacks run on the event loop's thread and take the meter's own lock: a
+    `check` waiting for the ledger in a worker thread must not hold that lock meanwhile."""
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", 1.0)
+    path = tmp_path / "ledger.csv"
+    meter = Meter(CAPS, path, "run-7t")
+    with held_lock(path, release_after=BACKSTOP + 1):
+        waiting = threading.Thread(target=lambda: suppress_locked(meter.check))
+        waiting.start()
+        time.sleep(0.1)
+        started = time.monotonic()
+        meter.add_usage("claude-haiku-5-5", 100, 20)
+        took = time.monotonic() - started
+        waiting.join()
+    assert took < 0.05
+
+
+def suppress_locked(call: Callable[[], Any]) -> None:
+    try:
+        call()
+    except LedgerLocked:
+        pass
+
+
+@pytest.mark.parametrize("runner", ["qa", "match"])
+def test_the_eval_runners_stop_on_a_held_ledger_and_keep_the_loop_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: str
+) -> None:
+    """`evals/run.py` and `evals/match_run.py` read the ledger off the loop: the run ends
+    `incomplete` with a `LedgerLocked` reason in time, and the loop keeps running. Before
+    the fix the runner's `check` blocked the loop until the holder let go."""
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", LOCK_WAIT)
+    path = tmp_path / "ledger.csv"
+    with held_lock(path, release_after=BACKSTOP + 1):
+        if runner == "qa":
+            from test_evals_run import run_eval
+
+            work = lambda: run_eval(tmp_path, meter=Meter(CAPS, path, "run-7t"))  # noqa: E731
+        else:
+            from test_evals_match import EvalScript, _evaluate, eval_deps
+
+            from evals.match_run import MatchMeter
+
+            meter = MatchMeter(CAPS, path, "run-7t")
+            work = lambda: _evaluate(tmp_path, eval_deps(EvalScript()), meter=meter)  # noqa: E731
+        outcome, ticks, took = asyncio.run(run_with_ticker(work))
+    assert not isinstance(outcome, Exception), repr(outcome)
+    assert outcome.status == "incomplete" and outcome.rows == []
+    assert outcome.reason.startswith("LedgerLocked")
+    assert took < LOCK_WAIT + 1.0
+    assert ticks >= 10

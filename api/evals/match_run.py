@@ -69,6 +69,12 @@ SAMPLE_TIMEOUT_S = 130.0
 # thread's stack to stderr and ends the process (exit 1); the rows and the ledger lines
 # written so far stay.
 WATCHDOG_S = SAMPLE_TIMEOUT_S + 60.0
+# The API judges have no limit of their own (the Anthropic client's default is 10 minutes
+# and 2 retries). One alignment call, one Faithfulness score (up to FAITH_CALLS calls) per
+# item; a judge past its limit is a judge error ("align: TimeoutError"), never a 0. Whole
+# items with both judges took at most 54 s in step 6.
+ALIGN_TIMEOUT_S = 90.0
+FAITH_TIMEOUT_S = 180.0
 JUDGE_MODEL = "claude-sonnet-5-5"
 ALIGN_MAX_TOKENS = 2048
 ALIGN_INPUT_TOKENS = 2500  # system + 12 read + 12 gold requirements (~40 tokens each)
@@ -106,8 +112,8 @@ class MatchMeter(Meter):
 
     def check_room(self, worst: Mapping[str, float]) -> None:
         self.check()
+        totals = self._ledger_totals()  # outside the lock, as in `Meter.check`
         with self._lock:
-            totals = self._ledger_totals()
             for pool in POOLS:
                 need = worst.get(pool, 0.0)
                 pass_cap, total_cap = self._caps[pool]
@@ -685,13 +691,15 @@ async def _one(
     deadline = loop.time() + SAMPLE_TIMEOUT_S  # both tries of the graph together
     faulthandler.dump_traceback_later(WATCHDOG_S, exit=True, file=sys.__stderr__)
     try:
-        meter.check_room(worst)
+        # The ledger reads and writes run off the loop (`asyncio.to_thread`): another process
+        # holding the ledger's lock must not stall the event loop (evals/cost.py).
+        await asyncio.to_thread(meter.check_room, worst)
         run: GraphRun | None = None
         log = CallLog()
         error_name = None
         for attempt in range(2):
             if attempt:
-                meter.check_room(worst)
+                await asyncio.to_thread(meter.check_room, worst)
             log = CallLog()
             try:
                 async with asyncio.timeout_at(deadline):
@@ -715,9 +723,10 @@ async def _one(
         alignment = scores = None
         judge_errors: list[str] = []
         if not error_name and sample.requirements and aligner is not None:
-            meter.check_room(align_worst())
+            await asyncio.to_thread(meter.check_room, align_worst())
             try:
-                alignment = await aligner(job, sample.requirements, meter)
+                async with asyncio.timeout(ALIGN_TIMEOUT_S):
+                    alignment = await aligner(job, sample.requirements, meter)
             except (CapReached, UnknownModel):
                 raise
             except Exception as error:  # noqa: BLE001 - a judge failure leaves scores empty
@@ -730,11 +739,13 @@ async def _one(
         faithfulness = None
         value = None if error_name or run is None else faith_input(sample, run.section_texts)
         if value is not None and scorer is not None:
-            meter.check_room(
-                faith_worst(len(value.response), sum(len(c) for c in value.retrieved_contexts))
+            await asyncio.to_thread(
+                meter.check_room,
+                faith_worst(len(value.response), sum(len(c) for c in value.retrieved_contexts)),
             )
             try:
-                faithfulness = (await scorer(value, meter)).get("faithfulness")
+                async with asyncio.timeout(FAITH_TIMEOUT_S):
+                    faithfulness = (await scorer(value, meter)).get("faithfulness")
             except (CapReached, UnknownModel):
                 raise
             except Exception as error:  # noqa: BLE001 - a judge failure is a missing score
@@ -742,7 +753,7 @@ async def _one(
             if faithfulness is None and not any(e.startswith("faith") for e in judge_errors):
                 judge_errors.append("faithfulness: no score")
 
-        cost = meter.record(job.id, repeat)
+        cost = await asyncio.to_thread(meter.record, job.id, repeat)
         recorded = True
         passed = not error_name and match_passed(checks) and (route != "default" or not fallback)
         return {

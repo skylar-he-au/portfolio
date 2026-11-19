@@ -5,10 +5,13 @@ import fcntl
 import logging
 import os
 import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
@@ -19,6 +22,38 @@ from evals.types import CapReached, MeterLike, UnknownModel
 logger = logging.getLogger(__name__)
 
 _HEADER = ("run_id", "question_id", "repeat", "pool", "cost_usd", "at")
+
+# The shared ledger is locked only for a read or a few appended lines (milliseconds). A lock
+# held longer than this means another process is stuck holding it: stop the run with a
+# readable error instead of waiting forever (a blocking `flock` would also stall the event
+# loop, so no asyncio time limit could fire; step 6 r2g1 sat at CPU 0% for 15 minutes).
+LOCK_TIMEOUT_S = 10.0
+LOCK_POLL_S = 0.05
+
+
+class LedgerLocked(CapReached):
+    """The shared ledger stayed locked past `LOCK_TIMEOUT_S`. A `CapReached`: without the
+    ledger the caps cannot be checked, so every runner stops the way it stops at a cap."""
+
+
+@contextmanager
+def _flocked(ledger: IO[str], path: Path, operation: int) -> Iterator[None]:
+    """`flock` without blocking: retry until `LOCK_TIMEOUT_S`, then raise `LedgerLocked`."""
+    deadline = time.monotonic() + LOCK_TIMEOUT_S
+    while True:
+        try:
+            fcntl.flock(ledger.fileno(), operation | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise LedgerLocked(
+                    f"ledger {path} stayed locked by another process for {LOCK_TIMEOUT_S:g} s"
+                ) from None
+            time.sleep(LOCK_POLL_S)
+    try:
+        yield
+    finally:
+        fcntl.flock(ledger.fileno(), fcntl.LOCK_UN)
 
 
 class Meter:
@@ -68,11 +103,12 @@ class Meter:
             raise UnknownModel(f"Unpriced models: {names}")
 
     def _ledger_totals(self) -> dict[str, float]:
+        """Every pool's total in the shared ledger. Called without `self._lock`: waiting
+        for another process's lock must not hold up the usage callbacks."""
         totals = dict.fromkeys(POOLS, 0.0)
         try:
             with self._ledger_path.open(newline="", encoding="utf-8") as ledger:
-                fcntl.flock(ledger.fileno(), fcntl.LOCK_SH)
-                try:
+                with _flocked(ledger, self._ledger_path, fcntl.LOCK_SH):
                     for row in csv.DictReader(ledger):
                         pool = row.get("pool")
                         if pool not in totals:
@@ -82,17 +118,18 @@ class Meter:
                         except (TypeError, ValueError):
                             continue
                         totals[pool] += cost
-                finally:
-                    fcntl.flock(ledger.fileno(), fcntl.LOCK_UN)
         except FileNotFoundError:
             return totals
         return totals
 
     def check(self) -> None:
-        """Stop on unknown prices or an exhausted cap in either pool."""
+        """Stop on unknown prices or an exhausted cap in either pool. Blocks this thread
+        for at most `LOCK_TIMEOUT_S` (then `LedgerLocked`); async callers run it with
+        `asyncio.to_thread` so the event loop keeps going meanwhile."""
         with self._lock:
             self._raise_unpriced()
-            totals = self._ledger_totals()
+        totals = self._ledger_totals()
+        with self._lock:
             for pool in POOLS:
                 pass_cap, total_cap = self._caps[pool]
                 pass_remaining = pass_cap - self._pass_cost[pool]
@@ -110,36 +147,34 @@ class Meter:
                     raise CapReached(f"{pool}: {'; '.join(reasons)}")
 
     def record(self, question_id: str, repeat: int) -> float:
-        """Append both pools atomically, then report any unknown prices."""
-        with self._lock:
-            self._ledger_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._ledger_path.open("a", newline="", encoding="utf-8") as ledger:
-                fcntl.flock(ledger.fileno(), fcntl.LOCK_EX)
-                try:
-                    ledger.seek(0, os.SEEK_END)
-                    writer = csv.writer(ledger)
-                    if ledger.tell() == 0:
-                        writer.writerow(_HEADER)
-                    at = datetime.now(UTC).isoformat()
-                    for pool in POOLS:
-                        writer.writerow(
-                            (
-                                self._run_id,
-                                question_id,
-                                repeat,
-                                pool,
-                                self._unrecorded[pool],
-                                at,
-                            )
+        """Append both pools atomically, then report any unknown prices. Like `check`, waits
+        at most `LOCK_TIMEOUT_S` for the ledger; on `LedgerLocked` nothing is written and
+        the unrecorded cost stays for the next `record`."""
+        self._ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._ledger_path.open("a", newline="", encoding="utf-8") as ledger:
+            with _flocked(ledger, self._ledger_path, fcntl.LOCK_EX), self._lock:
+                ledger.seek(0, os.SEEK_END)
+                writer = csv.writer(ledger)
+                if ledger.tell() == 0:
+                    writer.writerow(_HEADER)
+                at = datetime.now(UTC).isoformat()
+                for pool in POOLS:
+                    writer.writerow(
+                        (
+                            self._run_id,
+                            question_id,
+                            repeat,
+                            pool,
+                            self._unrecorded[pool],
+                            at,
                         )
-                    ledger.flush()
-                    os.fsync(ledger.fileno())
-                    recorded = sum(self._unrecorded.values())
-                    self._unrecorded = dict.fromkeys(POOLS, 0.0)
-                finally:
-                    fcntl.flock(ledger.fileno(), fcntl.LOCK_UN)
-            self._raise_unpriced()
-            return recorded
+                    )
+                ledger.flush()
+                os.fsync(ledger.fileno())
+                recorded = sum(self._unrecorded.values())
+                self._unrecorded = dict.fromkeys(POOLS, 0.0)
+                self._raise_unpriced()
+        return recorded
 
     def start_pass(self) -> None:
         with self._lock:
