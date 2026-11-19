@@ -431,12 +431,7 @@ async def _replay_one(
     from app.match import graph
     from app.match.state import Finding, Requirement
 
-    requirements = _models(source.get("requirements") or [], Requirement)
-    retrieved = {
-        rid: None if urls is None else [sections[u] for u in urls]
-        for rid, urls in (source.get("retrieved") or {}).items()
-    }
-    if option.step == "read":
+    if option.step == "read":  # before `retrieved`: a read replay fetches no sections
         update = await graph.read_step(
             job.jd, deps, max_requirements=option.max_requirements, config=config
         )
@@ -445,6 +440,11 @@ async def _replay_one(
             "language": update["language"],
             "top8": update["top8"],
         }
+    requirements = _models(source.get("requirements") or [], Requirement)
+    retrieved = {
+        rid: None if urls is None else [sections[u] for u in urls]
+        for rid, urls in (source.get("retrieved") or {}).items()
+    }
     if option.step == "match":
         deadline = time.monotonic() + deps.stage_timeouts["matching"]
         # no `board`: it keeps r1..r8 only (`state.REQUIREMENT_ID`), and nothing streams here

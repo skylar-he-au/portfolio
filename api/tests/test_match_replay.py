@@ -190,7 +190,8 @@ async def run_replay(
         JOBS,
         SOURCES,
         deps=deps_for(script),
-        sections=SECTIONS,
+        # what `main` fetches: `needed_urls` (none for read)
+        sections=kwargs.pop("sections", SECTIONS),
         meter=MatchMeter(CAPS, tmp_path / "ledger.csv", run_id),
         run_id=run_id,
         out_dir=tmp_path / "runs",
@@ -222,7 +223,8 @@ def _metered_every_call(tmp_path: Path, outcome: Any) -> None:
 
 
 async def test_read_replay_calls_read_only_and_exports_align_tasks(tmp_path: Path) -> None:
-    outcome, script, path = await run_replay(tmp_path, "read")
+    # no sections, as `main` gives a read replay (`needed_urls`): it once raised KeyError
+    outcome, script, path = await run_replay(tmp_path, "read", sections={})
     assert outcome.status == "complete"
     assert script.asked == ["read", "read"]  # one per item, nothing downstream
     row = outcome.rows[0]
