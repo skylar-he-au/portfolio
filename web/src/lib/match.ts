@@ -54,7 +54,7 @@ export interface MatchResult {
   top8: boolean;
   language?: string;
 }
-type Stage = 'fetching' | 'reading' | 'matching' | 'writing' | 'checking';
+type Stage = 'fetching' | 'reading' | 'matching' | 'checking' | 'writing';
 export type MatchEvent =
   | { event: 'stage'; data: { stage: Stage; count?: number } }
   | { event: 'notes'; data: MatchNotes }
@@ -100,7 +100,7 @@ export function parseMatchEvent(event: SseEvent): MatchEvent | null {
   switch (event.event) {
     case 'stage': {
       const stage = data.stage;
-      if (stage !== 'fetching' && stage !== 'reading' && stage !== 'matching' && stage !== 'writing' && stage !== 'checking') return null;
+      if (stage !== 'fetching' && stage !== 'reading' && stage !== 'matching' && stage !== 'checking' && stage !== 'writing') return null;
       const count = number(data.count);
       return { event: 'stage', data: { stage, ...(count === undefined ? {} : { count }) } };
     }

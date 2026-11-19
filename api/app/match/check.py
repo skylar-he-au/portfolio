@@ -1,38 +1,41 @@
 """The `match-v1` check, the code half: which pairs to ask about and what the verdicts change.
 
-One model call (Gemini 3.5 Flash-Lite first) checks every link of the guide at once; each
-pair is one requirement and the one section linked for it, nothing else. A link the check
-does not pass is removed; a guide item left with no link becomes "couldn't be checked"
-(`unchecked`), never "not covered": the pages may well show it, we just could not confirm.
-No retry. A pair the check gives no verdict for counts as not passed.
-After the check the graph sends the notes once more with `checked_findings`, so the panel
-shows the same thing as the guide.
+The check runs after the match agents and before the guide is written, so the guide's
+sentences can only mention sections the check kept. One model call (Gemini 3.5 Flash-Lite
+first) checks every link of every `found` finding at once; each pair is one requirement and
+the one section linked for it, nothing else. A link the check does not pass is removed; a
+finding left with no link becomes "couldn't be checked" (`unchecked`), never "not covered":
+the pages may well show it, we just could not confirm. No retry. A pair the check gives no
+verdict for counts as not passed. The checked findings go to `checked_findings`; the graph
+sends them to the panel once, and the write agent sees only them.
 """
 
 from collections.abc import Mapping, Sequence
 
 from app.match.prompts import Verdict
-from app.match.state import Finding, Guide, Requirement
+from app.match.state import Finding, Requirement
 from app.rag.types import Section
+
+type Pair = tuple[int, Requirement, Section]
 
 
 def check_pairs(
-    guide: Guide,
+    findings: Sequence[Finding],
     requirements: Sequence[Requirement],
     sections_by_url: Mapping[str, Section],
-) -> list[tuple[int, Requirement, Section]]:
-    """Numbered (requirement, section) pairs, one per link in the guide.
+) -> list[Pair]:
+    """Numbered (requirement, section) pairs, one per link of every `found` finding.
 
     A link whose section text is not in `sections_by_url` cannot be checked and gets no
     pair, so `apply_verdicts` removes it.
     """
     by_id = {r.id: r for r in requirements}
-    pairs: list[tuple[int, Requirement, Section]] = []
-    for item in guide.items:
-        requirement = by_id.get(item.requirement_id)
-        if requirement is None:
+    pairs: list[Pair] = []
+    for finding in findings:
+        requirement = by_id.get(finding.requirement_id)
+        if finding.status != "found" or requirement is None:
             continue
-        for ref in item.sections:
+        for ref in finding.sections:
             section = sections_by_url.get(ref.url)
             if section is not None:
                 pairs.append((len(pairs) + 1, requirement, section))
@@ -40,48 +43,34 @@ def check_pairs(
 
 
 def apply_verdicts(
-    guide: Guide,
-    pairs: Sequence[tuple[int, Requirement, Section]],
+    findings: Sequence[Finding],
+    pairs: Sequence[Pair],
     verdicts: Sequence[Verdict],
-) -> Guide:
-    """The guide with every link the check did not pass removed; items left without links
-    are dropped and counted in `unchecked`."""
+) -> list[Finding]:
+    """The findings with every link the check did not pass removed: a `found` finding keeps
+    the links that passed, one left with none becomes `unchecked` with no links. Findings
+    that were not `found` are returned unchanged."""
     shown = {v.n for v in verdicts if v.shows}
     passed = {(req.id, sec.url) for n, req, sec in pairs if n in shown}
-    items = []
-    failed = 0
-    for item in guide.items:
-        kept = [ref for ref in item.sections if (item.requirement_id, ref.url) in passed]
-        if kept:
-            items.append(item.model_copy(update={"sections": kept}))
-        else:
-            failed += 1
-    return guide.model_copy(update={"items": items, "unchecked": guide.unchecked + failed})
-
-
-def checked_findings(findings: Sequence[Finding], guide: Guide) -> list[Finding]:
-    """The findings as the panel should show them after the check, so it agrees with the
-    guide: a `found` finding keeps only the links the check passed (those in its guide item);
-    one whose item the check dropped becomes `unchecked` with no links. Other findings are
-    returned unchanged."""
-    kept = {item.requirement_id: item.sections for item in guide.items}
     out: list[Finding] = []
     for finding in findings:
         if finding.status != "found":
             out.append(finding)
-        elif finding.requirement_id in kept:
-            sections = kept[finding.requirement_id]
-            out.append(
-                finding
-                if sections == finding.sections
-                else finding.model_copy(update={"sections": sections})
-            )
+            continue
+        kept = [ref for ref in finding.sections if (finding.requirement_id, ref.url) in passed]
+        if kept == finding.sections:
+            out.append(finding)
+        elif kept:
+            out.append(finding.model_copy(update={"sections": kept}))
         else:
             out.append(finding.model_copy(update={"status": "unchecked", "sections": []}))
     return out
 
 
-def fail_all(guide: Guide) -> Guide:
+def fail_all(findings: Sequence[Finding]) -> list[Finding]:
     """The check itself could not run (both providers failed or ran out of time): no link is
-    confirmed, so every item becomes "couldn't be checked"."""
-    return guide.model_copy(update={"items": [], "unchecked": guide.unchecked + len(guide.items)})
+    confirmed, so every `found` finding becomes "couldn't be checked"."""
+    return [
+        f.model_copy(update={"status": "unchecked", "sections": []}) if f.status == "found" else f
+        for f in findings
+    ]

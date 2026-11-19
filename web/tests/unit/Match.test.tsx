@@ -187,14 +187,14 @@ describe('Match streaming and guide', () => {
       ['fetching', null, 'Fetching the job ad…'], ['reading', null, 'Reading the job ad…'],
       ['matching', null, 'Matching requirements to my project pages…'],
       ['matching', 6, 'Matching 6 requirements to my project pages…'],
-      ['writing', null, 'Writing the guide…'], ['checking', null, 'Checking the guide…'],
+      ['checking', null, 'Checking the sections…'], ['writing', null, 'Writing the guide…'],
     ] as const) {
       await act(async () => { stream.emit('stage', { stage, count }); });
       expect(screen.getByRole('status')).toHaveTextContent(message);
       expect(screen.queryByText('For this role, look at:')).not.toBeInTheDocument();
     }
     await act(async () => { stream.emit('stage', { stage: 'invented' }); stream.emit('notes', notes); });
-    expect(screen.getByRole('status')).toHaveTextContent('Checking the guide…');
+    expect(screen.getByRole('status')).toHaveTextContent('Writing the guide…');
     const panel = screen.getByText('How it matched').closest('details')!;
     expect(panel).not.toHaveAttribute('open');
     expect(panel).toHaveTextContent('r1');

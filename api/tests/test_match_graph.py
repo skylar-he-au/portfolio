@@ -36,7 +36,6 @@ from app.match.prompts import Verdict
 from app.match.state import (
     Finding,
     Guide,
-    GuideItem,
     NotesBoard,
     Requirement,
     SectionRef,
@@ -149,7 +148,7 @@ def make_deps(
 ) -> tuple[MatchDeps, FakeJsonChat, FakeJsonChat]:
     claude = FakeJsonChat(reply=claude_reply)
     gemini = FakeJsonChat(reply=gemini_reply or claude_reply)
-    stage = {"reading": 5.0, "matching": 5.0, "writing": 5.0, "checking": 5.0, **timeouts}
+    stage = {"reading": 5.0, "matching": 5.0, "checking": 5.0, "writing": 5.0, **timeouts}
     deps = MatchDeps(
         ChatProvider("anthropic", "claude-haiku-5-5", claude),
         ChatProvider("google", "gemini-3.5-flash-lite", gemini),
@@ -222,14 +221,18 @@ async def test_five_requirements_run_in_parallel_and_link_retrieved_sections() -
     assert stages(custom) == [
         ("reading", None),
         ("matching", 5),
-        ("writing", None),
         ("checking", 5),
+        ("writing", None),
     ]
     notes = [c["notes"] for c in custom if "notes" in c]
     assert len(notes) == 7  # after read, once per finished match agent, once after the check
     assert [len(n["findings"]) for n in notes] == [0, 1, 2, 3, 4, 5, 5]
     assert notes[-1] == notes[-2]  # the check passed everything: nothing changed
-    assert custom[-2:] == [{"stage": "checking", "count": 5}, {"notes": notes[-1]}]
+    assert custom[-3:] == [
+        {"stage": "checking", "count": 5},
+        {"notes": notes[-1]},
+        {"stage": "writing", "count": None},
+    ]
     assert notes[1]["findings"][0]["requirement_id"] == "r2"  # SQL finished first
     assert [f["requirement_id"] for f in notes[-1]["findings"]] == ["r1", "r2", "r3", "r4", "r5"]
     # Every model call asked for native structured output; the check went to Gemini.
@@ -308,6 +311,7 @@ async def test_nodes_see_only_the_fields_they_read() -> None:
         "jd": "secret ad",
         "requirements": [],
         "findings": [],
+        "checked_findings": [],
         "result": None,
         "retrieved": {},
         "language": "en",
@@ -317,6 +321,10 @@ async def test_nodes_see_only_the_fields_they_read() -> None:
         await guard_node(name, spy(name))(state)
     assert seen["read"] == {"jd"}
     assert "jd" not in seen["match"] | seen["search"] | seen["write"] | seen["check"]
+    # The check works on the match agents' findings; the write agent sees only what it kept.
+    assert {"findings", "requirements", "retrieved"} <= seen["check"]
+    assert "result" not in seen["check"]
+    assert "checked_findings" in seen["write"] and "findings" not in seen["write"]
 
 
 async def test_a_match_agent_cannot_write_another_requirement() -> None:
@@ -365,12 +373,16 @@ async def test_both_providers_failing_marks_one_requirement_unchecked() -> None:
     guide: Guide = final["result"]
     assert [i.requirement_id for i in guide.items] == ["r1", "r3"]
     assert guide.unchecked == 1 and guide.not_covered == []
-    # write starts only after every match agent has finished.
+    # The check, then write, start only after every match agent has finished.
     match_ends = [t for k, what, t in script.events if k == "match" and what.startswith("end")]
     write_start = next(
         t for k, what, t in script.events if k == "write" and what.startswith("start")
     )
-    assert len(match_ends) == 3 and write_start >= max(match_ends)
+    check_start = next(
+        t for k, what, t in script.events if k == "check" and what.startswith("start")
+    )
+    assert len(match_ends) == 3 and check_start >= max(match_ends)
+    assert write_start >= check_start
 
 
 async def test_matching_stage_timeout_marks_requirements_unchecked() -> None:
@@ -472,11 +484,10 @@ async def test_write_cannot_add_links_or_findings() -> None:
         ("r2", "Heading sec-sql"),  # left out by write: code falls back to the headings
     ]
     match_links = {ref.url for f in final["findings"] for ref in f.sections}
-    # Checked right after write too, not only after the check removed what it couldn't pass.
+    checked_links = {ref.url for f in final["checked_findings"] for ref in f.sections}
     written = [s["result"] for s in states if s.get("result") is not None]
-    assert len(written) == 2  # after write, after check
-    for result in written:
-        assert {ref.url for i in result.items for ref in i.sections} <= match_links
+    assert len(written) == 1  # write is the last step: nothing changes the guide after it
+    assert {ref.url for i in guide.items for ref in i.sections} <= checked_links <= match_links
     assert "made up" not in json.dumps(guide.model_dump())
     assert guide.not_covered == ["Kubernetes"]
 
@@ -498,11 +509,59 @@ async def test_match_section_numbers_are_checked_by_code() -> None:
     assert sql.status == "unchecked" and sql.sections == []
 
 
-# --- 5. the check ---------------------------------------------------------------------------
+# --- 5. the check, before write -------------------------------------------------------------
+
+
+async def test_check_runs_before_write_and_write_sees_only_the_sections_it_kept() -> None:
+    script = Script(reqs("Python", "SQL"))
+    written: list[str] = []
+    base_write = script.write
+
+    async def match(messages: list[BaseMessage]) -> Any:
+        return {"reasoning": "r", "found": True, "sections": [1, 2]}
+
+    async def check(messages: list[BaseMessage]) -> Any:
+        assert pair_count(messages) == 4  # every link of every found finding
+        # Python keeps only its OnCallOps section; SQL keeps both.
+        return {"verdicts": [{"n": n, "shows": n != 1} for n in range(1, 5)]}
+
+    async def write(messages: list[BaseMessage]) -> Any:
+        written.append(str(messages[1].content))
+        return await base_write(messages)
+
+    script.match = match  # type: ignore[method-assign]
+    script.check = check  # type: ignore[method-assign]
+    script.write = write  # type: ignore[method-assign]
+    two = [
+        section("roleradar", "a", "RoleRadar 30-second summary"),
+        section("oncallops", "b", "OnCallOps pipeline"),
+    ]
+    deps, _, _ = make_deps(script, search=FakeSearch({"q Python": two, "q SQL": two}))
+    custom, final = await run(deps, JD)
+
+    order = [(k, what) for k, what, _ in script.events if k in ("check", "write")]
+    assert order == [("check", "start "), ("check", "end "), ("write", "start "), ("write", "end ")]
+    assert stages(custom)[-2:] == [("checking", 2), ("writing", None)]
+    # The write agent saw Python with the OnCallOps section only; SQL with both.
+    assert len(written) == 1 and len(re.findall(r"^Finding \d+:", written[0], flags=re.M)) == 2
+    python_block, sql_block = written[0].split("Finding 2:")
+    assert "RoleRadar 30-second summary" not in python_block
+    assert "OnCallOps pipeline" in python_block
+    assert "RoleRadar 30-second summary" in sql_block
+    guide: Guide = final["result"]
+    assert [[s.url for s in i.sections] for i in guide.items] == [
+        ["/projects/oncallops#b"],
+        ["/projects/roleradar#a", "/projects/oncallops#b"],
+    ]
+    # The match agents' own findings are kept as they were; the checked copy is what's used.
+    assert len(final["findings"][0].sections) == 2
+    assert [s.url for s in final["checked_findings"][0].sections] == ["/projects/oncallops#b"]
 
 
 async def test_a_failed_check_makes_the_item_unchecked_not_not_covered() -> None:
     script = Script(reqs("Python", "SQL", "Kubernetes"))
+    base_write = script.write
+    written: list[str] = []
 
     async def check(messages: list[BaseMessage]) -> Any:
         assert pair_count(messages) == 2
@@ -511,7 +570,12 @@ async def test_a_failed_check_makes_the_item_unchecked_not_not_covered() -> None
         assert text.count("<section-") == 2
         return {"verdicts": [{"n": 1, "shows": True}, {"n": 2, "shows": False}]}
 
+    async def write(messages: list[BaseMessage]) -> Any:
+        written.append(str(messages[1].content))
+        return await base_write(messages)
+
     script.check = check  # type: ignore[method-assign]
+    script.write = write  # type: ignore[method-assign]
     deps, _, gemini = make_deps(script, search=one_section_each(["Python", "SQL"]))
     custom, final = await run(deps, JD)
     guide: Guide = final["result"]
@@ -519,13 +583,16 @@ async def test_a_failed_check_makes_the_item_unchecked_not_not_covered() -> None
     assert guide.unchecked == 1
     assert guide.not_covered == ["Kubernetes"]
     assert [kind(c) for c in gemini.calls] == ["check"]
+    # The write agent never saw SQL: the check had already dropped it.
+    assert len(written) == 1 and "Finding 2:" not in written[0]
+    assert "sec-sql" not in written[0] and "SQL" not in written[0]
 
-    # The panel agrees with the guide: the last notes, sent after the check, show r2 as
-    # unchecked without its section; r1 and r3, which the check did not change, are the same
-    # as in the notes before it.
+    # The panel agrees with the guide: the notes sent after the check show r2 as unchecked
+    # without its section; r1 and r3, which the check did not change, are the same as in the
+    # notes before it. Nothing is sent after write.
     notes = [c["notes"] for c in custom if "notes" in c]
     before, after = notes[-2]["findings"], notes[-1]["findings"]
-    assert custom[-1] == {"notes": notes[-1]}
+    assert custom[-2:] == [{"notes": notes[-1]}, {"stage": "writing", "count": None}]
     assert [(f["requirement_id"], f["status"]) for f in before] == [
         ("r1", "found"),
         ("r2", "found"),
@@ -551,6 +618,7 @@ async def test_links_the_check_removes_leave_the_last_notes_too() -> None:
     deps, _, _ = make_deps(script, search=search)
     custom, final = await run(deps, JD)
     assert [s.url for s in final["result"].items[0].sections] == ["/projects/oncallops#b"]
+    assert final["result"].items[0].text == "guide text 1"
     notes = [c["notes"] for c in custom if "notes" in c]
     assert [s["url"] for s in notes[-2]["findings"][0]["sections"]] == [
         "/projects/roleradar#a",
@@ -562,17 +630,34 @@ async def test_links_the_check_removes_leave_the_last_notes_too() -> None:
 
 
 async def test_check_unavailable_marks_every_item_unchecked() -> None:
-    script = Script(reqs("Python", "SQL"))
+    script = Script(reqs("Python", "SQL", "Kubernetes"))
 
     async def check(messages: list[BaseMessage]) -> Any:
         return RuntimeError("down")
 
     script.check = check  # type: ignore[method-assign]
-    deps, _, _ = make_deps(script, search=one_section_each(["Python", "SQL"]))
+    deps, claude, _ = make_deps(script, search=one_section_each(["Python", "SQL"]))
     custom, final = await run(deps, JD)
     assert final["result"].items == [] and final["result"].unchecked == 2
+    assert final["result"].not_covered == ["Kubernetes"]
+    # Nothing left to write: no write call; the run still ends with a guide.
+    assert "write" not in [kind(c) for c in claude.calls]
+    assert stages(custom)[-2:] == [("checking", 2), ("writing", None)]
     last = [c["notes"] for c in custom if "notes" in c][-1]
-    assert [(f["status"], f["sections"]) for f in last["findings"]] == [("unchecked", [])] * 2
+    assert [(f["status"], f["sections"]) for f in last["findings"]] == [
+        ("unchecked", []),
+        ("unchecked", []),
+        ("not_found", []),
+    ]
+
+
+async def test_nothing_found_skips_the_check() -> None:
+    script = Script(reqs("Kubernetes"))
+    deps, claude, gemini = make_deps(script)
+    custom, final = await run(deps, JD)
+    assert gemini.calls == [] and [kind(c) for c in claude.calls] == ["read"]
+    assert ("checking", 1) not in stages(custom) and stages(custom)[-1] == ("writing", None)
+    assert final["result"].not_covered == ["Kubernetes"]
 
 
 def test_apply_verdicts_keeps_only_passed_links_and_missing_verdicts_fail() -> None:
@@ -580,33 +665,32 @@ def test_apply_verdicts_keeps_only_passed_links_and_missing_verdicts_fail() -> N
     requirements = [
         Requirement(id="r1", text="Python", query="p"),
         Requirement(id="r2", text="SQL", query="s"),
+        Requirement(id="r3", text="Go", query="g"),
     ]
-    guide = Guide(
-        items=[
-            GuideItem(
-                requirement_id="r1",
-                text="t1",
-                sections=[SectionRef(url=a.url, title="A"), SectionRef(url=b.url, title="B")],
-            ),
-            GuideItem(requirement_id="r2", text="t2", sections=[SectionRef(url=c.url, title="C")]),
-        ],
-        not_covered=["Go"],
-        unchecked=1,
-        top8=False,
-        language="en",
-    )
-    pairs = check_pairs(guide, requirements, {s.url: s for s in (a, b, c)})
+
+    def found(rid: str, *secs: Section) -> Finding:
+        refs = [SectionRef(url=s.url, title=s.heading) for s in secs]
+        return Finding(requirement_id=rid, status="found", sections=refs, provider="x", ms=1)
+
+    findings = [found("r1", a, b), found("r2", c), finding("r3", "not_found")]
+    pairs = check_pairs(findings, requirements, {s.url: s for s in (a, b, c)})
     assert [(n, r.id, s.url) for n, r, s in pairs] == [
         (1, "r1", a.url),
         (2, "r1", b.url),
         (3, "r2", c.url),
     ]
-    checked = apply_verdicts(guide, pairs, [Verdict(n=2, shows=True), Verdict(n=1, shows=False)])
-    assert [(i.requirement_id, [s.url for s in i.sections]) for i in checked.items] == [
-        ("r1", [b.url])
+    checked = apply_verdicts(findings, pairs, [Verdict(n=2, shows=True), Verdict(n=1, shows=False)])
+    assert [(f.requirement_id, f.status, [s.url for s in f.sections]) for f in checked] == [
+        ("r1", "found", [b.url]),
+        ("r2", "unchecked", []),  # no verdict for pair 3: not passed
+        ("r3", "not_found", []),
     ]
-    assert checked.unchecked == 2 and checked.not_covered == ["Go"]
-    assert fail_all(guide).unchecked == 3 and fail_all(guide).items == []
+    assert checked[0].provider == "x" and checked[0].ms == 1
+    assert [(f.status, f.sections) for f in fail_all(findings)] == [
+        ("unchecked", []),
+        ("unchecked", []),
+        ("not_found", []),
+    ]
 
 
 # --- 6. zero and twelve requirements --------------------------------------------------------

@@ -232,8 +232,8 @@ async def make_world(db_url: str) -> AsyncIterator[Callable[..., World]]:
             stage_timeouts={  # type: ignore[arg-type]
                 "reading": 5.0,
                 "matching": 5.0,
-                "writing": 5.0,
                 "checking": 5.0,
+                "writing": 5.0,
                 **(stage or {}),
             },
             call_timeout=5.0,
@@ -445,9 +445,9 @@ def expected_events(*, fetched: bool, truncated: bool) -> list[Event]:
         ("stage", {"stage": "matching", "count": 2}),
         notes([K8S_NOT_FOUND], truncated),
         notes([PY_FOUND, K8S_NOT_FOUND], truncated),
-        ("stage", {"stage": "writing", "count": None}),
         ("stage", {"stage": "checking", "count": 1}),
-        notes([PY_FOUND, K8S_NOT_FOUND], truncated),  # again after the check (nothing changed)
+        notes([PY_FOUND, K8S_NOT_FOUND], truncated),  # after the check (nothing changed)
+        ("stage", {"stage": "writing", "count": None}),
         ("result", RESULT),
         ("done", {}),
     ]
@@ -725,8 +725,8 @@ def test_app_uses_spec_stage_timeouts_and_a_120_second_request() -> None:
     assert dict(DEFAULT_STAGE_TIMEOUTS) == {
         "reading": 25.0,
         "matching": 35.0,
-        "writing": 25.0,
         "checking": 25.0,
+        "writing": 25.0,
     }
     assert ledger.worst("match") == match_worst_for(settings)
 

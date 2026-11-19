@@ -3,7 +3,9 @@
 `MatchState` is the notes. Who may read and write which field is fixed in
 `graph.NOTE_ACCESS` and enforced by code (a node that writes a field it does not own
 raises `NoteAccessError`). `findings` is written by the parallel match agents at the same
-time; `merge_findings` is its reducer.
+time; `merge_findings` is its reducer. The check then writes `checked_findings` (the same
+findings with the links it did not pass removed) and the write agent reads only those, so
+the guide never mentions a section the check rejected.
 
 Only validated fields leave the graph (`notes_snapshot`): requirement ids and texts,
 statuses, `page#section_id` links, provider and ms. The models' reasoning never enters the
@@ -26,7 +28,7 @@ MAX_REQUIREMENTS = 8
 MAX_REQUIREMENT_CHARS = 120
 REQUIREMENT_ID = re.compile(r"r[1-8]")  # MAX_REQUIREMENTS
 
-Stage = Literal["reading", "matching", "writing", "checking"]
+Stage = Literal["reading", "matching", "checking", "writing"]
 Status = Literal["found", "not_found", "unchecked"]
 
 
@@ -149,7 +151,8 @@ class MatchState(TypedDict):
     jd: str  # in memory only
     requirements: list[Requirement]  # written by read
     findings: Annotated[list[Finding], merge_findings]  # written by match (parallel)
-    result: Guide | None  # written by write, changed by check
+    checked_findings: list[Finding]  # written by check: `findings` minus the links it rejected
+    result: Guide | None  # written by write, from `checked_findings` only
     # Internal fields (not part of the notes the panel shows):
     language: NotRequired[str]  # written by read
     top8: NotRequired[bool]  # written by read

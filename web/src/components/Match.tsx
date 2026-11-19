@@ -56,8 +56,8 @@ function stageMessage(data: Extract<MatchEvent, { event: 'stage' }>['data']): st
     case 'reading': return 'Reading the job ad…';
     case 'matching': return data.count === undefined ? 'Matching requirements to my project pages…'
       : `Matching ${data.count} ${data.count === 1 ? 'requirement' : 'requirements'} to my project pages…`;
+    case 'checking': return 'Checking the sections…';
     case 'writing': return 'Writing the guide…';
-    case 'checking': return 'Checking the guide…';
   }
 }
 

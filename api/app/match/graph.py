@@ -1,7 +1,7 @@
 """The job-match graph: several agents that share one set of notes (`state.MatchState`).
 
     START -> read -+-> (0 requirements) -> END            stream: {"error": "not_a_job"}
-                   +-> search -> Send x N -> match -+-> write -> check -> END
+                   +-> search -> Send x N -> match -+-> check -> write -> END
                                   (one per requirement, in parallel)
 
 - read (Claude Haiku 5.5, Gemini as fallback): reads the job ad, lists at most 8
@@ -14,13 +14,14 @@
   variable, never stored or streamed), then found / not found and which sections. Code turns
   section numbers into `page#section_id` links. Both providers failing or the stage running
   out of time makes that one requirement `unchecked`; the run goes on.
-- write (Claude): runs once every match agent has written its finding (LangGraph waits for
-  the whole parallel step). It sees the numbered findings and writes one sentence per
-  finding number; the links, "not covered" and the counts come from code.
-- check (Gemini 3.5 Flash-Lite, `match-v1`): one call for every link of the guide; a link
-  it does not pass is removed, an item left without links becomes `unchecked` (see `check`).
-  Then the notes are sent once more with those changes (`check.checked_findings`), so the
-  panel and the guide agree.
+- check (Gemini 3.5 Flash-Lite, `match-v1`): runs once every match agent has written its
+  finding (LangGraph waits for the whole parallel step). One call for every link of every
+  `found` finding; a link it does not pass is removed, a finding left without links becomes
+  `unchecked` (see `check`). It writes `checked_findings` and sends the notes once with
+  them, so the panel shows what the guide will.
+- write (Claude): sees only the checked findings, numbered, and writes one sentence per
+  finding number, so its sentences can only mention sections the check kept; the links,
+  "not covered" and the counts come from code. Nothing changes the links after it.
 
 Who reads and writes which note is fixed in `NOTE_ACCESS` and enforced by `guard_node`.
 Every model call uses structured output with `method="json_schema"`. Each stage has its own
@@ -82,12 +83,12 @@ MAX_LINKS = 3  # sections a finding may link to
 MAX_QUERY_CHARS = 200
 MAX_GUIDE_TEXT_CHARS = 300
 
-# SPEC "职位对照" 时间: reading 25 s, matching 35 s (parallel), writing 25 s, checking 25 s.
+# SPEC "职位对照" 时间: reading 25 s, matching 35 s (parallel), checking 25 s, writing 25 s.
 DEFAULT_STAGE_TIMEOUTS: Mapping[Stage, float] = {
     "reading": 25.0,
     "matching": 35.0,
-    "writing": 25.0,
     "checking": 25.0,
+    "writing": 25.0,
 }
 
 
@@ -257,11 +258,14 @@ NOTE_ACCESS: Mapping[str, tuple[frozenset[str], frozenset[str]]] = {
     "read": (frozenset({"jd"}), frozenset({"requirements", "language", "top8", "board"})),
     "search": (frozenset({"requirements"}), frozenset({"retrieved", "match_deadline"})),
     "match": (frozenset({"requirement", "sections", "deadline", "board"}), frozenset({"findings"})),
+    "check": (
+        frozenset({"requirements", "findings", "retrieved"}),
+        frozenset({"checked_findings"}),
+    ),
     "write": (
-        frozenset({"requirements", "findings", "retrieved", "language", "top8"}),
+        frozenset({"requirements", "checked_findings", "retrieved", "language", "top8"}),
         frozenset({"result"}),
     ),
-    "check": (frozenset({"result", "requirements", "retrieved", "board"}), frozenset({"result"})),
 }
 
 type NodeFn = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -460,11 +464,45 @@ def build_match_graph(deps: MatchDeps) -> CompiledStateGraph[Any, Any, Any, Any]
         get_stream_writer()({"notes": board.snapshot()})
         return {"findings": [finding]}
 
+    async def check(view: dict[str, Any]) -> dict[str, Any]:
+        requirements: list[Requirement] = view["requirements"]
+        findings = known_findings(requirements, view.get("findings") or [])
+        found = [f for f in findings if f.status == "found"]
+        if not found:
+            return {"checked_findings": findings}  # no link to check: no call, no stage
+        writer = get_stream_writer()
+        writer({"stage": "checking", "count": len(found)})
+        pairs = match_check.check_pairs(
+            findings, requirements, _sections_by_url(view.get("retrieved") or {})
+        )
+        checked = await run_check(findings, pairs)
+        # The panel shows the notes; send them once with the check's changes.
+        writer({"notes": notes_snapshot(requirements, checked)})
+        return {"checked_findings": checked}
+
+    async def run_check(findings: list[Finding], pairs: list[match_check.Pair]) -> list[Finding]:
+        if not pairs:
+            return match_check.fail_all(findings)
+        try:
+            out, _ = await ask_json(
+                "check",
+                check_order,
+                prompts.CheckOut,
+                prompts.check_messages(pairs, prompts.new_marker()),
+                deadline=deadline("checking"),
+                call_timeout=deps.call_timeout,
+            )
+        except ModelsUnavailable:
+            return match_check.fail_all(findings)
+        return match_check.apply_verdicts(findings, pairs, out.verdicts)
+
     async def write(view: dict[str, Any]) -> dict[str, Any]:
         get_stream_writer()({"stage": "writing", "count": None})
         requirements: list[Requirement] = view["requirements"]
+        # Only the checked findings: the write agent never sees a link the check rejected.
         findings = {
-            f.requirement_id: f for f in known_findings(requirements, view.get("findings") or [])
+            f.requirement_id: f
+            for f in known_findings(requirements, view.get("checked_findings") or [])
         }
         by_url = _sections_by_url(view.get("retrieved") or {})
         found = [
@@ -517,42 +555,6 @@ def build_match_graph(deps: MatchDeps) -> CompiledStateGraph[Any, Any, Any, Any]
         )
         return {"result": guide}
 
-    async def check(view: dict[str, Any]) -> dict[str, Any]:
-        guide: Guide | None = view.get("result")
-        if guide is None or not guide.items:
-            return {}
-        get_stream_writer()({"stage": "checking", "count": len(guide.items)})
-        pairs = match_check.check_pairs(
-            guide, view["requirements"], _sections_by_url(view.get("retrieved") or {})
-        )
-        checked = await run_check(guide, pairs)
-        # The panel shows the notes; send them once more so they agree with the checked guide.
-        board: NotesBoard = view["board"]
-        get_stream_writer()(
-            {
-                "notes": notes_snapshot(
-                    board.requirements, match_check.checked_findings(board.findings, checked)
-                )
-            }
-        )
-        return {"result": checked}
-
-    async def run_check(guide: Guide, pairs: list[tuple[int, Requirement, Section]]) -> Guide:
-        if not pairs:
-            return match_check.fail_all(guide)
-        try:
-            out, _ = await ask_json(
-                "check",
-                check_order,
-                prompts.CheckOut,
-                prompts.check_messages(pairs, prompts.new_marker()),
-                deadline=deadline("checking"),
-                call_timeout=deps.call_timeout,
-            )
-        except ModelsUnavailable:
-            return match_check.fail_all(guide)
-        return match_check.apply_verdicts(guide, pairs, out.verdicts)
-
     def after_read(state: MatchState) -> str:
         return "search" if state["requirements"] else END
 
@@ -560,12 +562,12 @@ def build_match_graph(deps: MatchDeps) -> CompiledStateGraph[Any, Any, Any, Any]
     builder.add_node("read", cast(Any, guard_node("read", read)))
     builder.add_node("search", cast(Any, guard_node("search", search)))
     builder.add_node("match", cast(Any, guard_node("match", match)))
-    builder.add_node("write", cast(Any, guard_node("write", write)))
     builder.add_node("check", cast(Any, guard_node("check", check)))
+    builder.add_node("write", cast(Any, guard_node("write", write)))
     builder.add_edge(START, "read")
     builder.add_conditional_edges("read", after_read, ["search", END])
     builder.add_conditional_edges("search", fan_out, ["match"])
-    builder.add_edge("match", "write")
-    builder.add_edge("write", "check")
-    builder.add_edge("check", END)
+    builder.add_edge("match", "check")
+    builder.add_edge("check", "write")
+    builder.add_edge("write", END)
     return builder.compile()
