@@ -520,7 +520,7 @@ async def test_one_match_log_row_with_fixed_fields_only(make_world: Callable[...
         "SELECT id, source, job_language, prompt_version, providers, cost_usd, ip_hash, "
         "thumbs_down FROM match_log"
     )
-    assert row[:5] == (match_id, "text", "en", "match-v1", ["anthropic", "google"])
+    assert row[:5] == (match_id, "text", "en", prompts.PROMPT_VERSION, ["anthropic", "google"])
     assert row[5] > 0 and len(row[6]) == 32 and row[7] is False
     # Nothing from the job ad, the requirements or the result is in the database.
     dump = repr(world.rows("SELECT * FROM match_log")) + repr(
