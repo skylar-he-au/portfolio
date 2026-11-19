@@ -753,3 +753,11 @@ def test_match_summary_averages_pass_means() -> None:
     assert tune["precision"]["mean"] is None
     assert summary["scores"]["held_out"]["recall"]["mean"] == 0.0
     assert summary["requirements"] == {"read": 4, "unchecked": 4, "extra": 0, "missing": 4}
+    assert summary["cost_usd"] == 0.04
+    assert "cost_pools_usd" not in summary
+    pooled = build_match_summary(
+        rows, run_id="r", date="d", prompt_version="match-v1", route="default", split="tune",
+        repeats=2, questions=2, models={}, cost_pools={"real": 0.0012344, "credit": 0.0387656},
+    )  # fmt: skip
+    assert pooled["cost_pools_usd"] == {"real": 0.001234, "credit": 0.038766}
+    assert pooled["cost_usd"] == 0.04

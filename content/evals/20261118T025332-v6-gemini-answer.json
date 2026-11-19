@@ -144,5 +144,9 @@
     "answered": 0,
     "failed": 0
   },
-  "cost_usd": 1.912253
+  "cost_usd": 1.912253,
+  "cost_pools_usd": {
+    "real": 0.109423,
+    "credit": 1.80283
+  }
 }

@@ -167,7 +167,7 @@ export default function Match({ pageTitles = {} }: { pageTitles?: PageTitles }) 
       {result && (
         <div className="ask-answer" aria-live="polite">
           {items.length > 0 && <>
-            <p>For this role, look at:</p>
+            <p>Where my pages cover this role:</p>
             <ul>
               {items.map((item, index) => (
                 <li key={index}>{item.text}<Sections sections={item.sections} pageTitles={pageTitles} /></li>

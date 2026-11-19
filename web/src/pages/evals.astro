@@ -6,6 +6,7 @@ import {
   CHECK_LABELS,
   formatChecks,
   formatCost,
+  formatRunCost,
   formatMetric,
   MATCH_SCORE_LABELS,
   matchPassLines,
@@ -124,7 +125,7 @@ const cotNotes: Record<string, string> = {
       <p class="meta">
         Errors: {run.errors ?? '–'}
         {(run.ragas_nulls ?? 0) > 0 && <> · RAGAS gaps: {run.ragas_nulls}</>}
-        {' · '}Cost: {formatCost(run.cost_usd)}
+        {' · '}Cost: {formatRunCost(run)}
       </p>
     </section>
   ))}
@@ -188,7 +189,7 @@ const cotNotes: Record<string, string> = {
           </div>
           <p class="meta">
             Code checks: {formatChecks(run.code_checks)} · Errors: {run.errors ?? '–'} · Backup model used: {run.fallback_samples ?? '–'}
-            {' · '}Cost: {formatCost(run.cost_usd)}
+            {' · '}Cost: {formatRunCost(run)}
           </p>
           {matchNotes[run.run_id] && <p class="note">{matchNotes[run.run_id]}</p>}
         </article>
@@ -283,6 +284,16 @@ const cotNotes: Record<string, string> = {
     min-inline-size: var(--space-0);
     overflow-x: auto;
     margin-block: var(--space-5);
+  }
+
+  /* From 64rem the score tables use the wide column, as #projects does on the home page,
+     so every column shows without scrolling; narrower screens scroll inside the frame. */
+  @media (min-width: 64rem) {
+    .table-scroll {
+      inline-size: var(--content-width-wide);
+      max-inline-size: none;
+      margin-inline: calc((var(--size-full) - var(--content-width-wide)) / 2);
+    }
   }
 
   table {

@@ -496,6 +496,24 @@ async def test_private_repeat_counts_and_scoring_selection(tmp_path: Path) -> No
     assert not {"requested_metrics", "passed", "fixed_answer", "accept_fixed"} & raw.keys()
 
 
+async def test_summary_splits_cost_by_pool(tmp_path: Path) -> None:
+    outcome = await run_eval(tmp_path)
+    assert "cost_pools_usd" not in summary(outcome.rows)
+    pooled = build_summary(
+        outcome.rows,
+        run_id="invented-run",
+        date="2026-01-01",
+        prompt_version="v-test",
+        route="default",
+        split="all",
+        repeats=1,
+        questions=1,
+        models={},
+        cost_pools={"credit": 0.25},
+    )
+    assert pooled["cost_pools_usd"] == {"real": 0.0, "credit": 0.25}
+
+
 async def test_unexpected_run_failure_writes_metadata(tmp_path: Path) -> None:
     class BrokenMeter(FakeMeter):
         def start_pass(self) -> None:

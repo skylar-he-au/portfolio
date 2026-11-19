@@ -129,5 +129,9 @@
     "extra": 62,
     "missing": 109
   },
-  "cost_usd": 3.458717
+  "cost_usd": 3.458717,
+  "cost_pools_usd": {
+    "real": 0.222603,
+    "credit": 3.236114
+  }
 }

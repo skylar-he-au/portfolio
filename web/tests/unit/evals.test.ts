@@ -10,6 +10,7 @@ import {
   CHECK_LABELS,
   formatChecks,
   formatCost,
+  formatRunCost,
   formatMetric,
   formatScore,
   MATCH_SCORE_LABELS,
@@ -68,6 +69,18 @@ describe('eval summaries', () => {
     expect(formatCost(0.004)).toBe('<$0.01');
     expect(formatCost(0)).toBe('$0.00');
     expect(formatCost(undefined)).toBe('–');
+  });
+
+  it('splits a run cost into paid and provider credit, or labels a lone total', () => {
+    const pooled = parseEvalFiles([{ ...match, cost_usd: 3.458717,
+      cost_pools_usd: { real: 0.222603, credit: 3.236114 } }]).match[0]!;
+    expect(formatRunCost(pooled)).toBe('$0.22 paid + $3.24 provider credit');
+    const qa = parseEvalFiles([{ ...onePass, cost_usd: 1.2, cost_pools_usd: { real: 0.004, credit: 0 } }]).qa[0]!;
+    expect(formatRunCost(qa)).toBe('<$0.01 paid + $0.00 provider credit');
+    const broken = parseEvalFiles([{ ...onePass, cost_usd: 1.2, cost_pools_usd: { real: -1, credit: 1 } }]).qa[0]!;
+    expect(broken.cost_pools_usd).toBeUndefined();
+    expect(formatRunCost(broken)).toBe('$1.20 total');
+    expect(formatRunCost({})).toBe('–');
   });
 
   it('shows below-floor counts only for faithfulness, including zero but excluding null', () => {

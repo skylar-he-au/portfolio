@@ -8,7 +8,16 @@ from statistics import mean
 from typing import Any
 
 from evals.checks import CATEGORIES
+from evals.pricing import POOLS
 from evals.types import METRICS
+
+
+def _cost_fields(rows: list[dict[str, Any]], pools: dict[str, float] | None) -> dict[str, Any]:
+    """The total, plus what each spending pool paid (real money, provider credit) when known."""
+    fields: dict[str, Any] = {"cost_usd": round(sum(row["cost_usd"] for row in rows), 6)}
+    if pools is not None:
+        fields["cost_pools_usd"] = {pool: round(pools.get(pool, 0.0), 6) for pool in POOLS}
+    return fields
 
 
 def _metric(rows: list[dict[str, Any]], metric: str) -> dict[str, Any]:
@@ -51,6 +60,7 @@ def build_summary(
     repeats: int,
     questions: int,
     models: dict[str, str | None],
+    cost_pools: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     averaged = [row for row in rows if row["repeat"] <= repeats]
     groups = {
@@ -111,7 +121,7 @@ def build_summary(
             if private
             else None
         ),
-        "cost_usd": round(sum(row["cost_usd"] for row in rows), 6),
+        **_cost_fields(rows, cost_pools),
     }
 
 
@@ -164,6 +174,7 @@ def build_match_summary(
     repeats: int,
     questions: int,
     models: dict[str, str | None],
+    cost_pools: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Aggregates of a job-match run, no job ad, requirement or guide text."""
     from evals.match_checks import CODE_CHECKS, KINDS
@@ -214,7 +225,7 @@ def build_match_summary(
             "extra": sum(len((row["scores"] or {}).get("extra", [])) for row in ok),
             "missing": sum(len((row["scores"] or {}).get("missing", [])) for row in ok),
         },
-        "cost_usd": round(sum(row["cost_usd"] for row in rows), 6),
+        **_cost_fields(rows, cost_pools),
     }
 
 

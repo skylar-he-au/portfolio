@@ -191,7 +191,7 @@ describe('Match streaming and guide', () => {
     ] as const) {
       await act(async () => { stream.emit('stage', { stage, count }); });
       expect(screen.getByRole('status')).toHaveTextContent(message);
-      expect(screen.queryByText('For this role, look at:')).not.toBeInTheDocument();
+      expect(screen.queryByText('Where my pages cover this role:')).not.toBeInTheDocument();
     }
     await act(async () => { stream.emit('stage', { stage: 'invented' }); stream.emit('notes', notes); });
     expect(screen.getByRole('status')).toHaveTextContent('Writing the guide…');
@@ -209,7 +209,7 @@ describe('Match streaming and guide', () => {
     expect(panel).not.toHaveTextContent('Build services');
     expect(panel).not.toHaveTextContent('12 ms');
     await act(async () => { stream.emit('result', result); });
-    expect(screen.getByText('For this role, look at:')).toBeInTheDocument();
+    expect(screen.getByText('Where my pages cover this role:')).toBeInTheDocument();
     expect(screen.getByText(result.items[0].text)).toBeInTheDocument();
     expect(screen.queryByText(result.items[0].requirement)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: section.title })).toHaveAttribute('href', section.url);
@@ -236,7 +236,7 @@ describe('Match streaming and guide', () => {
     render(<Match />);
     await send();
     expect(await screen.findByText("2 requirements couldn't be checked")).toBeInTheDocument();
-    expect(screen.queryByText('For this role, look at:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Where my pages cover this role:')).not.toBeInTheDocument();
     expect(screen.queryByText(result.items[0].text)).not.toBeInTheDocument();
     expect(screen.queryByText(/Not covered on the pages/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Top 8 requirements/)).not.toBeInTheDocument();
@@ -267,9 +267,9 @@ describe('Match streaming and guide', () => {
     ]));
     render(<Match pageTitles={pageTitles} />);
     await send();
-    await screen.findByText('For this role, look at:');
+    await screen.findByText('Where my pages cover this role:');
     const panel = screen.getByText('How it matched').closest('details')!;
-    const guide = screen.getByText('For this role, look at:').parentElement!;
+    const guide = screen.getByText('Where my pages cover this role:').parentElement!;
     for (const scope of [guide, panel]) {
       expect([...scope.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
         ['RoleRadar · In 30 seconds', '/projects/roleradar#in-30-seconds'],

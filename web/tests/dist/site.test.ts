@@ -120,7 +120,17 @@ it('shows a Job match block with a score table for each published match summary'
     expect(run.querySelector('.pass-lines')?.textContent).toContain('Section recall ≥ 0.80');
     expect(run.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
     expect(run.textContent).toMatch(/Judge: claude-/);
-    expect(run.textContent).toMatch(/Cost: \$/);
+    expect(run.textContent).toMatch(/Cost: <?\$\S+ (paid \+ <?\$\S+ provider credit|total)/);
+  }
+});
+
+it('shows every run cost on the evals page as paid plus provider credit, or as a total', () => {
+  const costs = [...readPage('/evals').querySelectorAll('main .meta')]
+    .map((meta) => meta.textContent?.replace(/\s+/g, ' ').trim().match(/Cost: (.*)$/)?.[1])
+    .filter((cost) => cost !== undefined);
+  expect(costs.length).toBeGreaterThan(0);
+  for (const cost of costs) {
+    expect(cost).toMatch(/^<?\$\d+\.\d{2} (paid \+ <?\$\d+\.\d{2} provider credit|total)$/);
   }
 });
 

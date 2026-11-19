@@ -25,7 +25,7 @@ MATCH_SET = Path(
 TOP_LEVEL = {
     "kind", "run_id", "date", "prompt_version", "route", "split", "repeats", "questions",
     "samples", "errors", "fallback_samples", "models", "scores", "code_checks", "by_kind",
-    "requirements", "cost_usd",
+    "requirements", "cost_usd", "cost_pools_usd",
 }  # fmt: skip
 NAME_FIELDS = {"kind", "run_id", "date", "prompt_version", "route", "split"}
 NAME = re.compile(r"[A-Za-z0-9._:-]{1,64}")

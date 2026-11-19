@@ -49,6 +49,12 @@ export interface Checks {
   total: number;
 }
 
+// What a run cost from each spending pool: real money, and the provider's granted credit.
+export interface CostPools {
+  real: number;
+  credit: number;
+}
+
 export interface PrivateRepeat {
   runs: number;
   fixed: number;
@@ -78,6 +84,7 @@ export interface QaRun extends Run {
   code_checks: Partial<Record<CheckName, Checks>>;
   private_repeat?: PrivateRepeat;
   cost_usd?: number;
+  cost_pools_usd?: CostPools;
 }
 
 export interface CotArm {
@@ -112,6 +119,7 @@ export interface MatchRun extends Run {
   scores: { tune?: Partial<Record<MatchScoreName, Metric>>; held_out?: Partial<Record<MatchScoreName, Metric>> };
   code_checks?: Checks;
   cost_usd?: number;
+  cost_pools_usd?: CostPools;
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -166,6 +174,13 @@ function parseChecks(value: unknown): Checks | undefined {
   return passed !== undefined && total !== undefined ? { passed, total } : undefined;
 }
 
+function parseCostPools(value: unknown): CostPools | undefined {
+  const raw = object(value);
+  const real = number(raw?.real);
+  const credit = number(raw?.credit);
+  return real !== undefined && credit !== undefined ? { real, credit } : undefined;
+}
+
 function parsePrivateRepeat(value: unknown): PrivateRepeat | undefined {
   const raw = object(value);
   const runs = count(raw?.runs);
@@ -211,6 +226,7 @@ function parseQa(raw: Record<string, unknown>): QaRun {
     code_checks,
     private_repeat: parsePrivateRepeat(raw.private_repeat),
     cost_usd: number(raw.cost_usd),
+    cost_pools_usd: parseCostPools(raw.cost_pools_usd),
   };
 }
 
@@ -269,6 +285,7 @@ function parseMatch(raw: Record<string, unknown>): MatchRun {
     scores: { tune: parseMatchScores(scores?.tune), held_out: parseMatchScores(scores?.held_out) },
     code_checks: parseChecks(object(raw.code_checks)?.all),
     cost_usd: number(raw.cost_usd),
+    cost_pools_usd: parseCostPools(raw.cost_pools_usd),
   };
 }
 
@@ -326,6 +343,15 @@ export function formatCost(usd: number | undefined): string {
   const value = number(usd);
   if (value === undefined) return '–';
   return value > 0 && value < .01 ? '<$0.01' : `$${value.toFixed(2)}`;
+}
+
+// "$0.22 paid + $3.24 provider credit" when the summary splits the pools; older summaries
+// only have the total, and say so.
+export function formatRunCost(run: { cost_usd?: number; cost_pools_usd?: CostPools }): string {
+  const pools = parseCostPools(run.cost_pools_usd);
+  if (pools) return `${formatCost(pools.real)} paid + ${formatCost(pools.credit)} provider credit`;
+  const total = formatCost(run.cost_usd);
+  return total === '–' ? total : `${total} total`;
 }
 
 export function formatChecks(value: Checks | undefined): string {
