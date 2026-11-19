@@ -339,8 +339,12 @@ def test_worst_path_per_step_equals_the_old_numbers_with_the_default_models() ->
     )
 
 
-def test_worst_path_follows_each_steps_model_and_cap() -> None:
+def test_worst_path_follows_each_steps_model_and_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.guard import prices
     from app.match import models as mm
+
+    # The Luna price lands in `app.guard.prices` with r2b's eval pool line.
+    monkeypatch.setitem(prices._PRICES, "gpt-6-luna", (Decimal("0.10"), Decimal("0.50")))
 
     defaults = mm.default_models(MODELS["anthropic"], MODELS["google"])
     base = real_worst()

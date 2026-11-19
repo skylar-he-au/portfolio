@@ -898,6 +898,17 @@ FLASH = mm.ModelChoice("google", "gemini-3.5-flash-lite", "minimal")
 LUNA_NONE = mm.ModelChoice("openai", "gpt-6-luna", "none")
 
 
+# The Luna price goes into `app.guard.prices` with the eval pool line (r2b); until then the
+# tests that charge Luna add it themselves (OpenAI pricing page, 2026-11-19).
+LUNA_PRICE = ("gpt-6-luna", (Decimal("0.10"), Decimal("0.50")))
+
+
+def with_luna_price(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.guard import prices
+
+    monkeypatch.setitem(prices._PRICES, *LUNA_PRICE)
+
+
 def settings() -> Settings:
     return Settings(
         database_url="postgresql://x@127.0.0.1:1/x",
@@ -1156,7 +1167,10 @@ class OpenAIStub:
 CHECK_JSON = {"verdicts": [{"n": 1, "shows": True}]}
 
 
-async def test_openai_uses_strict_structured_outputs_and_reports_reasoning_tokens() -> None:
+async def test_openai_uses_strict_structured_outputs_and_reports_reasoning_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_luna_price(monkeypatch)
     stub = OpenAIStub(openai_reply({"content": json.dumps(CHECK_JSON)}))
     recorder = UsageRecorder()
     out, used = await ask_json(
