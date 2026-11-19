@@ -103,6 +103,27 @@ it('renders the Evals heading, and run tables when summaries exist or the empty 
   expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
 });
 
+it('shows a Job match block with a score table for each published match summary', () => {
+  const evalsDir = join(root, '../content/evals');
+  const matchRuns = existsSync(evalsDir)
+    ? readdirSync(evalsDir).filter((name) => name.endsWith('.json')).filter((name) =>
+      JSON.parse(readFileSync(join(evalsDir, name), 'utf8')).kind === 'match')
+    : [];
+  const block = [...readPage('/evals').querySelectorAll('main section')]
+    .find((section) => section.querySelector('h2')?.textContent === 'Job match');
+  if (matchRuns.length === 0) {
+    expect(block).toBeUndefined();
+    return;
+  }
+  expect(block?.querySelectorAll('article.match-run')).toHaveLength(matchRuns.length);
+  for (const run of block!.querySelectorAll('article.match-run')) {
+    expect(run.querySelector('.pass-lines')?.textContent).toContain('Section recall ≥ 0.80');
+    expect(run.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
+    expect(run.textContent).toMatch(/Judge: claude-/);
+    expect(run.textContent).toMatch(/Cost: \$/);
+  }
+});
+
 it('explains prompt v9 and the cut-off medium-thinking verdicts on the evals page', () => {
   const notes = [...readPage('/evals').querySelectorAll('main .note')].map((note) =>
     note.textContent?.replace(/\s+/g, ' ').trim(),

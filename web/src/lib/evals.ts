@@ -15,7 +15,25 @@ export const CHECK_LABELS = {
   injection: 'Injection',
 } as const;
 
+// Job-match scores, in table order. Pass lines are SPEC "评测先于上线" (job-match items);
+// precision is recorded only.
+export const MATCH_SCORE_LABELS = {
+  recall: 'Section recall',
+  not_covered_accuracy: 'Not-covered accuracy',
+  faithfulness: 'Faithfulness',
+  precision: 'Precision',
+} as const;
+
+export const MATCH_PASS_LINES: Partial<Record<keyof typeof MATCH_SCORE_LABELS, number>> = {
+  recall: .8,
+  not_covered_accuracy: .9,
+  faithfulness: .9,
+};
+
+export const MATCH_FAITH_FLOOR = .7;
+
 export type MetricName = keyof typeof METRIC_LABELS;
+export type MatchScoreName = keyof typeof MATCH_SCORE_LABELS;
 export type CheckName = keyof typeof CHECK_LABELS;
 
 export interface Metric {
@@ -79,6 +97,21 @@ export interface CotRun extends Run {
   model?: string;
   sentences?: number;
   arms: CotArm[];
+}
+
+export interface MatchRun extends Run {
+  kind: 'match';
+  prompt_version?: string;
+  route?: string;
+  split?: string;
+  questions?: number;
+  samples?: number;
+  errors?: number;
+  fallback_samples?: number;
+  models: Partial<Record<'answer' | 'check' | 'embed' | 'judge_align' | 'judge_faithfulness', string>>;
+  scores: { tune?: Partial<Record<MatchScoreName, Metric>>; held_out?: Partial<Record<MatchScoreName, Metric>> };
+  code_checks?: Checks;
+  cost_usd?: number;
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -199,17 +232,59 @@ function parseArm(value: unknown): CotArm | undefined {
   };
 }
 
+function parseMatchScores(value: unknown): Partial<Record<MatchScoreName, Metric>> | undefined {
+  const raw = object(value);
+  if (!raw) return undefined;
+  const result: Partial<Record<MatchScoreName, Metric>> = {};
+  for (const key of Object.keys(MATCH_SCORE_LABELS) as MatchScoreName[]) {
+    const metric = parseMetric(raw[key]);
+    if (metric) result[key] = metric;
+  }
+  return result;
+}
+
+// Only the fields below are kept: a summary file never carries a job ad, a requirement or
+// a guide, and anything else in the file is dropped here too.
+function parseMatch(raw: Record<string, unknown>): MatchRun {
+  const models: MatchRun['models'] = {};
+  const rawModels = object(raw.models);
+  for (const key of ['answer', 'check', 'embed', 'judge_align', 'judge_faithfulness'] as const) {
+    const model = text(rawModels?.[key]);
+    if (model) models[key] = model;
+  }
+  const scores = object(raw.scores);
+  return {
+    kind: 'match',
+    run_id: text(raw.run_id) ?? '',
+    date: text(raw.date) ?? '',
+    prompt_version: text(raw.prompt_version),
+    route: text(raw.route),
+    split: text(raw.split),
+    repeats: count(raw.repeats),
+    questions: count(raw.questions),
+    samples: count(raw.samples),
+    errors: count(raw.errors),
+    fallback_samples: count(raw.fallback_samples),
+    models,
+    scores: { tune: parseMatchScores(scores?.tune), held_out: parseMatchScores(scores?.held_out) },
+    code_checks: parseChecks(object(raw.code_checks)?.all),
+    cost_usd: number(raw.cost_usd),
+  };
+}
+
 function newestFirst(a: Run, b: Run): number {
   const date = a.date === b.date ? 0 : a.date > b.date ? -1 : 1;
   return date || (a.run_id === b.run_id ? 0 : a.run_id > b.run_id ? -1 : 1);
 }
 
-export function parseEvalFiles(raw: unknown[]): { qa: QaRun[]; cot: CotRun[] } {
+export function parseEvalFiles(raw: unknown[]): { qa: QaRun[]; cot: CotRun[]; match: MatchRun[] } {
   const qa: QaRun[] = [];
   const cot: CotRun[] = [];
+  const match: MatchRun[] = [];
   for (const value of raw) {
     const run = object(value);
     if (run?.kind === 'qa') qa.push(parseQa(run));
+    if (run?.kind === 'match') match.push(parseMatch(run));
     if (run?.kind === 'cot') {
       cot.push({
         kind: 'cot',
@@ -223,7 +298,7 @@ export function parseEvalFiles(raw: unknown[]): { qa: QaRun[]; cot: CotRun[] } {
       });
     }
   }
-  return { qa: qa.sort(newestFirst), cot: cot.sort(newestFirst) };
+  return { qa: qa.sort(newestFirst), cot: cot.sort(newestFirst), match: match.sort(newestFirst) };
 }
 
 export function formatScore(value: number | null | undefined): string {
@@ -271,4 +346,27 @@ export function buildRagasRows(run: QaRun): { label: string; cells: string[] }[]
       floor: key === 'faithfulness' ? .7 : undefined,
     })),
   }] : []);
+}
+
+export function buildMatchRows(run: MatchRun): { label: string; cells: string[] }[] {
+  const splits = [
+    ['Tuning ads', run.scores.tune],
+    ['Held-out ads', run.scores.held_out],
+  ] as const;
+  return splits.flatMap(([label, scores]) => scores ? [{
+    label,
+    cells: (Object.keys(MATCH_SCORE_LABELS) as MatchScoreName[]).map((key) => formatMetric(scores[key], {
+      repeats: run.repeats,
+      floor: key === 'faithfulness' ? MATCH_FAITH_FLOOR : undefined,
+    })),
+  }] : []);
+}
+
+// "Section recall ≥ 0.80" etc., from MATCH_PASS_LINES, for the caption.
+export function matchPassLines(): string {
+  const lines = (Object.keys(MATCH_SCORE_LABELS) as MatchScoreName[]).flatMap((key) => {
+    const line = MATCH_PASS_LINES[key];
+    return line === undefined ? [] : [`${MATCH_SCORE_LABELS[key]} ≥ ${formatScore(line)}`];
+  });
+  return `${lines.join(', ')}, every ad in every pass Faithfulness ≥ ${formatScore(MATCH_FAITH_FLOOR)}`;
 }

@@ -1,22 +1,34 @@
 ---
 import Base from '../layouts/Base.astro';
 import {
+  buildMatchRows,
   buildRagasRows,
   CHECK_LABELS,
   formatChecks,
   formatCost,
   formatMetric,
+  MATCH_SCORE_LABELS,
+  matchPassLines,
   METRIC_LABELS,
   parseEvalFiles,
   type CheckName,
+  type MatchRun,
 } from '../lib/evals';
 
 const files = import.meta.glob('../../../content/evals/*.json', { eager: true, import: 'default' });
-const { qa, cot } = parseEvalFiles(Object.values(files));
+const { qa, cot, match } = parseEvalFiles(Object.values(files));
+const matchJudges = (run: MatchRun) =>
+  [...new Set([run.models.judge_align, run.models.judge_faithfulness].filter((m): m is string => !!m))]
+    .join(', ') || '–';
 const judges = [...new Set(qa.map((run) => run.models.judge).filter((judge): judge is string => !!judge))];
 const judgeNames = judges.length ? judges.join(', ') : 'claude-sonnet-5-5';
 const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
 // Notes that explain one published CoT run's numbers, keyed by run_id.
+// Notes that explain one published job-match run's numbers, keyed by run_id.
+const matchNotes: Record<string, string> = {
+  '20261119T005423-match-v3-default':
+    'Section recall and not-covered accuracy passed on the tuning ads; Faithfulness did not (13 tuning rows below 0.7), and the held-out ads missed all three lines. Most guide sentences in this version are instructions (“Check the …”) rather than statements, and those scored lower; the next version goes back to statements.',
+};
 const cotNotes: Record<string, string> = {
   '20261118T071804-v8-cot':
     'Medium thinking counts toward the 1024-token output cap and ran past it on 55 of 186 calls, so those verdicts were cut off.',
@@ -63,7 +75,7 @@ const cotNotes: Record<string, string> = {
     </p>
   </div>
 
-  {qa.length === 0 && cot.length === 0 && <p>No eval runs published yet.</p>}
+  {qa.length === 0 && cot.length === 0 && match.length === 0 && <p>No eval runs published yet.</p>}
 
   {qa.map((run) => (
     <section>
@@ -114,6 +126,73 @@ const cotNotes: Record<string, string> = {
       </p>
     </section>
   ))}
+
+  {match.length > 0 && (
+    <section class="match">
+      <h2>Job match</h2>
+      <p>
+        Job match reads a job ad and points a recruiter to the project-page sections for each requirement, or lists it as not covered.
+        It is scored against hand-checked answers for each ad: which sections each requirement should point to, or that it is not covered.
+        The ads mix real postings, ads with hidden instructions, very long ads and Chinese ads; they and the guides are not published, only scores and counts.
+      </p>
+      <dl class="definitions">
+        <div>
+          <dt>Section recall</dt>
+          <dd>Share of requirements with expected sections where the guide links at least one of them.</dd>
+        </div>
+        <div>
+          <dt>Not-covered accuracy</dt>
+          <dd>Share of requirements correctly placed in, or kept out of, the “not covered” line.</dd>
+        </div>
+        <div>
+          <dt>Faithfulness</dt>
+          <dd>Share of the guide’s claims that the linked sections support (RAGAS).</dd>
+        </div>
+        <div>
+          <dt>Precision</dt>
+          <dd>Share of the guide’s links that are among the expected sections; recorded only.</dd>
+        </div>
+      </dl>
+      <p class="note">Code checks: every link was retrieved and found for its requirement, the output fits the schema, the guide is in the ad’s language, and no system prompt or planted text leaks into any streamed event.</p>
+      {match.map((run) => (
+        <article class="match-run">
+          <h3>{run.date || '–'} · prompt {run.prompt_version ?? '–'}</h3>
+          <p class="meta">
+            {run.questions ?? '–'} job ads × {run.repeats ?? '–'} {run.repeats === 1 ? 'pass' : 'passes'} · {run.samples ?? '–'} samples
+            <br />
+            Models: {run.models.answer ?? '–'} (read, match, write) / {run.models.check ?? '–'} (check)
+            <br />
+            Judge: {matchJudges(run)}
+          </p>
+          <p class="note pass-lines">Pass lines: {matchPassLines()}.</p>
+          <div class="table-scroll" tabindex="0" role="region" aria-label={`Job match scores for ${run.date}, prompt ${run.prompt_version ?? '–'}`}>
+            <table>
+              <caption>Mean and, for repeated passes, lowest–highest pass average.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Ads</th>
+                  {Object.values(MATCH_SCORE_LABELS).map((label) => <th scope="col">{label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {buildMatchRows(run).map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    {row.cells.map((cell) => <td>{cell}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p class="meta">
+            Code checks: {formatChecks(run.code_checks)} · Errors: {run.errors ?? '–'} · Backup model used: {run.fallback_samples ?? '–'}
+            {' · '}Cost: {formatCost(run.cost_usd)}
+          </p>
+          {matchNotes[run.run_id] && <p class="note">{matchNotes[run.run_id]}</p>}
+        </article>
+      ))}
+    </section>
+  )}
 
   {cot.length > 0 && (
     <section>
@@ -240,6 +319,7 @@ const cotNotes: Record<string, string> = {
     font-size: var(--font-size-small);
   }
 
+  .match-run + .match-run,
   .cot-run + .cot-run {
     margin-block-start: var(--space-6);
     padding-block-start: var(--space-5);

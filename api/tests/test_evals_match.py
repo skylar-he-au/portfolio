@@ -421,8 +421,8 @@ def test_worst_cases_are_in_the_right_pools() -> None:
     worst = graph_worst(
         "claude-haiku-5-5", "gemini-3.5-flash-lite", "text-embedding-3-small", "default"
     )
-    assert worst["credit"] == pytest.approx(0.012421, abs=1e-6)
-    assert worst["real"] == pytest.approx(0.009224 + 2 * 0.000011, abs=2e-6)
+    assert worst["credit"] == pytest.approx(0.012672, abs=1e-6)  # match-v3 prompt lengths
+    assert worst["real"] == pytest.approx(0.009308 + 2 * 0.000011, abs=2e-6)
     forced = graph_worst(
         "claude-haiku-5-5", "gemini-3.5-flash-lite", "text-embedding-3-small", "gemini-answer"
     )

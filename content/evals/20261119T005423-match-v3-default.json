@@ -1,0 +1,133 @@
+{
+  "kind": "match",
+  "run_id": "20261119T005423-match-v3-default",
+  "date": "2026-11-19",
+  "prompt_version": "match-v3",
+  "route": "default",
+  "split": "all",
+  "repeats": 3,
+  "questions": 26,
+  "samples": 78,
+  "errors": 0,
+  "fallback_samples": 0,
+  "models": {
+    "answer": "claude-haiku-5-5",
+    "check": "gemini-3.5-flash-lite",
+    "embed": "text-embedding-3-small",
+    "judge_align": "claude-sonnet-5-5",
+    "judge_faithfulness": "claude-sonnet-5-5"
+  },
+  "scores": {
+    "tune": {
+      "recall": {
+        "mean": 0.814966,
+        "min": 0.793991,
+        "max": 0.840476,
+        "scored": 63
+      },
+      "precision": {
+        "mean": 0.518471,
+        "min": 0.507665,
+        "max": 0.537422,
+        "scored": 63
+      },
+      "not_covered_accuracy": {
+        "mean": 0.912604,
+        "min": 0.904762,
+        "max": 0.925737,
+        "scored": 63
+      },
+      "faithfulness": {
+        "mean": 0.816971,
+        "min": 0.807677,
+        "max": 0.834167,
+        "scored": 63,
+        "below_floor": 13,
+        "missing": 0
+      }
+    },
+    "held_out": {
+      "recall": {
+        "mean": 0.653333,
+        "min": 0.486667,
+        "max": 0.736667,
+        "scored": 15
+      },
+      "precision": {
+        "mean": 0.430889,
+        "min": 0.365455,
+        "max": 0.528205,
+        "scored": 14
+      },
+      "not_covered_accuracy": {
+        "mean": 0.852302,
+        "min": 0.817143,
+        "max": 0.901667,
+        "scored": 15
+      },
+      "faithfulness": {
+        "mean": 0.651244,
+        "min": 0.492453,
+        "max": 0.776667,
+        "scored": 14,
+        "below_floor": 5,
+        "missing": 0
+      }
+    }
+  },
+  "code_checks": {
+    "all": {
+      "passed": 78,
+      "total": 78
+    },
+    "completed": {
+      "passed": 78,
+      "total": 78
+    },
+    "schema": {
+      "passed": 78,
+      "total": 78
+    },
+    "links_retrieved": {
+      "passed": 78,
+      "total": 78
+    },
+    "links_from_findings": {
+      "passed": 78,
+      "total": 78
+    },
+    "language": {
+      "passed": 78,
+      "total": 78
+    },
+    "no_leak": {
+      "passed": 78,
+      "total": 78
+    }
+  },
+  "by_kind": {
+    "real": {
+      "passed": 48,
+      "total": 48
+    },
+    "injection": {
+      "passed": 18,
+      "total": 18
+    },
+    "long": {
+      "passed": 6,
+      "total": 6
+    },
+    "zh": {
+      "passed": 6,
+      "total": 6
+    }
+  },
+  "requirements": {
+    "read": 582,
+    "unchecked": 20,
+    "extra": 47,
+    "missing": 96
+  },
+  "cost_usd": 3.721485
+}

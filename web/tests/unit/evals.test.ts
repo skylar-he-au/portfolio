@@ -3,13 +3,17 @@ import threePasses from '../fixtures/evals/qa-3-passes.json';
 import onePass from '../fixtures/evals/qa-1-pass.json';
 import older from '../fixtures/evals/qa-older.json';
 import cot from '../fixtures/evals/cot.json';
+import match from '../fixtures/evals/match.json';
 import {
+  buildMatchRows,
   buildRagasRows,
   CHECK_LABELS,
   formatChecks,
   formatCost,
   formatMetric,
   formatScore,
+  MATCH_SCORE_LABELS,
+  matchPassLines,
   METRIC_LABELS,
   parseEvalFiles,
 } from '../../src/lib/evals';
@@ -39,7 +43,7 @@ describe('eval summaries', () => {
   });
 
   it('returns empty lists for empty input', () => {
-    expect(parseEvalFiles([])).toEqual({ qa: [], cot: [] });
+    expect(parseEvalFiles([])).toEqual({ qa: [], cot: [], match: [] });
   });
 
   it('preserves all three CoT arms in file order', () => {
@@ -50,7 +54,7 @@ describe('eval summaries', () => {
 
   it('drops unknown kinds and non-objects', () => {
     expect(parseEvalFiles([{ kind: 'unknown' }, null, 42, 'qa', [], true]))
-      .toEqual({ qa: [], cot: [] });
+      .toEqual({ qa: [], cot: [], match: [] });
   });
 
   it('formats null metric values as an en dash', () => {
@@ -118,5 +122,41 @@ describe('eval summaries', () => {
     expect(result.cot[0]!.arms).toHaveLength(1);
     expect(result.cot[0]!.arms[0]!.accuracy).toBeUndefined();
     expect(result.cot[1]!.arms).toEqual([]);
+  });
+});
+
+describe('job match summaries', () => {
+  it('parses a match run with both splits and builds one row per split', () => {
+    const run = parseEvalFiles([match]).match[0]!;
+    expect(run.prompt_version).toBe('match-v9');
+    expect(run.code_checks).toEqual({ passed: 63, total: 63 });
+    expect(run.models.judge_faithfulness).toBe('claude-sonnet-5-5');
+    expect(buildMatchRows(run)).toEqual([
+      { label: 'Tuning ads', cells: ['0.74 (0.73–0.75)', '0.85 (0.83–0.87)', '0.89 (0.87–0.91), 4 below 0.7', '0.51 (0.51–0.52)'] },
+      { label: 'Held-out ads', cells: ['0.85 (0.80–0.90)', '0.95', '0.93 (0.91–0.95), 0 below 0.7', '0.50'] },
+    ]);
+    expect(Object.values(MATCH_SCORE_LABELS))
+      .toEqual(['Section recall', 'Not-covered accuracy', 'Faithfulness', 'Precision']);
+    expect(matchPassLines()).toBe(
+      'Section recall ≥ 0.80, Not-covered accuracy ≥ 0.90, Faithfulness ≥ 0.90, every ad in every pass Faithfulness ≥ 0.70',
+    );
+  });
+
+  it('keeps only contract fields, so no ad, requirement or guide text reaches the page', () => {
+    const run = parseEvalFiles([{
+      ...match,
+      jd: 'Senior engineer wanted', requirements: [{ text: 'Python' }], items: [{ text: 'guide' }],
+      scores: { tune: { recall: { mean: 0.8 }, guide: 'x' }, held_out: null },
+      code_checks: { all: { passed: '1', total: 2 } },
+    }]).match[0]!;
+    const json = JSON.stringify(run);
+    for (const leak of ['Senior engineer', 'Python', 'guide']) expect(json).not.toContain(leak);
+    expect(run.code_checks).toBeUndefined();
+    expect(buildMatchRows(run).map((row) => row.label)).toEqual(['Tuning ads']);
+  });
+
+  it('sorts match runs newest first', () => {
+    const older = { ...match, date: '2026-11-19' };
+    expect(parseEvalFiles([older, match]).match.map((run) => run.date)).toEqual(['2026-11-20', '2026-11-19']);
   });
 });

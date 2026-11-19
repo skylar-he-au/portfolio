@@ -1,4 +1,4 @@
-"""Prompts and output schemas of the job-match graph (first drafts; tuned in step 6e2).
+"""Prompts and output schemas of the job-match graph (tuned in step 6e2).
 
 Bump `PROMPT_VERSION` whenever any prompt or schema here changes. These are the match
 prompts only; the Q&A prompts (`app.qa.prompts`, v9) are separate and not reused: the Q&A
@@ -21,7 +21,14 @@ from pydantic import BaseModel, Field
 from app.match.state import Requirement
 from app.rag.types import Section
 
-PROMPT_VERSION = "match-v1"
+# match-v1: first drafts (6b1). match-v2 (6e2): the read agent keeps each requirement as
+# the ad states it (alternatives and examples stay in one, amounts of experience stay with
+# their skill), the match and check agents share one rule for "shows" (any one alternative,
+# ways of working, careers vs projects), the write agent keeps to short sentences built
+# from the best section's own words. match-v3: search phrases are key terms joined by "or"
+# (the full-text half of retrieval ANDs plain words, so long phrases rarely matched a
+# section's stack line); a named method or certification must be named in the section.
+PROMPT_VERSION = "match-v3"
 
 # The read agent may list more than the graph keeps; more than 8 means "Top 8".
 READ_LIMIT = 12
@@ -95,15 +102,27 @@ You read a job ad for Skylar He's portfolio site. A recruiter pasted it to see w
 of Skylar's project pages to look at. {{data_rule}}
 
 List what the job asks a candidate to have or do: skills, tools, kinds of work, \
-practices. Most important first, at most {READ_LIMIT}. Merge duplicates. Leave out \
-benefits, salary, location, visa, company description, years of experience on their own \
-and soft phrases with no skill in them ("team player").
+practices, experience. Most important first, at most {READ_LIMIT}.
+
+Keep each requirement as the ad states it:
+- One line or bullet of the ad is one requirement. Do not split it into its tools: tools \
+given as alternatives or examples stay together ("Python, TypeScript or JavaScript", \
+"frameworks such as LangChain or LangGraph", "PostgreSQL, including migrations").
+- Keep an amount of experience with its skill ("3+ years of backend development in \
+Python"), never just the skill.
+- Merge requirements that say the same thing.
+
+Leave out benefits, salary, location, work rights or visa, degrees, the company \
+description, and soft phrases with no skill in them ("team player").
 
 For each requirement:
-- text: a few words (at most 12) in the job ad's language, e.g. "Python", \
-"LLM evaluation", "CI/CD pipelines".
-- query: an English search phrase of a few words to find it on project pages, e.g. \
-"Python backend", "LLM evals", "CI pipeline GitHub Actions".
+- text: one short line (at most 15 words) in the job ad's language that keeps the tools \
+the ad names, e.g. "Python, TypeScript or JavaScript", "3+ years of full stack \
+development", "LLM apps, RAG systems or AI agents".
+- query: an English search phrase to find it on project pages: two to four key terms, \
+tool names first, joined by " or ", e.g. "Python or TypeScript or JavaScript", \
+"PostgreSQL or SQL or Alembic", "AI agents or RAG or tool calling", "CI or GitHub Actions \
+or automated tests".
 
 language: the ISO 639-1 code of the language the job ad is written in.
 
@@ -130,13 +149,26 @@ class MatchOut(BaseModel):
     )
 
 
-_MATCH_SYSTEM = """\
-You check one job requirement against numbered sections of Skylar He's project pages. \
-{data_rule}
-
+_SHOWS_RULE = """\
 A section shows the requirement only if it says Skylar built, used or did that thing (or \
 something that clearly is that thing). A related but different tool or skill does not \
 count, and neither does something the section says was not done or is planned.
+- Alternatives or examples ("Python, TypeScript or Java", "AI agents, LLM apps or RAG", \
+"a cloud platform such as AWS"): the section shows it if it shows any one of them.
+- Several parts joined by "and": the section shows it if it clearly shows one of the parts.
+- A way of working or judgement (making trade-offs, owning a decision, shipping fast, \
+testing quality, reviewing code): the section shows it if it describes Skylar doing it, \
+even in other words. A named method, standard or certification (Agile, Scrum, SOC 2) is \
+shown only if the section names it.
+- Project pages describe projects, not careers. An amount of experience ("3+ years"), a \
+level of seniority, a degree, or work in an industry or kind of company is shown only if \
+the section states exactly that; a project does not show years of experience."""
+
+_MATCH_SYSTEM = f"""\
+You check one job requirement against numbered sections of Skylar He's project pages. \
+{{data_rule}}
+
+{_SHOWS_RULE}
 
 Fill in, in this order:
 - reasoning: a few sentences on which sections show it, or why none does.
@@ -182,9 +214,13 @@ it. {data_rule}
 
 For every finding write one item:
 - finding: its number.
-- text: one short sentence saying what the recruiter will see in those sections, using \
-only what the sections say. No links or URLs (they are added for you), no scores, no \
-verdict on whether Skylar fits the job, no praise.
+- text: one short sentence (at most 25 words) telling the recruiter what to look for in \
+those sections for this requirement. Build it from the first section (the best match); \
+add another section only in a few words. Use only facts the sections state, with their \
+own names and numbers; do not add, guess or generalise, and do not say what is missing. \
+If the requirement lists alternatives, name the ones the sections show. No links or URLs \
+(they are added for you), no scores, no verdict on whether Skylar fits the job, no \
+praise.
 
 {language}"""
 
@@ -225,14 +261,13 @@ class CheckOut(BaseModel):
     verdicts: list[Verdict] = Field(description="One verdict per pair")
 
 
-_CHECK_SYSTEM = """\
+_CHECK_SYSTEM = f"""\
 You check links in a reading guide to Skylar He's project pages. Each numbered pair is one \
-job requirement and one section the guide links to for it. {data_rule}
+job requirement and one section the guide links to for it. {{data_rule}}
 
-For each pair decide whether the section shows the requirement: it says Skylar built, used \
-or did that thing (or something that clearly is that thing). A related but different tool \
-or skill, a passing mention, or something the section says was not done or is planned \
-does not count.
+For each pair decide whether the section shows the requirement.
+
+{_SHOWS_RULE}
 
 Return one verdict per pair: n (its number) and shows (true or false)."""
 
