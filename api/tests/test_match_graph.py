@@ -1440,4 +1440,4 @@ async def test_the_graph_state_keeps_the_check_verdicts_for_the_evals() -> None:
 
     script.match = not_found  # type: ignore[method-assign]
     _, final = await run(deps, JD)
-    assert "check_verdicts" not in final  # no check call, no key
+    assert final["check_verdicts"] == []  # no check call: an empty list

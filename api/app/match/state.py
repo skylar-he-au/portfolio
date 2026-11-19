@@ -170,7 +170,8 @@ class MatchState(TypedDict):
     retrieved: NotRequired[dict[str, list[Section] | None]]  # written by search
     match_deadline: NotRequired[float]  # time.monotonic() deadline, written by search
     # what the check said per pair it asked about (`missing` included), written by check
-    # only when it asked; for the evals, never streamed
+    # (empty when it asked about nothing); for the evals, never streamed. NotRequired only
+    # because a "not a job" run ends before check.
     check_verdicts: NotRequired[list[PairVerdict]]
 
 

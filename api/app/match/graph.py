@@ -704,10 +704,8 @@ def build_match_graph(deps: MatchDeps) -> CompiledStateGraph[Any, Any, Any, Any]
             deps,
             writer=get_stream_writer(),
         )
-        update: dict[str, Any] = {"checked_findings": result.findings}
-        if result.verdicts:  # only when the check asked about pairs (evals store them)
-            update["check_verdicts"] = result.verdicts
-        return update
+        # the evals store the verdicts; an empty list when the check asked about nothing
+        return {"checked_findings": result.findings, "check_verdicts": result.verdicts}
 
     async def write(view: dict[str, Any]) -> dict[str, Any]:
         guide = await write_step(
