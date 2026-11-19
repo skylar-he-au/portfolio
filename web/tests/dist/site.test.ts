@@ -119,9 +119,30 @@ it('shows a Job match block with a score table for each published match summary'
   for (const run of block!.querySelectorAll('article.match-run')) {
     expect(run.querySelector('.pass-lines')?.textContent).toContain('Section recall ≥ 0.80');
     expect(run.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
-    expect(run.textContent).toMatch(/Judge: claude-/);
+    // API judges by model id; round 2 on, the subscription grader by name, never RAGAS.
+    expect(run.textContent).toMatch(
+      /Judge: (claude-|Claude Sonnet 5\.5 \(subscription, following GRADING\.md\), not RAGAS)/,
+    );
     expect(run.textContent).toMatch(/Cost: <?\$\S+ (paid \+ <?\$\S+ provider credit|total)/);
   }
+});
+
+it('shows the per-step model comparison with one table per step when it is published', () => {
+  const compareDir = join(root, '../content/evals/compare');
+  const published = existsSync(join(compareDir, 'step6-r2.json'));
+  const section = [...readPage('/evals').querySelectorAll('main section')]
+    .find((s) => s.querySelector('h2')?.textContent === 'Choosing a model for each step');
+  if (!published) {
+    expect(section).toBeUndefined();
+    return;
+  }
+  const steps = [...section!.querySelectorAll('article.compare-step h3')].map((h) => h.textContent);
+  expect(steps).toEqual(['Read the ad', 'Match each requirement', 'Check each link', 'Write the guide']);
+  for (const table of section!.querySelectorAll('article.compare-step table')) {
+    expect(table.querySelector('tbody tr th')?.textContent).toContain('(chosen)');
+    expect(table.textContent).toContain('v4 prompt');
+  }
+  expect(section!.textContent).toContain('not RAGAS');
 });
 
 it('shows every run cost on the evals page as paid plus provider credit, or as a total', () => {
