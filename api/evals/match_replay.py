@@ -520,13 +520,15 @@ async def replay_item(
     recorded = False
     started = time.monotonic()
     try:
-        meter.check_room(worst)
+        # ledger reads and writes off the loop: another process holding the ledger's lock
+        # must not stall the event loop (evals/cost.py)
+        await asyncio.to_thread(meter.check_room, worst)
         produced: dict[str, Any] | None = None
         log = CallLog()
         error_name = None
         for attempt in range(2):
             if attempt:
-                meter.check_room(worst)
+                await asyncio.to_thread(meter.check_room, worst)
             log = CallLog()
             config = {"callbacks": [*meter.callbacks(), log]}
             try:
@@ -538,7 +540,7 @@ async def replay_item(
                 raise
             except Exception as error:  # noqa: BLE001 - retry the item once
                 error_name = type(error).__name__
-        cost = meter.record(job.id, 1)
+        cost = await asyncio.to_thread(meter.record, job.id, 1)
         recorded = True
         row: Row = {
             "run_id": run_id,
@@ -570,7 +572,7 @@ async def replay_item(
     finally:
         if not recorded:
             with suppress(CapReached, UnknownModel):
-                meter.record(job.id, 1)
+                await asyncio.to_thread(meter.record, job.id, 1)
 
 
 # --- the run --------------------------------------------------------------------------------

@@ -791,7 +791,7 @@ async def _one(
         faulthandler.cancel_dump_traceback_later()
         if not recorded:
             with suppress(CapReached, UnknownModel):
-                meter.record(job.id, repeat)
+                await asyncio.to_thread(meter.record, job.id, repeat)
 
 
 # --- command line ---------------------------------------------------------------------------

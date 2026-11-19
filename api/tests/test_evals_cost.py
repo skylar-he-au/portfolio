@@ -460,13 +460,28 @@ def held_lock(path: Path, *, release_after: float | None = None) -> Iterator[Non
 
 async def run_with_ticker(work: Callable[[], Awaitable[Any]]) -> tuple[Any, int, float]:
     """Run `work` next to a coroutine that ticks every 10 ms: (result or error, ticks, s)."""
+    outcome, ticks, took, _ = await watch_the_loop(work)
+    return outcome, ticks, took
+
+
+# A loop blocked on the held ledger stalls for the whole `LOCK_WAIT`; a free one ticks every
+# 10 ms (half of `LOCK_WAIT` leaves room for a slow CI machine).
+STALL_LIMIT = LOCK_WAIT / 2
+
+
+async def watch_the_loop(work: Callable[[], Awaitable[Any]]) -> tuple[Any, int, float, float]:
+    """`run_with_ticker` plus the longest gap between two ticks: how long the loop stalled."""
     ticks = 0
+    stall = 0.0
     stop = asyncio.Event()
 
     async def ticker() -> None:
-        nonlocal ticks
+        nonlocal ticks, stall
+        last = time.monotonic()
         while not stop.is_set():
             await asyncio.sleep(0.01)
+            now = time.monotonic()
+            stall, last = max(stall, now - last), now
             ticks += 1
 
     task = asyncio.create_task(ticker())
@@ -479,7 +494,7 @@ async def run_with_ticker(work: Callable[[], Awaitable[Any]]) -> tuple[Any, int,
     took = time.monotonic() - started
     stop.set()
     await task
-    return outcome, ticks, took
+    return outcome, ticks, took, stall
 
 
 @pytest.mark.parametrize("call", ["check", "record"])
@@ -569,7 +584,9 @@ def test_the_eval_runners_stop_on_a_held_ledger_and_keep_the_loop_free(
 ) -> None:
     """`evals/run.py` and `evals/match_run.py` read the ledger off the loop: the run ends
     `incomplete` with a `LedgerLocked` reason in time, and the loop keeps running. Before
-    the fix the runner's `check` blocked the loop until the holder let go."""
+    the fix the runner's `check` blocked the loop until the holder let go; before 7t2 the
+    `record` in `finally` (the spend of the item that never started) still blocked it for
+    `LOCK_WAIT`."""
     monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", LOCK_WAIT)
     path = tmp_path / "ledger.csv"
     with held_lock(path, release_after=BACKSTOP + 1):
@@ -584,9 +601,99 @@ def test_the_eval_runners_stop_on_a_held_ledger_and_keep_the_loop_free(
 
             meter = MatchMeter(CAPS, path, "run-7t")
             work = lambda: _evaluate(tmp_path, eval_deps(EvalScript()), meter=meter)  # noqa: E731
-        outcome, ticks, took = asyncio.run(run_with_ticker(work))
+        outcome, ticks, took, stall = asyncio.run(watch_the_loop(work))
     assert not isinstance(outcome, Exception), repr(outcome)
     assert outcome.status == "incomplete" and outcome.rows == []
     assert outcome.reason.startswith("LedgerLocked")
-    assert took < LOCK_WAIT + 1.0
+    assert took < 2 * LOCK_WAIT + 1.0  # `check`, then the `record` in `finally`
     assert ticks >= 10
+    assert stall < STALL_LIMIT, stall
+
+
+# --- the other eval scripts that read the ledger in async code (step 7 7t2) --------------------
+
+
+def test_ragas_score_reads_a_held_ledger_off_the_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ragas_score.score` checks the caps before every metric: with the ledger held it ends
+    with `LedgerLocked` after `LOCK_WAIT` and the loop never stalls (the QA runner's 300 s
+    scorer limit can only fire on a free loop)."""
+    pytest.importorskip("ragas")  # the `eval` dependency group, not installed in CI
+    from evals import ragas_score
+    from evals.types import ScoreInput
+
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", LOCK_WAIT)
+    path = tmp_path / "ledger.csv"
+    item = ScoreInput("Q?", "A.", ["context"], None, ("faithfulness",))
+    with held_lock(path, release_after=BACKSTOP + 1):
+        meter = Meter(CAPS, path, "run-7t2")
+        outcome, ticks, took, stall = asyncio.run(
+            watch_the_loop(lambda: ragas_score.score(item, meter))
+        )
+    assert isinstance(outcome, LedgerLocked), repr(outcome)
+    assert LOCK_WAIT <= took < LOCK_WAIT + 0.5
+    assert ticks >= 10
+    assert stall < STALL_LIMIT, stall
+
+
+def test_match_replay_stops_on_a_held_ledger_and_keeps_the_loop_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`match_replay`: `check_room` before the item and the `record` in `finally` both run
+    off the loop; the replay ends `incomplete` with a `LedgerLocked` reason."""
+    from test_match_replay import run_replay
+
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", LOCK_WAIT)
+    with held_lock(tmp_path / "ledger.csv", release_after=BACKSTOP + 1):
+        result, ticks, took, stall = asyncio.run(
+            watch_the_loop(lambda: run_replay(tmp_path, "read", sections={}))
+        )
+    assert not isinstance(result, Exception), repr(result)
+    outcome, script, _ = result
+    assert outcome.status == "incomplete" and outcome.rows == []
+    assert outcome.reason.startswith("LedgerLocked")
+    assert script.asked == []  # no model call before the caps were checked
+    assert took < 2 * LOCK_WAIT + 1.0
+    assert ticks >= 10
+    assert stall < STALL_LIMIT, stall
+
+
+def test_cot_compare_stops_on_a_held_ledger_and_keeps_the_loop_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`cot.compare` checks before each call and records after it (or in `finally`): all off
+    the loop."""
+    from test_evals_cot import MODEL, _segment
+
+    from evals import cot
+
+    async def never_called(*args: Any) -> Any:
+        raise AssertionError("a model call ran without a cap check")
+
+    monkeypatch.setattr(cost, "LOCK_TIMEOUT_S", LOCK_WAIT)
+    path = tmp_path / "ledger.csv"
+    with held_lock(path, release_after=BACKSTOP + 1):
+        meter = Meter(CAPS, path, "run-7t2")
+        outcome, ticks, took, stall = asyncio.run(
+            watch_the_loop(
+                lambda: cot.compare(
+                    [_segment()],
+                    arm_list=cot.arms(MODEL),
+                    chats={},
+                    meter=meter,
+                    repeats=1,
+                    run_id="run-7t2",
+                    out_path=tmp_path / "runs" / "run-7t2.jsonl",
+                    model=MODEL,
+                    date="2026-11-20",
+                    call=never_called,
+                )
+            )
+        )
+    assert not isinstance(outcome, Exception), repr(outcome)
+    assert outcome.status == "incomplete"
+    assert outcome.reason.startswith("LedgerLocked")
+    assert took < 2 * LOCK_WAIT + 1.0
+    assert ticks >= 10
+    assert stall < STALL_LIMIT, stall

@@ -465,7 +465,8 @@ async def compare(
                         try:
                             result: CallResult | None = None
                             for attempt in range(2):
-                                meter.check()
+                                # ledger reads and writes off the loop (evals/cost.py)
+                                await asyncio.to_thread(meter.check)
                                 try:
                                     result = await call(chats[arm.name], arm, segment, meter)
                                     break
@@ -476,7 +477,7 @@ async def compare(
                                         raise ModelFailed(type(error).__name__) from error
                             if result is None:  # unreachable: the loop breaks or raises
                                 raise ModelFailed("no result")
-                            cost = meter.record(key, repeat)
+                            cost = await asyncio.to_thread(meter.record, key, repeat)
                             recorded = True
                             preds = predictions(segment, result)
                             exact = exact_match(segment, result)
@@ -510,7 +511,7 @@ async def compare(
                         finally:
                             if not recorded:
                                 with suppress(CapReached, UnknownModel):
-                                    meter.record(key, repeat)
+                                    await asyncio.to_thread(meter.record, key, repeat)
     except (CapReached, UnknownModel, ModelFailed) as error:
         status, reason = "incomplete", f"{type(error).__name__}: {error}"
     except Exception as error:  # noqa: BLE001 - keep the rows written so far

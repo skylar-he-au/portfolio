@@ -1,5 +1,6 @@
 """RAGAS metrics with metered clients and per-metric failure handling."""
 
+import asyncio
 import logging
 import math
 import os
@@ -82,7 +83,8 @@ async def score(
             continue
         if name in ("context_recall", "factual_correctness") and item.reference is None:
             continue
-        meter.check()
+        # off the loop: another process holding the ledger must not stall it (evals/cost.py)
+        await asyncio.to_thread(meter.check)
         try:
             cached = _METRIC_CACHE.setdefault(meter, {})
             models = (judge_model, embed_model)

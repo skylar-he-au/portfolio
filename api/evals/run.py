@@ -347,7 +347,7 @@ async def evaluate(
                     finally:
                         if not recorded:
                             with suppress(CapReached, UnknownModel):
-                                meter.record(question.id, repeat)
+                                await asyncio.to_thread(meter.record, question.id, repeat)
                     if error_name == "fallback":
                         streak += 1
                         seen_providers.update(providers)
