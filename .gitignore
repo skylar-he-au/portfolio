@@ -11,3 +11,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage
+
+# wrangler dev state and local Worker secrets
+web/.wrangler/
+web/.dev.vars
