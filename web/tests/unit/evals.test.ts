@@ -213,6 +213,10 @@ describe('model comparison table', () => {
     expect(formatCompareScore(read!.old.held_out, 'read')).toBe('0.85 (34/40)');
     expect(check!.options.map((o) => o.run_id)).toEqual(['c-minimal', 'c-luna']);
     expect(compareOptionLabel(check!.options[1]!, 'check')).toBe('gpt-6-luna, reasoning none');
+    expect(compareOptionLabel({ order: 'anthropic:claude-sonnet-5-5:off (max 1024)' }, 'write'))
+      .toBe('claude-sonnet-5-5, lowest thinking setting');
+    expect(compareOptionLabel({ order: 'anthropic:claude-haiku-5-5:off (max 1024)' }, 'write'))
+      .toBe('claude-haiku-5-5, thinking off');
     expect(formatCompareScore(check!.options[1]!.score.tune, 'check'))
       .toBe('0.81 (240/295), 46 removed and 9 kept wrongly');
     expect(formatCompareScore(check!.options[0]!.score.tune, 'check')).toBe('–');

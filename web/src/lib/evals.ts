@@ -561,6 +561,13 @@ const EFFORT_LABELS: Record<string, string> = {
   none: 'reasoning none',
 };
 
+// Claude Sonnet 5.5 cannot turn thinking off: "off" in its setting sends the lowest level.
+function effortLabel(model: string | undefined, effort: string | undefined): string | undefined {
+  if (!effort) return undefined;
+  if (effort === 'off' && model?.startsWith('claude-sonnet-')) return 'lowest thinking setting';
+  return EFFORT_LABELS[effort] ?? effort;
+}
+
 // "claude-haiku-5-5, thinking off, up to 12 requirements": the option's first model.
 export function compareOptionLabel(
   option: Pick<CompareOption, 'order' | 'max_requirements'>,
@@ -568,7 +575,7 @@ export function compareOptionLabel(
 ): string {
   const first = (option.order.split(' -> ')[0] ?? '').replace(/ \(max \d+\).*$/, '');
   const [, model, effort] = first.split(':');
-  const parts = [model ?? first, effort ? EFFORT_LABELS[effort] ?? effort : undefined]
+  const parts = [model ?? first, effortLabel(model, effort)]
     .filter((part): part is string => !!part);
   if (step === 'read' && option.max_requirements !== undefined) {
     parts.push(`up to ${option.max_requirements} requirements`);
