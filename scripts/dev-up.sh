@@ -17,12 +17,21 @@ if [[ ! -f .env ]]; then
   printf '%s\n' 'Hint: cp .env.example .env' >&2
 fi
 
-if [[ "${1:-}" == --down ]]; then
-  DOCKER_CONFIG="$docker_config" docker compose down "${@:2}"
-else
-  DOCKER_CONFIG="$docker_config" docker compose up --build -d "$@"
-  printf 'Web: http://localhost:%s | API: http://localhost:%s/api/ping\n' "${WEB_PORT:-4321}" "${API_PORT:-8000}"
-fi
-
-printf '%s\n' 'docker compose down can also hit the credential helper; without -v, the data volume is kept.'
-printf '%s\n' 'Stop with: ./scripts/dev-up.sh --down'
+case "${1:-}" in
+  --down)
+    # Only this checkout's app services; db keeps running, since other
+    # sessions may be using it.
+    DOCKER_CONFIG="$docker_config" docker compose rm --stop --force web api migrate
+    printf '%s\n' 'Stopped web, api and migrate; db is still running. Stop everything with: ./scripts/dev-up.sh --down-all'
+    ;;
+  --down-all)
+    # Everything in this compose project, db included; add -v to also delete the data volume.
+    DOCKER_CONFIG="$docker_config" docker compose down "${@:2}"
+    printf '%s\n' 'Stopped all services; without -v, the data volume is kept.'
+    ;;
+  *)
+    DOCKER_CONFIG="$docker_config" docker compose up --build -d "$@"
+    printf 'Web: http://localhost:%s | API: http://localhost:%s/api/ping\n' "${WEB_PORT:-4321}" "${API_PORT:-8000}"
+    printf '%s\n' 'Stop the app with: ./scripts/dev-up.sh --down (db keeps running); everything: --down-all'
+    ;;
+esac
