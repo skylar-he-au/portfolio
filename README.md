@@ -22,10 +22,12 @@ Requires Docker with Compose v2.
 
 ```bash
 cp .env.example .env
-docker compose up
+./scripts/dev-up.sh
 ```
 
-Then open http://localhost:4321.
+The script starts the stack in the background with a temporary Docker config to avoid Docker Desktop credential helper hangs. Then open http://localhost:4321.
+
+If Docker works normally on your machine, `docker compose up` is also an option.
 
 | Service | What it does | Address |
 |---|---|---|
@@ -38,7 +40,17 @@ All ports are bound to `127.0.0.1` only. If one is already taken on your machine
 
 With `APP_ENV=dev`, `GET /api/health` also reports whether the database is reachable and which pgvector version is installed. Outside dev that route does not exist.
 
-`docker compose down -v` stops everything and deletes the local database volume.
+Stop with `./scripts/dev-up.sh --down`; this uses the same workaround and keeps the local database volume. Direct `docker compose down` can also hit the credential helper. `docker compose down -v` stops everything and deletes the local database volume.
+
+### Screenshots
+
+With the frontend dependencies and Chrome installed, run from the repo root:
+
+```bash
+node web/scripts/shot.mjs http://localhost:4321 --width 375 --height 900 --scheme dark --out screenshots/mobile-dark.png
+```
+
+Use `--full` to capture the full page. Output supports `.png`, `.jpg` and `.jpeg`. Set `SHOT_BROWSER_PATH` to use a specific browser executable instead of installed Chrome.
 
 ## Load the content for Ask
 
