@@ -63,7 +63,7 @@ def kind(messages: Sequence[BaseMessage]) -> str:
         ("read", "You read a job ad"),
         ("match", "You check one job requirement"),
         ("write", "You write a short reading guide"),
-        ("check", "You check links in a reading guide"),
+        ("check", "You decide whether one section"),
     ):
         if system.startswith(start):
             return name
