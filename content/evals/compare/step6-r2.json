@@ -1,0 +1,1120 @@
+{
+  "version": 1,
+  "generated_at": "2026-11-19T10:14:25+00:00",
+  "source_run": "20261119T030433-match-v4-default",
+  "source_pass": 1,
+  "items": {
+    "tune": 21,
+    "held_out": 5
+  },
+  "cap_per_match_usd": 0.015,
+  "tie": 0.02,
+  "old_prompt": {
+    "run_id": "20261119T030433-match-v4-default",
+    "pass": 1,
+    "grading": {
+      "status": "complete",
+      "kinds": {
+        "faith": {
+          "tasks": 76,
+          "graded": 76,
+          "errors": 0
+        },
+        "align": {
+          "tasks": 78,
+          "graded": 78,
+          "errors": 0
+        },
+        "pair": {
+          "tasks": 360,
+          "graded": 360,
+          "errors": 0
+        }
+      },
+      "warnings": 0
+    },
+    "scores": {
+      "tune": {
+        "read_share": {
+          "value": 0.8608,
+          "num": 136.0,
+          "den": 158,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "retrieval_share": {
+          "value": 0.9505,
+          "num": 96.0,
+          "den": 101,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "match_share": {
+          "value": 0.9583,
+          "num": 92.0,
+          "den": 96,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "pairs_right": {
+          "value": 0.8339,
+          "num": 246.0,
+          "den": 295,
+          "wrongly_removed": 24,
+          "wrongly_kept": 25,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "language_pass": {
+          "value": 1.0,
+          "num": 21.0,
+          "den": 21,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "code_checks_pass": {
+          "value": 1.0,
+          "num": 21.0,
+          "den": 21,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "faithfulness": {
+          "value": 0.9651,
+          "n": 21,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "rows": 21
+      },
+      "held_out": {
+        "read_share": {
+          "value": 0.85,
+          "num": 34.0,
+          "den": 40,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "retrieval_share": {
+          "value": 0.95,
+          "num": 19.0,
+          "den": 20,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "match_share": {
+          "value": 0.7895,
+          "num": 15.0,
+          "den": 19,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "pairs_right": {
+          "value": 0.8462,
+          "num": 55.0,
+          "den": 65,
+          "wrongly_removed": 4,
+          "wrongly_kept": 6,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "language_pass": {
+          "value": 1.0,
+          "num": 5.0,
+          "den": 5,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "code_checks_pass": {
+          "value": 1.0,
+          "num": 5.0,
+          "den": 5,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "faithfulness": {
+          "value": 0.9692,
+          "n": 4,
+          "status": "ok",
+          "awaiting": 0,
+          "grading_errors": 0
+        },
+        "rows": 5
+      }
+    }
+  },
+  "steps": {
+    "read": {
+      "metric": "read_share",
+      "current": "20261119T075011-match-v5+check-v2-replay-read-haiku-5-5-off",
+      "options": [
+        {
+          "run_id": "20261119T075011-match-v5+check-v2-replay-read-haiku-5-5-off",
+          "option": "haiku-5-5-off",
+          "order": "anthropic:claude-haiku-5-5:off (max 1024), up to 8 requirements",
+          "max_requirements": 8,
+          "current": true,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": 7.4231,
+          "scores": {
+            "tune": {
+              "read_share": {
+                "value": 0.8987,
+                "num": 142.0,
+                "den": 158,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "read_share": {
+                "value": 0.775,
+                "num": 31.0,
+                "den": 40,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00046676,
+            "per_match": 0.00823038,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2511.0,
+            "per_match": 9862.0
+          },
+          "grading": {
+            "status": "complete",
+            "kinds": {
+              "faith": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              },
+              "align": {
+                "tasks": 26,
+                "graded": 26,
+                "errors": 0
+              },
+              "pair": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              }
+            },
+            "warnings": 0
+          }
+        },
+        {
+          "run_id": "20261119T075149-match-v5+check-v2-replay-read-haiku-5-5-low",
+          "option": "haiku-5-5-low",
+          "order": "anthropic:claude-haiku-5-5:low (max 4096), up to 8 requirements",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": 7.3462,
+          "scores": {
+            "tune": {
+              "read_share": {
+                "value": 0.8734,
+                "num": 138.0,
+                "den": 158,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "read_share": {
+                "value": 0.775,
+                "num": 31.0,
+                "den": 40,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00047958,
+            "per_match": 0.0082432,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2748.0,
+            "per_match": 10098.0
+          },
+          "grading": {
+            "status": "complete",
+            "kinds": {
+              "faith": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              },
+              "align": {
+                "tasks": 26,
+                "graded": 26,
+                "errors": 0
+              },
+              "pair": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              }
+            },
+            "warnings": 0
+          }
+        },
+        {
+          "run_id": "20261119T075304-match-v5+check-v2-replay-read-sonnet-5-5-off",
+          "option": "sonnet-5-5-off",
+          "order": "anthropic:claude-sonnet-5-5:off (max 1024), up to 8 requirements",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": 7.5,
+          "scores": {
+            "tune": {
+              "read_share": {
+                "value": 0.8987,
+                "num": 142.0,
+                "den": 158,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "read_share": {
+                "value": 0.8,
+                "num": 32.0,
+                "den": 40,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00931231,
+            "per_match": 0.01707593,
+            "over_cap": true,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 3850.0,
+            "per_match": 11200.0
+          },
+          "grading": {
+            "status": "complete",
+            "kinds": {
+              "faith": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              },
+              "align": {
+                "tasks": 26,
+                "graded": 26,
+                "errors": 0
+              },
+              "pair": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              }
+            },
+            "warnings": 0
+          }
+        },
+        {
+          "run_id": "20261119T075447-match-v5+check-v2-replay-read-haiku-5-5-off-max12",
+          "option": "haiku-5-5-off-max12",
+          "order": "anthropic:claude-haiku-5-5:off (max 1024), up to 12 requirements",
+          "max_requirements": 12,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": 8.6154,
+          "scores": {
+            "tune": {
+              "read_share": {
+                "value": 0.943,
+                "num": 149.0,
+                "den": 158,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "read_share": {
+                "value": 0.875,
+                "num": 35.0,
+                "den": 40,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00047331,
+            "per_match": 0.00943749,
+            "over_cap": false,
+            "scale": 1.1546,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2616.0,
+            "per_match": 11103.0
+          },
+          "grading": {
+            "status": "complete",
+            "kinds": {
+              "faith": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              },
+              "align": {
+                "tasks": 26,
+                "graded": 26,
+                "errors": 0
+              },
+              "pair": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              }
+            },
+            "warnings": 0
+          }
+        }
+      ],
+      "ranking": [
+        "20261119T075447-match-v5+check-v2-replay-read-haiku-5-5-off-max12",
+        "20261119T075011-match-v5+check-v2-replay-read-haiku-5-5-off",
+        "20261119T075304-match-v5+check-v2-replay-read-sonnet-5-5-off",
+        "20261119T075149-match-v5+check-v2-replay-read-haiku-5-5-low"
+      ]
+    },
+    "match": {
+      "metric": "match_share",
+      "current": "20261119T074647-match-v5+check-v2-replay-match-haiku-5-5-off",
+      "options": [
+        {
+          "run_id": "20261119T074647-match-v5+check-v2-replay-match-haiku-5-5-off",
+          "option": "haiku-5-5-off",
+          "order": "anthropic:claude-haiku-5-5:off (max 1024)",
+          "max_requirements": 8,
+          "current": true,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "retrieval_share": {
+                "value": 0.9505,
+                "num": 96.0,
+                "den": 101,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "match_share": {
+                "value": 0.9583,
+                "num": 92.0,
+                "den": 96,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "retrieval_share": {
+                "value": 0.95,
+                "num": 19.0,
+                "den": 20,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "match_share": {
+                "value": 0.8947,
+                "num": 17.0,
+                "den": 19,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00396673,
+            "per_match": 0.00823038,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2505.0,
+            "per_match": 9862.0
+          },
+          "grading": null
+        },
+        {
+          "run_id": "20261119T075559-match-v5+check-v2-replay-match-haiku-5-5-low",
+          "option": "haiku-5-5-low",
+          "order": "anthropic:claude-haiku-5-5:low (max 4096)",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "retrieval_share": {
+                "value": 0.9505,
+                "num": 96.0,
+                "den": 101,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "match_share": {
+                "value": 0.9688,
+                "num": 93.0,
+                "den": 96,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "retrieval_share": {
+                "value": 0.95,
+                "num": 19.0,
+                "den": 20,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "match_share": {
+                "value": 0.8947,
+                "num": 17.0,
+                "den": 19,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.0040419,
+            "per_match": 0.00830556,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2557.0,
+            "per_match": 9914.0
+          },
+          "grading": null
+        },
+        {
+          "run_id": "20261119T075709-match-v5+check-v2-replay-match-luna-low",
+          "option": "luna-low",
+          "order": "openai:gpt-6-luna:low -> anthropic:claude-haiku-5-5:off (max 4096)",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "retrieval_share": {
+                "value": 0.9505,
+                "num": 96.0,
+                "den": 101,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "match_share": {
+                "value": 0.8854,
+                "num": 85.0,
+                "den": 96,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "retrieval_share": {
+                "value": 0.95,
+                "num": 19.0,
+                "den": 20,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "match_share": {
+                "value": 0.8421,
+                "num": 16.0,
+                "den": 19,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00281635,
+            "per_match": 0.00708,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 5009.0,
+            "per_match": 12366.0
+          },
+          "grading": null
+        }
+      ],
+      "ranking": [
+        "20261119T074647-match-v5+check-v2-replay-match-haiku-5-5-off",
+        "20261119T075559-match-v5+check-v2-replay-match-haiku-5-5-low",
+        "20261119T075709-match-v5+check-v2-replay-match-luna-low"
+      ]
+    },
+    "check": {
+      "metric": "pairs_right",
+      "current": "20261119T095650-match-v5+check-v2-replay-check-35-flash-lite-minimal",
+      "options": [
+        {
+          "run_id": "20261119T080447-match-v5+check-v2-replay-check-luna-none",
+          "option": "luna-none",
+          "order": "openai:gpt-6-luna:none -> anthropic:claude-haiku-5-5:off (max 1024)",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "pairs_right": {
+                "value": 0.8136,
+                "num": 240.0,
+                "den": 295,
+                "wrongly_removed": 46,
+                "wrongly_kept": 9,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "pairs_right": {
+                "value": 0.6923,
+                "num": 45.0,
+                "den": 65,
+                "wrongly_removed": 15,
+                "wrongly_kept": 5,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00069463,
+            "per_match": 0.00612096,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2048.0,
+            "per_match": 9536.0
+          },
+          "grading": null
+        },
+        {
+          "run_id": "20261119T095650-match-v5+check-v2-replay-check-35-flash-lite-minimal",
+          "option": "35-flash-lite-minimal",
+          "order": "google:gemini-3.5-flash-lite:minimal (max 1024)",
+          "max_requirements": 8,
+          "current": true,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "pairs_right": {
+                "value": 0.8339,
+                "num": 246.0,
+                "den": 295,
+                "wrongly_removed": 34,
+                "wrongly_kept": 15,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "pairs_right": {
+                "value": 0.8308,
+                "num": 54.0,
+                "den": 65,
+                "wrongly_removed": 5,
+                "wrongly_kept": 6,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00280405,
+            "per_match": 0.00823038,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2374.0,
+            "per_match": 9862.0
+          },
+          "grading": null
+        },
+        {
+          "run_id": "20261119T095832-match-v5+check-v2-replay-check-35-flash-lite-low",
+          "option": "35-flash-lite-low",
+          "order": "google:gemini-3.5-flash-lite:low (max 4096)",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "pairs_right": {
+                "value": 0.8407,
+                "num": 248.0,
+                "den": 295,
+                "wrongly_removed": 25,
+                "wrongly_kept": 22,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "pairs_right": {
+                "value": 0.8154,
+                "num": 53.0,
+                "den": 65,
+                "wrongly_removed": 3,
+                "wrongly_kept": 9,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00280895,
+            "per_match": 0.00823528,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 1517.0,
+            "per_match": 9005.0
+          },
+          "grading": null
+        }
+      ],
+      "ranking": [
+        "20261119T095650-match-v5+check-v2-replay-check-35-flash-lite-minimal",
+        "20261119T095832-match-v5+check-v2-replay-check-35-flash-lite-low",
+        "20261119T080447-match-v5+check-v2-replay-check-luna-none"
+      ]
+    },
+    "write": {
+      "metric": "faithfulness",
+      "current": "20261119T074756-match-v5+check-v2-replay-write-haiku-5-5-off",
+      "options": [
+        {
+          "run_id": "20261119T074756-match-v5+check-v2-replay-write-haiku-5-5-off",
+          "option": "haiku-5-5-off",
+          "order": "anthropic:claude-haiku-5-5:off (max 1024)",
+          "max_requirements": 8,
+          "current": true,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "language_pass": {
+                "value": 1.0,
+                "num": 21.0,
+                "den": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "code_checks_pass": {
+                "value": 1.0,
+                "num": 21.0,
+                "den": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "faithfulness": {
+                "value": 0.9744,
+                "n": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "language_pass": {
+                "value": 1.0,
+                "num": 5.0,
+                "den": 5,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "code_checks_pass": {
+                "value": 1.0,
+                "num": 5.0,
+                "den": 5,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "faithfulness": {
+                "value": 0.963,
+                "n": 4,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00099284,
+            "per_match": 0.00823038,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 2472.0,
+            "per_match": 9862.0
+          },
+          "grading": {
+            "status": "complete",
+            "kinds": {
+              "faith": {
+                "tasks": 25,
+                "graded": 25,
+                "errors": 0
+              },
+              "align": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              },
+              "pair": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              }
+            },
+            "warnings": 0
+          }
+        },
+        {
+          "run_id": "20261119T075922-match-v5+check-v2-replay-write-haiku-5-5-low",
+          "option": "haiku-5-5-low",
+          "order": "anthropic:claude-haiku-5-5:low (max 4096)",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "language_pass": {
+                "value": 1.0,
+                "num": 21.0,
+                "den": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "code_checks_pass": {
+                "value": 1.0,
+                "num": 21.0,
+                "den": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "faithfulness": {
+                "value": 0.9732,
+                "n": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "language_pass": {
+                "value": 1.0,
+                "num": 5.0,
+                "den": 5,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "code_checks_pass": {
+                "value": 1.0,
+                "num": 5.0,
+                "den": 5,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "faithfulness": {
+                "value": 0.9549,
+                "n": 4,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.00158715,
+            "per_match": 0.00882468,
+            "over_cap": false,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 7022.0,
+            "per_match": 14413.0
+          },
+          "grading": {
+            "status": "complete",
+            "kinds": {
+              "faith": {
+                "tasks": 25,
+                "graded": 25,
+                "errors": 0
+              },
+              "align": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              },
+              "pair": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              }
+            },
+            "warnings": 0
+          }
+        },
+        {
+          "run_id": "20261119T080244-match-v5+check-v2-replay-write-sonnet-5-5-off",
+          "option": "sonnet-5-5-off",
+          "order": "anthropic:claude-sonnet-5-5:off (max 1024)",
+          "max_requirements": 8,
+          "current": false,
+          "status": "complete",
+          "rows": 26,
+          "errors": 0,
+          "fallback_rows": 0,
+          "requirements_read": null,
+          "scores": {
+            "tune": {
+              "language_pass": {
+                "value": 1.0,
+                "num": 21.0,
+                "den": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "code_checks_pass": {
+                "value": 1.0,
+                "num": 21.0,
+                "den": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "faithfulness": {
+                "value": 0.9909,
+                "n": 21,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 21
+            },
+            "held_out": {
+              "language_pass": {
+                "value": 1.0,
+                "num": 5.0,
+                "den": 5,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "code_checks_pass": {
+                "value": 1.0,
+                "num": 5.0,
+                "den": 5,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "faithfulness": {
+                "value": 1.0,
+                "n": 4,
+                "status": "ok",
+                "awaiting": 0,
+                "grading_errors": 0
+              },
+              "rows": 5
+            }
+          },
+          "cost_usd": {
+            "step": 0.01996115,
+            "per_match": 0.02719869,
+            "over_cap": true,
+            "scale": 1.0,
+            "missing_steps": []
+          },
+          "latency_ms": {
+            "step": 4601.0,
+            "per_match": 11992.0
+          },
+          "grading": {
+            "status": "complete",
+            "kinds": {
+              "faith": {
+                "tasks": 25,
+                "graded": 25,
+                "errors": 0
+              },
+              "align": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              },
+              "pair": {
+                "tasks": 0,
+                "graded": 0,
+                "errors": 0
+              }
+            },
+            "warnings": 0
+          }
+        }
+      ],
+      "ranking": [
+        "20261119T074756-match-v5+check-v2-replay-write-haiku-5-5-off",
+        "20261119T075922-match-v5+check-v2-replay-write-haiku-5-5-low",
+        "20261119T080244-match-v5+check-v2-replay-write-sonnet-5-5-off"
+      ]
+    }
+  }
+}

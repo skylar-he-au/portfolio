@@ -4,6 +4,14 @@ import {
   buildMatchRows,
   buildRagasRows,
   CHECK_LABELS,
+  COMPARE_STEP_LABELS,
+  compareOptionLabel,
+  formatCompareScore,
+  formatMatchCost,
+  formatSeconds,
+  matchJudgeLabel,
+  parseCompare,
+  SUBSCRIPTION_GRADER_LABEL,
   formatChecks,
   formatCost,
   formatRunCost,
@@ -13,20 +21,20 @@ import {
   METRIC_LABELS,
   parseEvalFiles,
   type CheckName,
-  type MatchRun,
 } from '../lib/evals';
+import compareStep6R2 from '../../../content/evals/compare/step6-r2.json';
 
 const files = import.meta.glob('../../../content/evals/*.json', { eager: true, import: 'default' });
 const { qa, cot, match } = parseEvalFiles(Object.values(files));
-const matchJudges = (run: MatchRun) =>
-  [...new Set([run.models.judge_align, run.models.judge_faithfulness].filter((m): m is string => !!m))]
-    .join(', ') || '–';
+const compare = parseCompare(compareStep6R2);
 const judges = [...new Set(qa.map((run) => run.models.judge).filter((judge): judge is string => !!judge))];
 const judgeNames = judges.length ? judges.join(', ') : 'claude-sonnet-5-5';
 const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
 // Notes that explain one published CoT run's numbers, keyed by run_id.
 // Notes that explain one published job-match run's numbers, keyed by run_id.
 const matchNotes: Record<string, string> = {
+  '20261119T104825-match-v5+check-v2-final':
+    'Every line passed on the tuning ads, which are the ones the pass lines apply to: section recall 0.83, not-covered accuracy 0.91, Faithfulness 0.97 with no row below 0.7, and all code checks. The held-out ads are reported only: section recall 0.73 (0.52–0.87 across passes) stays under 0.8, not-covered accuracy 0.91, Faithfulness 0.96. Each step now has its own model, chosen in the comparison below: Claude Haiku 5.5 with thinking off reads up to 12 requirements (8 before), matches and writes; Gemini 3.5 Flash-Lite with minimal thinking checks. No backup model was used. Faithfulness here comes from the subscription grader, which scores higher than RAGAS on the same guides, so it is not comparable with the runs below. The three passes ran as three runs and are averaged here.',
   '20261119T030433-match-v4-default':
     'No line passed in full. Guide sentences are statements again (none start with an instruction), and Faithfulness rose to 0.89 on the tuning ads and 0.87 on the held-out ads, still under the 0.9 average (3 tuning rows and 1 held-out row below 0.7). Section recall fell to 0.77 on the tuning ads, under the 0.8 line; not-covered accuracy passed on the tuning ads only. One Chinese guide quoted an English line from a section and failed the language check.',
   '20261119T005423-match-v3-default':
@@ -149,7 +157,7 @@ const cotNotes: Record<string, string> = {
         </div>
         <div>
           <dt>Faithfulness</dt>
-          <dd>Share of the guide’s claims that the linked sections support (RAGAS).</dd>
+          <dd>Share of the guide’s claims that the linked sections support. Up to the 19 Nov 2026 v4 run this is RAGAS; from round 2 it is graded by {SUBSCRIPTION_GRADER_LABEL}, which breaks the guide into statements the same way. On the same v4 guides that grader gave 0.96 where RAGAS gave 0.89, so round-2 Faithfulness is not directly comparable with the older runs.</dd>
         </div>
         <div>
           <dt>Precision</dt>
@@ -165,7 +173,7 @@ const cotNotes: Record<string, string> = {
             <br />
             Models: {run.models.answer ?? '–'} (read, match, write) / {run.models.check ?? '–'} (check)
             <br />
-            Judge: {matchJudges(run)}
+            Judge: {matchJudgeLabel(run)}{run.grading_status === 'incomplete' && <> · grading incomplete, so not declared over the line</>}
           </p>
           <p class="note pass-lines">Pass lines: {matchPassLines()}.</p>
           <div class="table-scroll" tabindex="0" role="region" aria-label={`Job match scores for ${run.date}, prompt ${run.prompt_version ?? '–'}`}>
@@ -192,6 +200,59 @@ const cotNotes: Record<string, string> = {
             {' · '}Cost: {formatRunCost(run)}
           </p>
           {matchNotes[run.run_id] && <p class="note">{matchNotes[run.run_id]}</p>}
+        </article>
+      ))}
+    </section>
+  )}
+
+  {compare && (
+    <section class="compare">
+      <h2>Choosing a model for each step</h2>
+      <p>
+        Job match runs four steps: read the ad’s requirements, match each requirement to retrieved sections, check each link, and write the guide.
+        In round 2 each step was tried with up to three models on its own: the step ran again on what the stored v4 run produced before it, on the same {compare.items_tune ?? '–'} tuning and {compare.items_held_out ?? '–'} held-out ads, one pass, with the other steps left as they were.
+        The read step was also tried with up to 12 requirements instead of 8.
+      </p>
+      <p class="note">
+        Only the tuning ads rank the options; held-out ads are reported only. Scores within {compare.tie ?? '–'} of the best count as the same, and then the cheaper option per match wins; an option over {formatMatchCost(compare.cap_per_match_usd)} per match cannot be chosen.
+        Cost per match is this step’s measured cost plus the other three steps’ current models; latency per match counts the slowest of the parallel match calls.
+        “v4 prompt” is the stored run itself, regraded the same way. Graded by {SUBSCRIPTION_GRADER_LABEL}.
+      </p>
+      {compare.steps.map((table) => (
+        <article class="compare-step">
+          <h3>{COMPARE_STEP_LABELS[table.step].step}</h3>
+          <div class="table-scroll" tabindex="0" role="region" aria-label={`Model comparison: ${COMPARE_STEP_LABELS[table.step].step}`}>
+            <table>
+              <caption>{COMPARE_STEP_LABELS[table.step].metric}, best first; the first row is the one chosen.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Option</th>
+                  <th scope="col">Tuning ads</th>
+                  <th scope="col">Held-out ads</th>
+                  <th scope="col">Cost per match</th>
+                  <th scope="col">Latency per match</th>
+                </tr>
+              </thead>
+              <tbody>
+                {table.options.map((option, index) => (
+                  <tr>
+                    <th scope="row">{compareOptionLabel(option, table.step)}{index === 0 && ' (chosen)'}</th>
+                    <td>{formatCompareScore(option.score.tune, table.step)}</td>
+                    <td>{formatCompareScore(option.score.held_out, table.step)}</td>
+                    <td>{formatMatchCost(option.cost_per_match)}{option.over_cap && ' (over the cap)'}</td>
+                    <td>{formatSeconds(option.latency_per_match_ms)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <th scope="row">v4 prompt</th>
+                  <td>{formatCompareScore(table.old.tune, table.step)}</td>
+                  <td>{formatCompareScore(table.old.held_out, table.step)}</td>
+                  <td>–</td>
+                  <td>–</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </article>
       ))}
     </section>
@@ -333,6 +394,7 @@ const cotNotes: Record<string, string> = {
   }
 
   .match-run + .match-run,
+  .compare-step + .compare-step,
   .cot-run + .cot-run {
     margin-block-start: var(--space-6);
     padding-block-start: var(--space-5);

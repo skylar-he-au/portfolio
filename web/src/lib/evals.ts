@@ -120,6 +120,23 @@ export interface MatchRun extends Run {
   code_checks?: Checks;
   cost_usd?: number;
   cost_pools_usd?: CostPools;
+  // Round 2 on: who graded (the subscription grader) and whether every needed grade came back.
+  grader?: string;
+  grading_status?: 'complete' | 'incomplete';
+}
+
+// The subscription grader of step 6 round 2 (docs/evals/GRADING.md in the docs repo).
+export const SUBSCRIPTION_GRADER = 'claude-sonnet-5-5 (subscription, GRADING.md)';
+export const SUBSCRIPTION_GRADER_LABEL = 'Claude Sonnet 5.5 (subscription, following GRADING.md), not RAGAS';
+
+// "Judge: …" for a match run: the subscription grader by its label, API judges by model id.
+export function matchJudgeLabel(run: MatchRun): string {
+  const judges = [...new Set([run.models.judge_align, run.models.judge_faithfulness]
+    .filter((m): m is string => !!m))];
+  if (run.grader === SUBSCRIPTION_GRADER || (judges.length === 1 && judges[0] === SUBSCRIPTION_GRADER)) {
+    return SUBSCRIPTION_GRADER_LABEL;
+  }
+  return judges.join(', ') || '–';
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -286,7 +303,13 @@ function parseMatch(raw: Record<string, unknown>): MatchRun {
     code_checks: parseChecks(object(raw.code_checks)?.all),
     cost_usd: number(raw.cost_usd),
     cost_pools_usd: parseCostPools(raw.cost_pools_usd),
+    grader: text(raw.grader),
+    grading_status: gradingStatus(object(raw.grading)?.status),
   };
+}
+
+function gradingStatus(value: unknown): 'complete' | 'incomplete' | undefined {
+  return value === 'complete' || value === 'incomplete' ? value : undefined;
 }
 
 function newestFirst(a: Run, b: Run): number {
@@ -395,4 +418,182 @@ export function matchPassLines(): string {
     return line === undefined ? [] : [`${MATCH_SCORE_LABELS[key]} ≥ ${formatScore(line)}`];
   });
   return `${lines.join(', ')}, every ad in every pass Faithfulness ≥ ${formatScore(MATCH_FAITH_FLOOR)}`;
+}
+
+// --- step 6 round 2: one model per step, compared on replays of a stored run ----------------
+
+export const COMPARE_STEPS = ['read', 'match', 'check', 'write'] as const;
+export type CompareStep = typeof COMPARE_STEPS[number];
+
+export const COMPARE_STEP_LABELS: Record<CompareStep, { step: string; metric: string }> = {
+  read: { step: 'Read the ad', metric: 'Gold requirements read' },
+  match: { step: 'Match each requirement', metric: 'Expected section picked (of those retrieved)' },
+  check: { step: 'Check each link', metric: 'Pairs judged right' },
+  write: { step: 'Write the guide', metric: 'Faithfulness' },
+};
+
+const COMPARE_METRICS: Record<CompareStep, string> = {
+  read: 'read_share', match: 'match_share', check: 'pairs_right', write: 'faithfulness',
+};
+
+export interface CompareScore {
+  value?: number;
+  num?: number;
+  den?: number;
+  n?: number;
+  wrongly_removed?: number;
+  wrongly_kept?: number;
+  status?: 'ok' | 'awaiting_grades' | 'incomplete';
+}
+
+export interface SplitScores {
+  tune?: CompareScore;
+  held_out?: CompareScore;
+}
+
+export interface CompareOption {
+  run_id: string;
+  order: string;
+  max_requirements?: number;
+  rows?: number;
+  errors?: number;
+  score: SplitScores;
+  cost_per_match?: number;
+  latency_per_match_ms?: number;
+  over_cap: boolean;
+}
+
+export interface CompareStepTable {
+  step: CompareStep;
+  old: SplitScores;
+  options: CompareOption[]; // ranking order: the first is the one chosen
+}
+
+export interface CompareTable {
+  source_run: string;
+  items_tune?: number;
+  items_held_out?: number;
+  cap_per_match_usd?: number;
+  tie?: number;
+  steps: CompareStepTable[];
+}
+
+function parseCompareScore(value: unknown): CompareScore | undefined {
+  const raw = object(value);
+  if (!raw) return undefined;
+  const status = raw.status === 'ok' || raw.status === 'awaiting_grades' || raw.status === 'incomplete'
+    ? raw.status : undefined;
+  return {
+    value: number(raw.value),
+    num: number(raw.num),
+    den: count(raw.den),
+    n: count(raw.n),
+    wrongly_removed: count(raw.wrongly_removed),
+    wrongly_kept: count(raw.wrongly_kept),
+    status,
+  };
+}
+
+function splitScores(scores: unknown, metric: string): SplitScores {
+  const raw = object(scores);
+  return {
+    tune: parseCompareScore(object(raw?.tune)?.[metric]),
+    held_out: parseCompareScore(object(raw?.held_out)?.[metric]),
+  };
+}
+
+function parseOption(value: unknown, metric: string): CompareOption[] {
+  const option = object(value);
+  const run_id = text(option?.run_id);
+  const order = text(option?.order);
+  if (!option || !run_id || !order) return [];
+  const cost = object(option.cost_usd);
+  return [{
+    run_id,
+    order,
+    max_requirements: count(option.max_requirements),
+    rows: count(option.rows),
+    errors: count(option.errors),
+    score: splitScores(option.scores, metric),
+    cost_per_match: number(cost?.per_match),
+    latency_per_match_ms: number(object(option.latency_ms)?.per_match),
+    over_cap: cost?.over_cap === true,
+  }];
+}
+
+// Only the fields below are kept: names and numbers (the file has no ad, requirement or guide).
+export function parseCompare(value: unknown): CompareTable | undefined {
+  const raw = object(value);
+  const steps = object(raw?.steps);
+  const source = text(raw?.source_run);
+  if (!raw || !steps || !source) return undefined;
+  const old = object(object(raw.old_prompt)?.scores);
+  const tables: CompareStepTable[] = [];
+  for (const step of COMPARE_STEPS) {
+    const entry = object(steps[step]);
+    if (!entry) continue;
+    const metric = COMPARE_METRICS[step];
+    const options = (Array.isArray(entry.options) ? entry.options : [])
+      .flatMap((item) => parseOption(item, metric));
+    const ranking = (Array.isArray(entry.ranking) ? entry.ranking : [])
+      .filter((id): id is string => typeof id === 'string');
+    const rank = (option: CompareOption) => {
+      const at = ranking.indexOf(option.run_id);
+      return at === -1 ? ranking.length : at;
+    };
+    tables.push({ step, old: splitScores(old, metric), options: [...options].sort((a, b) => rank(a) - rank(b)) });
+  }
+  const items = object(raw.items);
+  return {
+    source_run: source,
+    items_tune: count(items?.tune),
+    items_held_out: count(items?.held_out),
+    cap_per_match_usd: number(raw.cap_per_match_usd),
+    tie: number(raw.tie),
+    steps: tables,
+  };
+}
+
+const EFFORT_LABELS: Record<string, string> = {
+  off: 'thinking off',
+  low: 'low thinking',
+  minimal: 'minimal thinking',
+  none: 'reasoning none',
+};
+
+// "claude-haiku-5-5, thinking off, up to 12 requirements": the option's first model.
+export function compareOptionLabel(
+  option: Pick<CompareOption, 'order' | 'max_requirements'>,
+  step: CompareStep,
+): string {
+  const first = (option.order.split(' -> ')[0] ?? '').replace(/ \(max \d+\).*$/, '');
+  const [, model, effort] = first.split(':');
+  const parts = [model ?? first, effort ? EFFORT_LABELS[effort] ?? effort : undefined]
+    .filter((part): part is string => !!part);
+  if (step === 'read' && option.max_requirements !== undefined) {
+    parts.push(`up to ${option.max_requirements} requirements`);
+  }
+  return parts.join(', ');
+}
+
+// "0.83 (246/295)"; the check adds what it removed or kept wrongly.
+export function formatCompareScore(score: CompareScore | undefined, step: CompareStep): string {
+  if (!score || score.status === 'awaiting_grades') return '–';
+  let result = formatScore(score.value);
+  if (score.num !== undefined && score.den !== undefined) result += ` (${Math.round(score.num)}/${score.den})`;
+  if (step === 'check' && score.wrongly_removed !== undefined && score.wrongly_kept !== undefined) {
+    result += `, ${score.wrongly_removed} removed and ${score.wrongly_kept} kept wrongly`;
+  }
+  if (score.status === 'incomplete') result += ', grading incomplete';
+  return result;
+}
+
+export function formatMatchCost(usd: number | undefined): string {
+  const value = number(usd);
+  return value === undefined ? '–' : `$${value.toFixed(4)}`;
+}
+
+export function formatSeconds(ms: number | undefined): string {
+  const value = number(ms);
+  return value === undefined ? '–' : `${(value / 1000).toFixed(1)} s`;
 }

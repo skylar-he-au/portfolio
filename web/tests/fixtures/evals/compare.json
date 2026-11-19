@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "source_run": "20261119T030433-match-v4-default",
+  "source_pass": 1,
+  "items": { "tune": 21, "held_out": 5 },
+  "cap_per_match_usd": 0.015,
+  "tie": 0.02,
+  "old_prompt": {
+    "run_id": "20261119T030433-match-v4-default",
+    "scores": {
+      "tune": {
+        "read_share": { "value": 0.8608, "num": 136.0, "den": 158, "status": "ok" },
+        "pairs_right": { "value": 0.8339, "num": 246.0, "den": 295, "wrongly_removed": 24, "wrongly_kept": 25, "status": "ok" }
+      },
+      "held_out": { "read_share": { "value": 0.85, "num": 34.0, "den": 40, "status": "ok" } }
+    }
+  },
+  "steps": {
+    "read": {
+      "metric": "read_share",
+      "ranking": ["r-max12", "r-haiku"],
+      "options": [
+        {
+          "run_id": "r-haiku", "option": "haiku-5-5-off",
+          "order": "anthropic:claude-haiku-5-5:off -> google:gemini-3.5-flash-lite:minimal (max 1024), up to 8 requirements",
+          "max_requirements": 8, "current": true, "rows": 26, "errors": 0,
+          "scores": { "tune": { "read_share": { "value": 0.8987, "num": 142.0, "den": 158, "status": "ok" } } },
+          "cost_usd": { "step": 0.00047, "per_match": 0.00823, "over_cap": false },
+          "latency_ms": { "step": 2500.0, "per_match": 9862.0 },
+          "note": "TypeScript and React"
+        },
+        {
+          "run_id": "r-max12", "option": "haiku-5-5-off-max12",
+          "order": "anthropic:claude-haiku-5-5:off (max 1024), up to 12 requirements",
+          "max_requirements": 12, "current": false, "rows": 26, "errors": 0,
+          "scores": { "tune": { "read_share": { "value": 0.943, "num": 149.0, "den": 158, "status": "ok" } } },
+          "cost_usd": { "step": 0.00047, "per_match": 0.00944, "over_cap": false },
+          "latency_ms": { "step": 2600.0, "per_match": 10100.0 }
+        }
+      ]
+    },
+    "check": {
+      "metric": "pairs_right",
+      "ranking": ["c-minimal"],
+      "options": [
+        {
+          "run_id": "c-luna", "option": "luna-none",
+          "order": "openai:gpt-6-luna:none -> anthropic:claude-haiku-5-5:off (max 1024)",
+          "max_requirements": 8, "current": false, "rows": 26, "errors": 0,
+          "scores": { "tune": { "pairs_right": { "value": 0.8136, "num": 240.0, "den": 295, "wrongly_removed": 46, "wrongly_kept": 9, "status": "ok" } } },
+          "cost_usd": { "step": 0.0007, "per_match": 0.0272, "over_cap": true },
+          "latency_ms": { "step": 2000.0, "per_match": 9500.0 }
+        },
+        {
+          "run_id": "c-minimal", "option": "35-flash-lite-minimal",
+          "order": "google:gemini-3.5-flash-lite:minimal (max 1024)",
+          "max_requirements": 8, "current": true, "rows": 26, "errors": 0,
+          "scores": { "tune": { "pairs_right": { "status": "awaiting_grades" } } },
+          "cost_usd": { "step": 0.0028, "per_match": 0.00823, "over_cap": false },
+          "latency_ms": { "step": 2374.0, "per_match": 9862.0 }
+        }
+      ]
+    }
+  }
+}

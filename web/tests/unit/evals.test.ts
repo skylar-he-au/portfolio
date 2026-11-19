@@ -4,10 +4,19 @@ import onePass from '../fixtures/evals/qa-1-pass.json';
 import older from '../fixtures/evals/qa-older.json';
 import cot from '../fixtures/evals/cot.json';
 import match from '../fixtures/evals/match.json';
+import compare from '../fixtures/evals/compare.json';
 import {
   buildMatchRows,
   buildRagasRows,
   CHECK_LABELS,
+  compareOptionLabel,
+  formatCompareScore,
+  formatMatchCost,
+  formatSeconds,
+  matchJudgeLabel,
+  parseCompare,
+  SUBSCRIPTION_GRADER,
+  SUBSCRIPTION_GRADER_LABEL,
   formatChecks,
   formatCost,
   formatRunCost,
@@ -171,5 +180,51 @@ describe('job match summaries', () => {
   it('sorts match runs newest first', () => {
     const older = { ...match, date: '2026-11-19' };
     expect(parseEvalFiles([older, match]).match.map((run) => run.date)).toEqual(['2026-11-20', '2026-11-19']);
+  });
+
+  it('names the subscription grader, not RAGAS, and keeps API judges by model id', () => {
+    const graded = parseEvalFiles([{
+      ...match,
+      models: { ...match.models, judge_align: SUBSCRIPTION_GRADER, judge_faithfulness: SUBSCRIPTION_GRADER },
+      grader: SUBSCRIPTION_GRADER,
+      grading: { status: 'incomplete', kinds: {}, warnings: 0 },
+    }]).match[0]!;
+    expect(matchJudgeLabel(graded)).toBe(SUBSCRIPTION_GRADER_LABEL);
+    expect(SUBSCRIPTION_GRADER_LABEL).toBe('Claude Sonnet 5.5 (subscription, following GRADING.md), not RAGAS');
+    expect(graded.grading_status).toBe('incomplete');
+    const api = parseEvalFiles([match]).match[0]!;
+    expect(matchJudgeLabel(api)).toBe('claude-sonnet-5-5');
+    expect(api.grading_status).toBeUndefined();
+  });
+});
+
+describe('model comparison table', () => {
+  it('orders each step by its ranking, keeps the v4 row and labels the options', () => {
+    const table = parseCompare(compare)!;
+    expect(table.steps.map((step) => step.step)).toEqual(['read', 'check']);
+    const [read, check] = table.steps;
+    expect(read!.options.map((o) => o.run_id)).toEqual(['r-max12', 'r-haiku']);
+    expect(read!.options.map((o) => compareOptionLabel(o, 'read'))).toEqual([
+      'claude-haiku-5-5, thinking off, up to 12 requirements',
+      'claude-haiku-5-5, thinking off, up to 8 requirements',
+    ]);
+    expect(formatCompareScore(read!.options[0]!.score.tune, 'read')).toBe('0.94 (149/158)');
+    expect(formatCompareScore(read!.old.tune, 'read')).toBe('0.86 (136/158)');
+    expect(formatCompareScore(read!.old.held_out, 'read')).toBe('0.85 (34/40)');
+    expect(check!.options.map((o) => o.run_id)).toEqual(['c-minimal', 'c-luna']);
+    expect(compareOptionLabel(check!.options[1]!, 'check')).toBe('gpt-6-luna, reasoning none');
+    expect(formatCompareScore(check!.options[1]!.score.tune, 'check'))
+      .toBe('0.81 (240/295), 46 removed and 9 kept wrongly');
+    expect(formatCompareScore(check!.options[0]!.score.tune, 'check')).toBe('–');
+    expect(check!.options[1]!.over_cap).toBe(true);
+  });
+
+  it('keeps names and numbers only and formats cost and latency', () => {
+    const json = JSON.stringify(parseCompare(compare));
+    expect(json).not.toContain('TypeScript');
+    expect(parseCompare({ steps: {} })).toBeUndefined();
+    expect(formatMatchCost(0.00823)).toBe('$0.0082');
+    expect(formatMatchCost(undefined)).toBe('–');
+    expect(formatSeconds(9862)).toBe('9.9 s');
   });
 });
