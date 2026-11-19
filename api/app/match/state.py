@@ -51,6 +51,15 @@ class Finding(BaseModel):
     ms: int
 
 
+class PairVerdict(BaseModel):
+    """What the check said about one (requirement, linked section) pair: `shows` true or
+    false, `missing` when it gave no verdict for the pair (or the check call failed)."""
+
+    requirement_id: str
+    url: str
+    shows: bool | Literal["missing"]
+
+
 class GuideItem(BaseModel):
     requirement_id: str
     text: str

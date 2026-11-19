@@ -328,6 +328,44 @@ def test_worst_path_comes_from_the_real_prompts() -> None:
     assert worst["google"] < Decimal("0.01")
 
 
+def test_worst_path_per_step_equals_the_old_numbers_with_the_default_models() -> None:
+    from app.match import models as mm
+
+    defaults = mm.default_models(MODELS["anthropic"], MODELS["google"])
+    assert match_api.match_worst_steps(defaults, MODELS["openai"]) == real_worst()
+    settings = guard_settings("postgresql://x@127.0.0.1:1/x")
+    assert match_worst_for(settings) == match_worst(
+        settings.answer_model, settings.check_model, settings.embed_model
+    )
+
+
+def test_worst_path_follows_each_steps_model_and_cap() -> None:
+    from app.match import models as mm
+
+    defaults = mm.default_models(MODELS["anthropic"], MODELS["google"])
+    base = real_worst()
+    luna = mm.apply_overrides(defaults, ["check=openai:gpt-6-luna:none"], ["check="])
+    worst = match_api.match_worst_steps(luna, MODELS["openai"])
+    assert worst["anthropic"] == base["anthropic"]
+    assert worst["google"] == 0
+    # the check's 24 pairs at Luna's price and the 1024 cap, on top of the embedding
+    marker = "f" * 16
+    req = Requirement(id="r1", text="x" * 120, query="x" * 200)
+    sec = Section("/projects/" + "x" * 30, "x" * 40, "x" * 80, "x" * SECTION_CHARS_ESTIMATE, 0)
+    check = estimate_input_tokens(
+        prompts.check_messages([(n, req, sec) for n in range(1, 25)], marker)
+    )
+    assert worst["openai"] == base["openai"] + cost_usd(
+        "gpt-6-luna", {"input_tokens": check, "output_tokens": 1024}
+    )
+    # thinking on the read step: its cap goes to 4096, only the read call grows
+    thinking = mm.apply_overrides(defaults, ["read=anthropic:claude-haiku-5-5:low"])
+    worst = match_api.match_worst_steps(thinking, MODELS["openai"])
+    extra = cost_usd(MODELS["anthropic"], {"input_tokens": 0, "output_tokens": 4096 - 1024})
+    assert worst["anthropic"] == base["anthropic"] + extra
+    assert worst["google"] == base["google"]
+
+
 @pytest.mark.parametrize("attempts", [3, None])
 async def test_concurrent_matches_admitted_by_the_formula(
     make_world: Callable[..., World], attempts: int | None

@@ -13,6 +13,8 @@ _PRICES = {
     "claude-haiku-5-5": (Decimal("0.10"), Decimal("0.50")),
     "claude-sonnet-5-5": (Decimal("2.00"), Decimal("10.00")),
     "gemini-3.5-flash-lite": (Decimal("0.30"), Decimal("2.50")),
+    # Reasoning tokens are billed as output (OpenAI pricing page, 2026-11-19).
+    "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
     "text-embedding-3-small": (Decimal("0.02"), Decimal("0")),
 }
 _MILLION = Decimal("1000000")

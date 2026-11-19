@@ -54,6 +54,7 @@ from app.guard.limits import Admission, Limits
 from app.guard.prices import cost_usd
 from app.guard.session import REJECTIONS, Rejected, Session, require_session
 from app.guard.usage import estimate_input_tokens
+from app.match import models as match_models
 from app.match import prompts
 from app.match.fetch import FetchError, JobRef, fetch_job, parse_job_url
 from app.match.graph import (
@@ -130,11 +131,21 @@ def match_worst(
     embed_model: str,
     max_output_tokens: int = MAX_OUTPUT_TOKENS,
 ) -> dict[str, Decimal]:
-    """What one match can cost on its main path, from the real prompts at their largest:
-    Claude reads a 20,000-character ad, runs 8 match agents (6 sections each) and writes the
-    guide (8 findings x 3 sections); Gemini checks 24 (requirement, section) pairs; OpenAI
-    embeds 8 search phrases. Every model call at `max_output_tokens`. A switch of provider
-    is not reserved here: it tops up before its call (`SpendScope.ensure`)."""
+    """`match_worst_steps` for the models before round 2: Claude (`answer_model`) reads,
+    matches and writes, Gemini (`check_model`) checks, every call at `max_output_tokens`."""
+    return match_worst_steps(
+        match_models.default_models(answer_model, check_model, max_output_tokens), embed_model
+    )
+
+
+def match_worst_steps(models: match_models.MatchModels, embed_model: str) -> dict[str, Decimal]:
+    """What one match can cost on its main path, per provider pool, from the real prompts
+    at their largest: the read step reads a 20,000-character ad, 8 match agents see 6
+    sections each, the write step writes the guide (8 findings x 3 sections), the check
+    checks 24 (requirement, section) pairs; OpenAI embeds 8 search phrases. Each step is
+    charged to its first model's provider at that model's price and the step's own output
+    cap. A switch of provider is not reserved here: it tops up before its call
+    (`SpendScope.ensure`)."""
     marker = "0" * 16
     requirement = Requirement(
         id="r1", text="x" * MAX_REQUIREMENT_CHARS, query="x" * MAX_QUERY_CHARS
@@ -143,37 +154,50 @@ def match_worst(
         "/projects/" + "x" * 30, "x" * 40, "x" * 80, "x" * SECTION_CHARS_ESTIMATE, 0.0
     )
     numbers = range(1, MAX_REQUIREMENTS + 1)
-    read = estimate_input_tokens(prompts.read_messages("x" * MAX_JD_CHARS, marker))
-    match = estimate_input_tokens(
-        prompts.match_messages(requirement, [section] * MAX_SECTIONS, marker)
-    )
-    write = estimate_input_tokens(
-        prompts.write_messages(
-            [(n, requirement, [section] * MAX_LINKS) for n in numbers], "en", marker
-        )
-    )
-    check = estimate_input_tokens(
-        prompts.check_messages(
-            [(n, requirement, section) for n in range(1, MAX_REQUIREMENTS * MAX_LINKS + 1)],
-            marker,
-        )
-    )
-    embed = (MAX_REQUIREMENTS * MAX_QUERY_CHARS + 2) // 3
-
-    def call(model: str, input_tokens: int) -> Decimal:
-        return cost_usd(model, {"input_tokens": input_tokens, "output_tokens": max_output_tokens})
-
-    return {
-        "anthropic": call(answer_model, read)
-        + MAX_REQUIREMENTS * call(answer_model, match)
-        + call(answer_model, write),
-        "google": call(check_model, check),
-        "openai": cost_usd(embed_model, {"input_tokens": embed, "output_tokens": 0}),
+    inputs: dict[match_models.Step, tuple[int, int]] = {  # step -> (calls, input tokens)
+        "read": (1, estimate_input_tokens(prompts.read_messages("x" * MAX_JD_CHARS, marker))),
+        "match": (
+            MAX_REQUIREMENTS,
+            estimate_input_tokens(
+                prompts.match_messages(requirement, [section] * MAX_SECTIONS, marker)
+            ),
+        ),
+        "check": (
+            1,
+            estimate_input_tokens(
+                prompts.check_messages(
+                    [(n, requirement, section) for n in range(1, MAX_REQUIREMENTS * MAX_LINKS + 1)],
+                    marker,
+                )
+            ),
+        ),
+        "write": (
+            1,
+            estimate_input_tokens(
+                prompts.write_messages(
+                    [(n, requirement, [section] * MAX_LINKS) for n in numbers], "en", marker
+                )
+            ),
+        ),
     }
+    worst = dict.fromkeys(match_models.PROVIDERS, Decimal(0))
+    for step in match_models.STEPS:
+        calls, input_tokens = inputs[step]
+        first = models[step].first
+        one = cost_usd(
+            first.model,
+            {"input_tokens": input_tokens, "output_tokens": models[step].max_output_tokens},
+        )
+        worst[first.provider] += calls * one
+    embed = (MAX_REQUIREMENTS * MAX_QUERY_CHARS + 2) // 3
+    worst["openai"] += cost_usd(embed_model, {"input_tokens": embed, "output_tokens": 0})
+    return worst
 
 
-def match_worst_for(settings: Settings) -> dict[str, Decimal]:
-    return match_worst(settings.answer_model, settings.check_model, settings.embed_model)
+def match_worst_for(
+    settings: Settings, models: match_models.MatchModels | None = None
+) -> dict[str, Decimal]:
+    return match_worst_steps(models or match_models.models_for(settings), settings.embed_model)
 
 
 # --- the service ----------------------------------------------------------------------------

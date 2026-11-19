@@ -865,3 +865,542 @@ def test_retrieve_many_with_no_queries_does_nothing() -> None:
         assert embedder.calls == []
 
     asyncio.run(go())
+
+
+# --- round 2: per-step models, OpenAI, the four step functions ------------------------------
+
+from decimal import Decimal  # noqa: E402
+
+import httpx2  # noqa: E402
+from langchain_anthropic import ChatAnthropic  # noqa: E402
+from langchain_core.callbacks import BaseCallbackHandler  # noqa: E402
+from langchain_core.messages import AIMessage  # noqa: E402
+from langchain_core.outputs import ChatGeneration, ChatResult  # noqa: E402
+from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: E402
+from langchain_openai import ChatOpenAI  # noqa: E402
+
+from app.config import Settings  # noqa: E402
+from app.guard.prices import cost_usd  # noqa: E402
+from app.guard.usage import UsageRecorder  # noqa: E402
+from app.match import graph as match_graph  # noqa: E402
+from app.match import models as mm  # noqa: E402
+from app.match.graph import (  # noqa: E402
+    ask_json,
+    check_step,
+    match_one,
+    read_step,
+    write_step,
+)
+from app.qa.models import build_providers  # noqa: E402
+
+HAIKU = mm.ModelChoice("anthropic", "claude-haiku-5-5", "off")
+FLASH = mm.ModelChoice("google", "gemini-3.5-flash-lite", "minimal")
+LUNA_NONE = mm.ModelChoice("openai", "gpt-6-luna", "none")
+
+
+def settings() -> Settings:
+    return Settings(
+        database_url="postgresql://x@127.0.0.1:1/x",
+        anthropic_api_key="test-anthropic",
+        gemini_api_key="test-gemini",
+        openai_api_key="test-openai",
+    )  # type: ignore[call-arg]
+
+
+def test_default_models_are_the_models_before_round_two() -> None:
+    models = mm.models_for(settings())
+    for step in ("read", "match", "write"):
+        assert models[step].choices == (HAIKU, FLASH)
+        assert models[step].max_output_tokens == 1024
+    assert models["check"].choices == (FLASH, HAIKU)
+    assert models["check"].max_output_tokens == 1024
+
+
+def test_default_chat_objects_equal_build_providers() -> None:
+    """The product builds per-step chats now; with the defaults they must be configured
+    exactly like `build_providers` (the chats before round 2)."""
+    s = settings()
+    claude, gemini = build_providers(s)
+    steps = mm.build_step_providers(mm.models_for(s), s)
+    for step, (first, second) in (
+        ("read", (claude, gemini)),
+        ("match", (claude, gemini)),
+        ("write", (claude, gemini)),
+        ("check", (gemini, claude)),
+    ):
+        got = steps[step]
+        assert [(p.name, p.model) for p in got] == [
+            (first.name, first.model),
+            (second.name, second.model),
+        ]
+        for built, old in zip(got, (first, second), strict=True):
+            assert type(built.chat) is type(old.chat)
+            fields = (
+                ("model", "max_tokens", "thinking", "reasoning_effort", "output_config")
+                if isinstance(old.chat, ChatAnthropic)
+                else ("model", "max_output_tokens", "thinking_level", "thinking_budget")
+            )
+            for name in (*fields, "max_retries"):
+                assert getattr(built.chat, name) == getattr(old.chat, name), (step, name)
+            for name in ("default_request_timeout", "timeout"):
+                assert getattr(built.chat, name, None) == getattr(old.chat, name, None), name
+
+
+def test_build_match_deps_uses_the_default_models() -> None:
+    deps = match_graph.build_match_deps(settings(), cast(Any, None), FakeEmbedder())
+    assert [(p.name, p.model) for p in deps.order("read")] == [
+        ("anthropic", "claude-haiku-5-5"),
+        ("google", "gemini-3.5-flash-lite"),
+    ]
+    assert [(p.name, p.model) for p in deps.order("check")] == [
+        ("google", "gemini-3.5-flash-lite"),
+        ("anthropic", "claude-haiku-5-5"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("choice", "expected"),
+    [
+        (HAIKU, {"thinking": {"type": "disabled"}, "output_config": None}),
+        (
+            mm.ModelChoice("anthropic", "claude-haiku-5-5", "low"),
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}},
+        ),
+        # Sonnet 5.5 rejects `disabled`; its lowest setting is `between_tools`.
+        (
+            mm.ModelChoice("anthropic", "claude-sonnet-5-5", "off"),
+            {"thinking": {"type": "between_tools"}, "output_config": None},
+        ),
+        (FLASH, {"thinking_level": "minimal"}),
+        (mm.ModelChoice("google", "gemini-3.5-flash-lite", "low"), {"thinking_level": "low"}),
+        (LUNA_NONE, {"reasoning_effort": "none", "store": False}),
+        (mm.ModelChoice("openai", "gpt-6-luna", "low"), {"reasoning_effort": "low"}),
+    ],
+)
+def test_each_choice_builds_its_provider_and_effort(choice: mm.ModelChoice, expected: dict) -> None:
+    chat = mm.build_chat(choice, settings(), 777)
+    kind = {"anthropic": ChatAnthropic, "google": ChatGoogleGenerativeAI, "openai": ChatOpenAI}
+    assert isinstance(chat, kind[choice.provider])
+    assert chat.model.removeprefix("models/") == choice.model  # type: ignore[attr-defined]
+    cap = {"anthropic": "max_tokens", "google": "max_output_tokens", "openai": "max_tokens"}
+    assert getattr(chat, cap[choice.provider]) == 777
+    for name, value in expected.items():
+        assert getattr(chat, name) == value, name
+
+
+def test_choices_reject_unknown_providers_and_efforts() -> None:
+    with pytest.raises(ValueError, match="effort"):
+        mm.ModelChoice("anthropic", "claude-haiku-5-5", "none")  # openai's word, not ours
+    with pytest.raises(ValueError, match="effort"):
+        mm.ModelChoice("openai", "gpt-6-luna", "off")
+    with pytest.raises(ValueError, match="provider"):
+        mm.parse_choice("mistral:x:low")
+    with pytest.raises(ValueError, match="provider:model:effort"):
+        mm.parse_choice("openai:gpt-6-luna")
+    with pytest.raises(ValueError, match="step"):
+        mm.apply_overrides(mm.default_models(), ["judge=openai:gpt-6-luna:none"])
+
+
+def test_command_line_overrides_set_one_step_and_its_fallbacks() -> None:
+    base = mm.default_models()
+    out = mm.apply_overrides(base, ["check=openai:gpt-6-luna:none"], ["check="])
+    assert out["check"].choices == (LUNA_NONE,)  # `--fallback check=`: no fallback
+    assert out["check"].max_output_tokens == 1024
+    assert {s: out[s] for s in ("read", "match", "write")} == {
+        s: base[s] for s in ("read", "match", "write")
+    }
+    out = mm.apply_overrides(
+        base,
+        ["read=anthropic:claude-haiku-5-5:low"],
+        ["read=anthropic:claude-haiku-5-5:off"],
+        ["write=2048"],
+    )
+    assert out["read"].choices == (mm.ModelChoice("anthropic", "claude-haiku-5-5", "low"), HAIKU)
+    assert out["read"].max_output_tokens == mm.THINKING_MAX_OUTPUT_TOKENS  # thinking: bigger cap
+    assert out["write"].choices == base["write"].choices
+    assert out["write"].max_output_tokens == 2048
+    # --model alone keeps the base fallbacks
+    out = mm.apply_overrides(base, ["match=openai:gpt-6-luna:low"])
+    assert out["match"].choices == (mm.ModelChoice("openai", "gpt-6-luna", "low"), FLASH)
+    assert mm.describe(out)[1] == (
+        "match: openai:gpt-6-luna:low -> google:gemini-3.5-flash-lite:minimal (max 4096)"
+    )
+
+
+class Recorded:
+    """A fake chat per choice: which step's prompt each choice received."""
+
+    def __init__(self, script: Script) -> None:
+        self.script = script
+        self.seen: dict[str, list[str]] = {}
+
+    def build(self, choice: mm.ModelChoice, _settings: Settings, cap: int) -> FakeJsonChat:
+        label = f"{choice}/{cap}"
+
+        async def reply(messages: list[BaseMessage]) -> Any:
+            self.seen.setdefault(label, []).append(kind(messages))
+            return await self.script(messages)
+
+        return FakeJsonChat(reply=reply)
+
+
+async def test_every_step_gets_the_model_and_effort_set_for_it() -> None:
+    script = Script(reqs("Python", "SQL"))
+    recorded = Recorded(script)
+    models = mm.apply_overrides(
+        mm.default_models(),
+        [
+            "read=anthropic:claude-sonnet-5-5:off",
+            "match=openai:gpt-6-luna:low",
+            "check=openai:gpt-6-luna:none",
+            "write=anthropic:claude-haiku-5-5:low",
+        ],
+        ["read=", "match=", "check=", "write="],
+    )
+    steps = mm.build_step_providers(models, settings(), recorded.build)
+    deps, claude, gemini = make_deps(script, search=one_section_each(["Python", "SQL"]))
+    deps = MatchDeps(
+        claude=deps.claude,
+        gemini=deps.gemini,
+        search=deps.search,
+        stage_timeouts=deps.stage_timeouts,
+        call_timeout=deps.call_timeout,
+        steps=steps,
+    )
+    _, final = await run(deps, JD)
+    assert recorded.seen == {
+        "anthropic:claude-sonnet-5-5:off/1024": ["read"],
+        "openai:gpt-6-luna:low/4096": ["match", "match"],
+        "openai:gpt-6-luna:none/1024": ["check"],
+        "anthropic:claude-haiku-5-5:low/4096": ["write"],
+    }
+    assert claude.calls == [] and gemini.calls == []  # the old two are not used
+    assert [f.provider for f in final["findings"]] == ["openai", "openai"]
+    assert steps["match"][0].effort == "low"
+    assert steps["match"][0].max_output_tokens == 4096
+
+
+async def test_ask_json_reserves_the_step_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    caps: list[int | None] = []
+    real = match_graph.metered
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        caps.append(kwargs.get("max_output_tokens"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(match_graph, "metered", spy)
+    step = mm.StepProvider(
+        "anthropic",
+        "claude-haiku-5-5",
+        FakeJsonChat(reply=lambda _: {"verdicts": []}),
+        effort="low",
+        max_output_tokens=4096,
+    )
+    plain = ChatProvider("anthropic", "claude-haiku-5-5", FakeJsonChat(reply=lambda _: "bad"))
+    with pytest.raises(ModelsUnavailable):
+        await ask_json(
+            "check", [plain], prompts.CheckOut, [], deadline=time.monotonic() + 5, call_timeout=5
+        )
+    await ask_json(
+        "check", [step], prompts.CheckOut, [], deadline=time.monotonic() + 5, call_timeout=5
+    )
+    assert caps == [1024, 4096]
+
+
+# --- OpenAI through the real ChatOpenAI and SDK, the HTTP layer faked --------------------
+
+
+def openai_reply(message: dict[str, Any], usage: dict[str, Any] | None = None) -> dict:
+    return {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "gpt-6-luna",
+        "choices": [
+            {"index": 0, "message": {"role": "assistant", **message}, "finish_reason": "stop"}
+        ],
+        "usage": usage
+        or {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+            "completion_tokens_details": {"reasoning_tokens": 40},
+        },
+    }
+
+
+class OpenAIStub:
+    def __init__(self, *bodies: dict[str, Any]) -> None:
+        self.bodies = list(bodies)
+        self.requests: list[dict[str, Any]] = []
+
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        self.requests.append(json.loads(request.content))
+        return httpx2.Response(200, json=self.bodies.pop(0))
+
+    def provider(self, effort: str = "none", cap: int = 1024) -> mm.StepProvider:
+        # `build_chat`'s settings plus the fake transport (ChatOpenAI makes its SDK clients
+        # when it is built, so the transport has to go in then).
+        chat = ChatOpenAI(
+            model="gpt-6-luna",
+            api_key="test-openai",
+            max_completion_tokens=cap,
+            reasoning_effort=effort,
+            store=False,
+            max_retries=0,
+            http_async_client=httpx2.AsyncClient(transport=httpx2.MockTransport(self)),
+        )
+        return mm.StepProvider("openai", "gpt-6-luna", chat, effort=effort, max_output_tokens=cap)  # type: ignore[arg-type]
+
+
+CHECK_JSON = {"verdicts": [{"n": 1, "shows": True}]}
+
+
+async def test_openai_uses_strict_structured_outputs_and_reports_reasoning_tokens() -> None:
+    stub = OpenAIStub(openai_reply({"content": json.dumps(CHECK_JSON)}))
+    recorder = UsageRecorder()
+    out, used = await ask_json(
+        "check",
+        [stub.provider("none")],
+        prompts.CheckOut,
+        prompts.check_messages([], "m" * 16),
+        deadline=time.monotonic() + 5,
+        config={"callbacks": [recorder]},
+    )
+    assert out == prompts.CheckOut.model_validate(CHECK_JSON)
+    assert used.name == "openai"
+    (body,) = stub.requests
+    assert body["model"] == "gpt-6-luna"
+    assert body["reasoning_effort"] == "none"
+    assert body["store"] is False
+    assert body["max_completion_tokens"] == 1024
+    assert "temperature" not in body
+    response_format = body["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["strict"] is True
+    schema = response_format["json_schema"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["verdicts"]
+    # Reasoning tokens are inside the output tokens (billed as output).
+    assert recorder.usage is not None
+    assert recorder.usage["output_tokens"] == 50
+    assert recorder.usage["output_token_details"]["reasoning"] == 40
+    assert cost_usd("gpt-6-luna", recorder.usage) == (
+        Decimal(100) * Decimal("0.10") + Decimal(50) * Decimal("0.50")
+    ) / Decimal(1_000_000)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        {"content": None, "refusal": "I can't help with that."},
+        {"content": '{"verdicts": "not a list"}'},
+        {"content": '{"verdicts": [{"n": 1'},
+    ],
+    ids=["refusal", "wrong-shape", "cut-off"],
+)
+async def test_openai_refusal_or_bad_format_falls_to_the_next_provider(
+    message: dict[str, Any],
+) -> None:
+    stub = OpenAIStub(openai_reply(message))
+    backup = FakeJsonChat(reply=lambda _: CHECK_JSON)
+    out, used = await ask_json(
+        "check",
+        [stub.provider("none"), ChatProvider("anthropic", "claude-haiku-5-5", backup)],
+        prompts.CheckOut,
+        prompts.check_messages([], "m" * 16),
+        deadline=time.monotonic() + 5,
+    )
+    assert used.name == "anthropic"
+    assert len(stub.requests) == 1 and len(backup.calls) == 1
+    assert out.verdicts[0].shows is True
+
+
+async def test_anthropic_thinking_request_and_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Haiku 5.5 at low effort: adaptive thinking and `output_config.effort` go out next to
+    the JSON schema format, and the reply's usage (thinking inside the output) comes back."""
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            json={
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-haiku-5-5",
+                "content": [
+                    {"type": "thinking", "thinking": "", "signature": "sig"},
+                    {"type": "text", "text": json.dumps(CHECK_JSON)},
+                ],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 200, "output_tokens": 300},
+            },
+        )
+
+    import langchain_anthropic.chat_models as anthropic_models
+
+    monkeypatch.setattr(
+        anthropic_models,
+        "_get_default_async_httpx_client",
+        lambda **_: httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    )
+    choice = mm.ModelChoice("anthropic", "claude-haiku-5-5", "low")
+    chat = mm.build_chat(choice, settings(), 4096)
+    recorder = UsageRecorder()
+    out, _ = await ask_json(
+        "check",
+        [mm.StepProvider("anthropic", choice.model, chat, effort="low", max_output_tokens=4096)],
+        prompts.CheckOut,
+        prompts.check_messages([], "m" * 16),
+        deadline=time.monotonic() + 5,
+        config={"callbacks": [recorder]},
+    )
+    assert out == prompts.CheckOut.model_validate(CHECK_JSON)
+    (body,) = requests
+    assert body["thinking"] == {"type": "adaptive"}
+    assert body["max_tokens"] == 4096
+    assert body["output_config"]["effort"] == "low"
+    assert body["output_config"]["format"]["type"] == "json_schema"
+    assert "temperature" not in body
+    assert recorder.usage is not None
+    assert (recorder.usage["input_tokens"], recorder.usage["output_tokens"]) == (200, 300)
+
+
+# --- the step functions outside the graph ---------------------------------------------------
+
+
+class UsageChat(FakeJsonChat):
+    """`FakeJsonChat` whose replies carry usage, like the real providers."""
+
+    async def _agenerate(
+        self, messages: list[BaseMessage], stop: Any = None, run_manager: Any = None, **kw: Any
+    ) -> ChatResult:
+        result = await super()._agenerate(messages, stop, run_manager, **kw)
+        text = result.generations[0].message.text
+        message = AIMessage(
+            content=text,
+            usage_metadata={"input_tokens": 1000, "output_tokens": 100, "total_tokens": 1100},
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class NodeSeen(BaseCallbackHandler):
+    def __init__(self) -> None:
+        self.nodes: list[str | None] = []
+
+    def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> None:
+        self.nodes.append((kwargs.get("metadata") or {}).get("langgraph_node"))
+
+
+def step_deps(chat: FakeJsonChat) -> MatchDeps:
+    provider = ChatProvider("anthropic", "claude-haiku-5-5", chat)
+    return MatchDeps(
+        provider,
+        provider,
+        FakeSearch(),
+        stage_timeouts={"reading": 5.0, "matching": 5.0, "checking": 5.0, "writing": 5.0},
+        call_timeout=5.0,
+        steps={"check": (provider,)},
+    )
+
+
+async def test_check_step_outside_the_graph_returns_every_pair_verdict_and_meters() -> None:
+    py, sql, go = (
+        Requirement(id=f"r{i}", text=t, query=t) for i, t in ((1, "Py"), (2, "SQL"), (3, "Go"))
+    )
+    a, b, c = section("roleradar", "a"), section("roleradar", "b"), section("roleradar", "c")
+    findings = [
+        Finding(
+            requirement_id="r1",
+            status="found",
+            sections=[SectionRef(url=a.url, title="A"), SectionRef(url=b.url, title="B")],
+            provider="anthropic",
+            ms=1,
+        ),
+        Finding(
+            requirement_id="r2",
+            status="found",
+            sections=[SectionRef(url=c.url, title="C")],
+            provider="anthropic",
+            ms=1,
+        ),
+        Finding(requirement_id="r3", status="not_found", sections=[], provider=None, ms=1),
+    ]
+    # pair 1 = (r1, a) passes, pair 2 = (r1, b) fails, pair 3 = (r2, c) gets no verdict
+    chat = UsageChat(
+        reply=lambda _: {"verdicts": [{"n": 1, "shows": True}, {"n": 2, "shows": False}]}
+    )
+    recorder, seen = UsageRecorder(), NodeSeen()
+    streamed: list[dict[str, Any]] = []
+    result = await check_step(
+        [py, sql, go],
+        findings,
+        {"r1": [a, b], "r2": [c], "r3": []},
+        step_deps(chat),
+        writer=streamed.append,
+        config={"callbacks": [recorder, seen]},
+    )
+    assert [(v.requirement_id, v.url, v.shows) for v in result.verdicts] == [
+        ("r1", a.url, True),
+        ("r1", b.url, False),
+        ("r2", c.url, "missing"),
+    ]
+    by_id = {f.requirement_id: f for f in result.findings}
+    assert [s.url for s in by_id["r1"].sections] == [a.url]
+    assert by_id["r2"].status == "unchecked"
+    assert by_id["r3"].status == "not_found"
+    assert streamed[0] == {"stage": "checking", "count": 2}
+    # the caller's callbacks got the usage, so a meter can charge it
+    assert recorder.usage is not None
+    assert cost_usd("claude-haiku-5-5", recorder.usage) == Decimal("0.00015")
+    assert seen.nodes == ["check"]
+
+
+async def test_check_step_marks_every_pair_missing_when_the_check_fails() -> None:
+    a = section("roleradar", "a")
+    req = Requirement(id="r1", text="Py", query="Py")
+    found = Finding(
+        requirement_id="r1",
+        status="found",
+        sections=[SectionRef(url=a.url, title="A")],
+        provider="anthropic",
+        ms=1,
+    )
+    result = await check_step(
+        [req], [found], {"r1": [a]}, step_deps(FakeJsonChat(reply=lambda _: RuntimeError("x")))
+    )
+    assert [v.shows for v in result.verdicts] == ["missing"]
+    assert result.findings[0].status == "unchecked"
+    nothing = await check_step(
+        [req],
+        [found.model_copy(update={"status": "not_found", "sections": []})],
+        {"r1": [a]},
+        step_deps(FakeJsonChat(reply=lambda _: AssertionError("no call expected"))),
+    )
+    assert nothing.verdicts == []
+
+
+async def test_read_step_can_read_twelve_for_replays_the_graph_keeps_eight() -> None:
+    names = [f"Skill {i}" for i in range(1, 15)]
+    script = Script(reqs(*names))
+    deps, _, _ = make_deps(script)
+    out = await read_step(JD, deps, max_requirements=12)
+    assert [r.id for r in out["requirements"]] == [f"r{i}" for i in range(1, 13)]
+    assert out["top8"] is True  # the ad had more than the limit
+    default = await read_step(JD, deps)
+    assert [r.id for r in default["requirements"]] == [f"r{i}" for i in range(1, 9)]
+
+
+async def test_match_one_and_write_step_run_outside_the_graph() -> None:
+    script = Script(reqs("Python"))
+    deps, _, _ = make_deps(script)
+    sec = section("roleradar", "py")
+    req = Requirement(id="r1", text="Python", query="q Python")
+    finding = await match_one(req, [sec], deps)
+    assert finding.status == "found"
+    assert [s.url for s in finding.sections] == [sec.url]
+    guide = await write_step([req], [finding], {"r1": [sec]}, "en", False, deps)
+    assert [i.text for i in guide.items] == ["guide text 1"]
