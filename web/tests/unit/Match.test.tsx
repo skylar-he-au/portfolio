@@ -213,7 +213,8 @@ describe('Match streaming and guide', () => {
     expect(screen.getByText(result.items[0].text)).toBeInTheDocument();
     expect(screen.queryByText(result.items[0].requirement)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: section.title })).toHaveAttribute('href', section.url);
-    expect(screen.getByText('Not covered on the pages: Kubernetes, Java')).toBeInTheDocument();
+    const notCovered = screen.getByRole('list', { name: 'Not covered on the pages' });
+    expect([...notCovered.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Kubernetes', 'Java']);
     expect(screen.getByText("1 requirement couldn't be checked")).toBeInTheDocument();
     expect(screen.getByText('Top 8 requirements of the job ad shown.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'This guide is wrong' })).not.toBeInTheDocument();
@@ -239,6 +240,43 @@ describe('Match streaming and guide', () => {
     expect(screen.queryByText(result.items[0].text)).not.toBeInTheDocument();
     expect(screen.queryByText(/Not covered on the pages/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Top 8 requirements/)).not.toBeInTheDocument();
+  });
+
+  it('lists each not-covered requirement on its own line, keeping commas inside one', async () => {
+    const withComma = 'Attention to detail with messy data, onboarding data from spreadsheets, PDFs and exports';
+    mockEndpoints(async () => eventResponse([
+      ['result', { ...result, not_covered: [withComma, 'Build validation checks'] }], ['done', {}],
+    ]));
+    render(<Match />);
+    await send();
+    const list = await screen.findByRole('list', { name: 'Not covered on the pages' });
+    expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual([withComma, 'Build validation checks']);
+    expect(screen.getByText('Not covered on the pages:')).toBeInTheDocument();
+  });
+
+  it('names the project page of each section in the guide and the panel', async () => {
+    const pageTitles = { '/projects/roleradar': 'RoleRadar', '/projects/oncallops': 'OnCallOps Operations Dashboard' };
+    const twins = [
+      { url: '/projects/roleradar#in-30-seconds', title: 'In 30 seconds' },
+      { url: '/projects/oncallops#in-30-seconds', title: 'In 30 seconds' },
+      { url: '/about#me', title: 'Me' },
+    ];
+    mockEndpoints(async () => eventResponse([
+      ['notes', { requirements: [{ id: 'r1', text: 'SQL' }], findings: [{ requirement_id: 'r1', status: 'found', sections: twins }] }],
+      ['result', { ...result, items: [{ ...result.items[0], sections: twins }] }], ['done', {}],
+    ]));
+    render(<Match pageTitles={pageTitles} />);
+    await send();
+    await screen.findByText('For this role, look at:');
+    const panel = screen.getByText('How it matched').closest('details')!;
+    const guide = screen.getByText('For this role, look at:').parentElement!;
+    for (const scope of [guide, panel]) {
+      expect([...scope.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+        ['RoleRadar · In 30 seconds', '/projects/roleradar#in-30-seconds'],
+        ['OnCallOps Operations Dashboard · In 30 seconds', '/projects/oncallops#in-30-seconds'],
+        ['Me', '/about#me'],
+      ]);
+    }
   });
 
   it('shows only present panel metadata, including unchecked status', async () => {

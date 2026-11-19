@@ -3,24 +3,25 @@ import type { SubmitEvent } from 'react';
 import { safeSiteUrl } from '../lib/answer';
 import {
   MATCH_DROPPED_MESSAGE, MATCH_MAX_CHARS, MATCH_MESSAGES, matchErrorMessage, matchHttpMessage,
-  matchInputLength, runMatch, sendMatchFeedback,
+  matchInputLength, runMatch, sectionLabel, sendMatchFeedback,
 } from '../lib/match';
-import type { MatchEvent, MatchNotes, MatchResult, MatchSection } from '../lib/match';
+import type { MatchEvent, MatchNotes, MatchResult, MatchSection, PageTitles } from '../lib/match';
 import { acquireWidget, HttpError, prepareWidget, VerificationError } from '../lib/session';
 
-function Sections({ sections }: { sections: MatchSection[] }) {
+function Sections({ sections, pageTitles }: { sections: MatchSection[]; pageTitles: PageTitles }) {
   if (sections.length === 0) return null;
   return (
     <ul>
       {sections.map((section, index) => {
         const href = safeSiteUrl(section.url);
-        return <li key={index}>{href ? <a href={href}>{section.title}</a> : section.title}</li>;
+        const label = sectionLabel(section, pageTitles);
+        return <li key={index}>{href ? <a href={href}>{label}</a> : label}</li>;
       })}
     </ul>
   );
 }
 
-function HowItMatched({ notes }: { notes: MatchNotes }) {
+function HowItMatched({ notes, pageTitles }: { notes: MatchNotes; pageTitles: PageTitles }) {
   return (
     <details className="ask-panel">
       <summary>How it matched</summary>
@@ -35,7 +36,7 @@ function HowItMatched({ notes }: { notes: MatchNotes }) {
               return (
                 <li key={index}>
                   {requirement.id} · {requirement.text} · {status}
-                  {finding && <Sections sections={finding.sections} />}
+                  {finding && <Sections sections={finding.sections} pageTitles={pageTitles} />}
                   {finding?.provider !== undefined && <p>{finding.provider ?? 'no model'}</p>}
                   {finding?.ms !== undefined && <p>{finding.ms} ms</p>}
                 </li>
@@ -60,7 +61,8 @@ function stageMessage(data: Extract<MatchEvent, { event: 'stage' }>['data']): st
   }
 }
 
-export default function Match() {
+/** `pageTitles`: project page path -> title, from the pages' front matter (see `pages/index.astro`). */
+export default function Match({ pageTitles = {} }: { pageTitles?: PageTitles }) {
   const inputId = useId();
   const [input, setInput] = useState('');
   const [inProgress, setInProgress] = useState(false);
@@ -168,11 +170,16 @@ export default function Match() {
             <p>For this role, look at:</p>
             <ul>
               {items.map((item, index) => (
-                <li key={index}>{item.text}<Sections sections={item.sections} /></li>
+                <li key={index}>{item.text}<Sections sections={item.sections} pageTitles={pageTitles} /></li>
               ))}
             </ul>
           </>}
-          {result.not_covered.length > 0 && <p>Not covered on the pages: {result.not_covered.join(', ')}</p>}
+          {result.not_covered.length > 0 && <>
+            <p>Not covered on the pages:</p>
+            <ul aria-label="Not covered on the pages">
+              {result.not_covered.map((requirement, index) => <li key={index}>{requirement}</li>)}
+            </ul>
+          </>}
           {result.unchecked > 0 && <p>{result.unchecked} {result.unchecked === 1 ? 'requirement' : 'requirements'} couldn't be checked</p>}
           {result.top8 && <p>Top 8 requirements of the job ad shown.</p>}
         </div>
@@ -183,7 +190,7 @@ export default function Match() {
           : <button type="button" className="ask-control" style={{ justifySelf: 'start' }} aria-label="This guide is wrong" disabled={feedback === 'sending'} onClick={() => { void recordFeedback(); }}>👎</button>
       )}
       {error && <p className="ask-error" role="alert">{error}</p>}
-      {notes && <HowItMatched notes={notes} />}
+      {notes && <HowItMatched notes={notes} pageTitles={pageTitles} />}
     </div>
   );
 }

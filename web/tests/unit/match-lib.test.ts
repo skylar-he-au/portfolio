@@ -124,3 +124,15 @@ describe('match feedback', () => {
     expect(session.getToken()).toBe('session-token');
   });
 });
+
+describe('sectionLabel', () => {
+  const titles = { '/projects/roleradar': 'RoleRadar', constructor: 'not a page' };
+  it('prefixes the title of the page the section is on', () => {
+    expect(match.sectionLabel({ url: '/projects/roleradar#in-30-seconds', title: 'In 30 seconds' }, titles)).toBe('RoleRadar · In 30 seconds');
+  });
+  it('shows the heading alone for pages without a known title', () => {
+    expect(match.sectionLabel({ url: '/projects/other#a', title: 'A' }, titles)).toBe('A');
+    expect(match.sectionLabel({ url: '/projects/roleradar', title: 'B' }, {})).toBe('B');
+    expect(match.sectionLabel({ url: 'toString#x', title: 'C' }, {})).toBe('C');
+  });
+});

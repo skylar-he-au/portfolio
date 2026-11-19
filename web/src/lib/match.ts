@@ -17,6 +17,16 @@ export const MATCH_MESSAGES = {
 } as const;
 
 export interface MatchSection { url: string; title: string }
+/** Site path of a project page (e.g. `/projects/roleradar`) -> its front matter `title`. */
+export type PageTitles = Readonly<Record<string, string>>;
+
+/** A section's heading with the title of the page it is on, e.g. "RoleRadar · In 30 seconds":
+ * two project pages can have a section with the same heading. Unknown pages show the heading only. */
+export function sectionLabel(section: MatchSection, pageTitles: PageTitles): string {
+  const page = section.url.split('#')[0];
+  const title = Object.prototype.hasOwnProperty.call(pageTitles, page) ? pageTitles[page] : undefined;
+  return title ? `${title} · ${section.title}` : section.title;
+}
 export interface MatchRequirement { id: string; text: string }
 export interface MatchFinding {
   requirement_id: string;
