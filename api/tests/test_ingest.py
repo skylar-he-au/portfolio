@@ -99,6 +99,21 @@ tail
     assert sections[1].text == "~~~md\n## Inside tildes\n```\n~~~\ntail"
 
 
+def test_email_placeholder_becomes_a_description_and_no_address_is_indexed() -> None:
+    sections = split_sections("## Contact\n\n- Email: {{email}}\nWrite to {{email}}.\n", "/about")
+    assert sections[0].text == (
+        "- Email: the email link on the About page\nWrite to the email link on the About page."
+    )
+    assert "{{" not in sections[0].text and "@" not in sections[0].text
+
+
+@pytest.mark.parametrize("page", ["about.md", "privacy.md"])
+def test_real_pages_index_no_email_address(page: str) -> None:
+    parsed = read_page(CONTENT / page, CONTENT)
+    assert parsed is not None
+    assert all("@" not in s.text and "{{" not in s.text for s in parsed.sections)
+
+
 @pytest.mark.parametrize("filename", ["home.md", "examples.md", "LICENSE"])
 def test_ineligible_real_files_are_skipped(filename: str) -> None:
     assert read_page(CONTENT / filename, CONTENT) is None

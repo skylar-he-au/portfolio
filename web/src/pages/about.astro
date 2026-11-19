@@ -1,7 +1,9 @@
 ---
 import { getEntry } from 'astro:content';
+import EmailLinks from '../components/EmailLinks.astro';
 import Base from '../layouts/Base.astro';
 import { addSectionAnchors } from '../lib/anchors';
+import { renderEmailPlaceholder } from '../lib/email';
 
 const entry = await getEntry('pages', 'about');
 if (!entry?.rendered) throw new Error('Missing rendered content: about');
@@ -9,5 +11,9 @@ if (!entry?.rendered) throw new Error('Missing rendered content: about');
 
 <Base title={entry.data.title} description={entry.data.summary}>
   <h1>{entry.data.title}</h1>
-  <div class="markdown" set:html={addSectionAnchors(entry.rendered.html)} />
+  <div class="markdown" set:html={renderEmailPlaceholder(
+    addSectionAnchors(entry.rendered.html),
+    'turn on JavaScript to see the email link',
+  )} />
+  <EmailLinks />
 </Base>

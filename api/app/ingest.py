@@ -20,6 +20,10 @@ from app.rag.types import Embedder, Section
 logger = logging.getLogger("app.ingest")
 BATCH_SIZE = 64
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# Pages write {{email}}; the web page turns it into a link built by a script. The
+# address itself is never stored, so the indexed text names the link instead.
+EMAIL_PLACEHOLDER = "{{email}}"
+EMAIL_TEXT = "the email link on the About page"
 
 
 class IngestError(ValueError):
@@ -78,7 +82,8 @@ def split_sections(body: str, page: str) -> list[Section]:
             start += 1
         while end > start and not lines[end - 1].strip():
             end -= 1
-        sections.append(Section(page, section_id, heading, "\n".join(lines[start:end])))
+        text = "\n".join(lines[start:end]).replace(EMAIL_PLACEHOLDER, EMAIL_TEXT)
+        sections.append(Section(page, section_id, heading, text))
 
     for line in body.splitlines():
         fence = FENCE_RE.match(line)
