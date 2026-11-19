@@ -26,6 +26,8 @@ const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
 // Notes that explain one published CoT run's numbers, keyed by run_id.
 // Notes that explain one published job-match run's numbers, keyed by run_id.
 const matchNotes: Record<string, string> = {
+  '20261119T030433-match-v4-default':
+    'No line passed in full. Guide sentences are statements again (none start with an instruction), and Faithfulness rose to 0.89 on the tuning ads and 0.87 on the held-out ads, still under the 0.9 average (3 tuning rows and 1 held-out row below 0.7). Section recall fell to 0.77 on the tuning ads, under the 0.8 line; not-covered accuracy passed on the tuning ads only. One Chinese guide quoted an English line from a section and failed the language check.',
   '20261119T005423-match-v3-default':
     'Section recall and not-covered accuracy passed on the tuning ads; Faithfulness did not (13 tuning rows below 0.7), and the held-out ads missed all three lines. Most guide sentences in this version are instructions (“Check the …”) rather than statements, and those scored lower; the next version goes back to statements.',
 };
