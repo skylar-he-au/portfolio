@@ -166,10 +166,10 @@ it('explains prompt v9 and the cut-off medium-thinking verdicts on the evals pag
   )).toBe(cotRun);
 });
 
-it('pins all 32 sections in document order', () => {
+it('pins all 31 sections in document order', () => {
   expect(Object.keys(fixtures)).toEqual(Object.keys(pages));
-  expect(Object.values(fixtures).map((sections) => sections.length)).toEqual([9, 9, 5, 9, 0]);
-  expect(Object.values(fixtures).flat()).toHaveLength(32);
+  expect(Object.values(fixtures).map((sections) => sections.length)).toEqual([9, 9, 5, 8, 0]);
+  expect(Object.values(fixtures).flat()).toHaveLength(31);
 });
 
 describe.each(Object.entries(pages))('%s', (path, source) => {

@@ -1,13 +1,13 @@
 ---
 title: Privacy
 summary: What happens to the questions you type and the job ads you paste, who else sees them, and how long each party keeps them.
-updated: 2026-11-19
+updated: 2026-11-20
 rag: true
 ---
 
 ## Who sees your question
 
-This Privacy page of Skylar's portfolio explains where a question typed into the site goes. Your question is processed by up to five services: Anthropic (Claude rewrites your question and writes the answer), Google (Gemini checks the answer, takes over the other's job if one of the two fails, and Google Cloud Run also hosts this site's backend), OpenAI (embeddings, voice transcription and read-aloud), Cloudflare (bot check and request routing) and Neon (the database that stores the data described below).
+This Privacy page of Skylar's portfolio explains where a question typed into the site goes. Your question is processed by up to five services: Anthropic (Claude rewrites your question and writes the answer), Google (Gemini checks the answer, takes over the other's job if one of the two fails, and Google Cloud Run also hosts this site's backend), OpenAI (embeddings), Cloudflare (bot check and request routing) and Neon (the database that stores the data described below).
 
 A job ad you paste into the job match goes to Anthropic and Google: Claude reads the ad and compares each requirement with the project pages, and Gemini checks the links in the guide (each takes over the other's job if one of the two fails). Only a short English search phrase for each requirement is sent to OpenAI, for embeddings. If you paste a Greenhouse or Lever job link instead of the text, the site fetches that one job ad from Greenhouse's or Lever's public job-board API; the request comes from the site's server, not from your browser.
 
@@ -17,7 +17,7 @@ This site (Skylar's portfolio) sends your text to outside services, and each one
 
 - **Anthropic** deletes API inputs and outputs within 30 days. Content its automated systems flag as breaking its usage policy may be kept for up to 2 years. It does not use API data to train its models by default.
 - **Google** (paid Gemini tier) keeps prompts and responses for a limited period only to detect abuse; Google does not say how long. On the paid tier your text is not used to improve Google's products.
-- **OpenAI** keeps embedding and read-aloud requests for up to 30 days and does not keep voice transcription requests. It does not use API data for training.
+- **OpenAI** keeps embedding requests for up to 30 days. It does not use API data for training.
 - **Cloudflare** checks for bots with Turnstile, which runs in invisible mode and only when you click into the question box to start asking, not when a page loads. It looks at signals such as your IP address and browser; Cloudflare does not say how long it keeps them. Cloudflare's own description is in its [Turnstile Privacy Addendum](https://www.cloudflare.com/turnstile-privacy-policy/). I turn off Cloudflare's Worker logs.
 - **Neon** hosts the database in Sydney. After this site deletes a record, Neon can still restore it for up to 6 hours, and Neon keeps encrypted backups for 30 days.
 
@@ -27,7 +27,7 @@ Privacy on this site (Skylar's portfolio): this is everything the site stores ab
 
 - **Question record**: your question is stored for 30 days with these fields only: time, question text, answer language, prompt version, which model providers were used, cost, a hash of your IP address for that day, and any thumbs-down you gave. The record does not contain the answer, any pasted job description, your session token or your IP address. It is deleted at the first cleanup after 30 days, so at most about 31 days after you asked.
 - **Job-match record**: each job match is stored for 30 days with these fields only: time, source (a Greenhouse link, a Lever link or pasted text), the job ad's language, prompt version, which model providers were used, cost, a hash of your IP address for that day, and any thumbs-down you gave. Job ads you paste or link to aren't stored by this site; it keeps only the fields above, not the job ad, the requirements read from it or the guide. The record is deleted at the first cleanup after 30 days, so at most about 31 days after the match.
-- **Conversation state**: answers are kept in the conversation for 24 hours, and so is the read-aloud audio cache. They are deleted at the first cleanup after 24 hours, so at most about 48 hours after you asked.
+- **Conversation state**: answers are kept in the conversation for 24 hours. They are deleted at the first cleanup after 24 hours, so at most about 48 hours after you asked.
 - **Session token**: when the bot check passes, the site gives your browser a session token that works for 24 hours. It is kept only in this browser tab (session storage), so closing the tab forgets it, and it is not saved in the site's database. The site counts requests using a hash of the token's random ID, not the token itself.
 - **Daily request counters**: how many requests each session (by token hash) and each daily IP hash made that day (questions, job matches and job links fetched), used to enforce daily limits. Only today's and yesterday's counts are kept; older ones are deleted at the next cleanup.
 - **Spending records**: how much money was spent on each AI provider each day, used for monthly totals. They contain no personal data and are kept.
@@ -40,10 +40,6 @@ This site does not save your IP address in its database or logs. The site's serv
 ## Logs and tracing
 
 This site does not keep request logs: request logging on the hosting service is switched off, and the server's access log is off. Tracing tools such as LangSmith are not used. The site's own logs only record usage counts and hashes.
-
-## Voice
-
-If you use the microphone on Skylar's portfolio site, the recording is not stored by this site. The transcribed text is then handled like a typed question.
 
 ## Memory between visits
 
