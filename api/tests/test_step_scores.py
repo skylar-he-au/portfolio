@@ -219,6 +219,29 @@ def test_old_prompt_column_scores_every_step_on_pass_one(tmp_path: Path) -> None
     assert tune["faithfulness"]["value"] == 0.5 and held["faithfulness"]["value"] == 1.0
 
 
+def test_a_faith_regrade_file_replaces_the_old_faith_grades(tmp_path: Path) -> None:
+    """A7 option A: the old-prompt column takes the stored run's `grades-faith-v2.jsonl`
+    (GRADING.md 5.7) in place of its faith lines; align and pair stay from `grades.jsonl`."""
+    runs, grading = setup(tmp_path)
+    regrade = {"real-01/1/faith": _stmts(4, 4)}  # real-02's v2 line is missing: not graded
+    (grading / V4_RUN / "grades-faith-v2.jsonl").write_text(
+        "".join(
+            json.dumps({"task_id": f"{V4_RUN}/{k}", "grader": "t", **v}) + "\n"
+            for k, v in regrade.items()
+        ),
+        encoding="utf-8",
+    )
+    compare = build_compare(
+        JOBS, load_replays(runs, V4_RUN), grading_dir=grading,
+        source_rows=read_rows(runs / f"{V4_RUN}.jsonl"),
+    )  # fmt: skip
+    old = compare["old_prompt"]["scores"]
+    assert old["tune"]["faithfulness"]["value"] == 1.0  # v1 said 0.5
+    assert old["held_out"]["faithfulness"]["status"] == "awaiting_grades"  # v1's line is gone
+    assert old["tune"]["read_share"]["value"] == 1.0  # align untouched
+    assert old["tune"]["pairs_right"]["num"] == 1  # pair untouched
+
+
 def test_each_replay_scores_only_its_own_step(tmp_path: Path) -> None:
     compare = compare_of(tmp_path)
     read = option(compare, "read", "R-read")

@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -357,10 +358,34 @@ def read_grades(tasks: Sequence[Task], lines: Iterable[str]) -> Grades:
     return out
 
 
+REGRADE_FILE = re.compile(r"grades-(faith|align|pair)-v(\d+)\.jsonl")
+
+
+def _line_task(line: str) -> str | None:
+    try:
+        grade = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    tid = grade.get("task_id") if isinstance(grade, dict) else None
+    return tid if isinstance(tid, str) else None
+
+
 def load_grades(directory: Path) -> Grades:
+    """`grades.jsonl`, then each re-grade of one kind (`grades-<kind>-v<N>.jsonl`, GRADING.md
+    section 5.7, lowest N first) in place of that kind's lines: a re-grade with a changed
+    guide replaces the old grades of its kind, never mixes with them."""
     tasks = read_jsonl(directory / "tasks.jsonl")
     path = directory / "grades.jsonl"
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    regrades = sorted(
+        (int(m[2]), m[1], p)
+        for p in directory.glob("grades-*-v*.jsonl")
+        if (m := REGRADE_FILE.fullmatch(p.name))
+    )
+    kind_of = {t["task_id"]: t["kind"] for t in tasks}
+    for _, kind, regrade in regrades:
+        kept = [line for line in lines if kind_of.get(_line_task(line) or "") != kind]
+        lines = kept + regrade.read_text(encoding="utf-8").splitlines()
     return read_grades(tasks, lines)
 
 
