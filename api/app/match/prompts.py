@@ -222,7 +222,8 @@ requirement, e.g. "The Dashboard pages show per-role access checks in the FastAP
 backend." Write it as a plain statement about the project, not an instruction to the \
 reader: never start with or use "Check", "See", "Look at", "Look for", "Note" or any \
 other command. Build it from the first section (the best match); add another section \
-only in a few words. Use only facts the sections state, with their \
+only in a few words. Use only the sections listed under this finding, never a section \
+listed under another finding. Use only facts the sections state, with their \
 own names and numbers; do not add, guess or generalise, and do not say what is missing. \
 If the requirement lists alternatives, name the ones the sections show. No links or URLs \
 (they are added for you), no scores, no verdict on whether Skylar fits the job, no \
