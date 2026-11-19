@@ -991,8 +991,11 @@ def test_default_chat_objects_equal_build_providers() -> None:
             )
             for name in (*fields, "max_retries"):
                 assert getattr(built.chat, name) == getattr(old.chat, name), (step, name)
-            for name in ("default_request_timeout", "timeout"):
-                assert getattr(built.chat, name, None) == getattr(old.chat, name, None), name
+            # The read timeout is the match's own since r2k (`mm.client_limits`: every attempt
+            # fits in the shortest stage, see tests/test_match_timeouts.py); the Q&A keeps 30 s.
+            choice = mm.ModelChoice(built.name, built.model, built.effort)
+            name = "default_request_timeout" if built.name == "anthropic" else "timeout"
+            assert getattr(built.chat, name) == mm.client_limits(choice)[0], (step, name)
 
 
 def test_build_match_deps_uses_the_default_models() -> None:

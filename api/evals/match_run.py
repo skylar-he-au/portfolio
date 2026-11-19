@@ -26,6 +26,7 @@ answering is expected there, not counted as a fallback.
 import argparse
 import asyncio
 import dataclasses
+import faulthandler
 import json
 import math
 import secrets
@@ -59,7 +60,15 @@ from evals.pricing import POOLS, cost_usd, price_for
 from evals.summary import build_match_summary, write_summary
 from evals.types import CapReached, MeterLike, ScoreInput, UnknownModel
 
-SAMPLE_TIMEOUT_S = 150.0  # the API's whole-match deadline is 120 s
+# One item's graph runs together (the first try and the retry share it): the API's
+# whole-match deadline is 120 s, plus a little for the eval's callbacks. An item past it is
+# an error row (`TimeoutError`) and the run goes on with the next item.
+SAMPLE_TIMEOUT_S = 130.0
+# A stuck event loop (a blocking call: an asyncio timeout can only fire between awaits)
+# would stall the whole run with nothing printed. Past this, `faulthandler` writes every
+# thread's stack to stderr and ends the process (exit 1); the rows and the ledger lines
+# written so far stay.
+WATCHDOG_S = SAMPLE_TIMEOUT_S + 60.0
 JUDGE_MODEL = "claude-sonnet-5-5"
 ALIGN_MAX_TOKENS = 2048
 ALIGN_INPUT_TOKENS = 2500  # system + 12 read + 12 gold requirements (~40 tokens each)
@@ -672,6 +681,9 @@ async def _one(
     """One item once. CapReached / UnknownModel propagate (after the spend is recorded)."""
     recorded = False
     started = time.monotonic()
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + SAMPLE_TIMEOUT_S  # both tries of the graph together
+    faulthandler.dump_traceback_later(WATCHDOG_S, exit=True, file=sys.__stderr__)
     try:
         meter.check_room(worst)
         run: GraphRun | None = None
@@ -682,13 +694,16 @@ async def _one(
                 meter.check_room(worst)
             log = CallLog()
             try:
-                run = await run_graph(job, graph, [*meter.callbacks(), log])
+                async with asyncio.timeout_at(deadline):
+                    run = await run_graph(job, graph, [*meter.callbacks(), log])
                 break
             except (CapReached, UnknownModel):
                 raise
-            except Exception as error:  # noqa: BLE001 - retry the whole item once
-                if attempt:
+            except Exception as error:  # noqa: BLE001 - retry the whole item once, in time
+                if attempt or loop.time() >= deadline:
                     error_name = type(error).__name__
+                    break
+        faulthandler.cancel_dump_traceback_later()  # the judges below have their own pace
         sample = run.sample if run is not None else MatchSample()
         checks = (
             failed_match_checks()
@@ -762,6 +777,7 @@ async def _one(
             "cost_usd": cost,
         }
     finally:
+        faulthandler.cancel_dump_traceback_later()
         if not recorded:
             with suppress(CapReached, UnknownModel):
                 meter.record(job.id, repeat)

@@ -265,24 +265,29 @@ async def ask_json[T: BaseModel](
             errors.append(TimeoutError(f"{node}: stage deadline passed"))
             break
         try:
-            async with metered(
-                provider.name,
-                provider.model,
-                input_tokens=estimate_input_tokens(messages),
-                max_output_tokens=getattr(provider, "max_output_tokens", MAX_OUTPUT_TOKENS),
-            ) as meter:
-                async with asyncio.timeout(min(remaining, call_timeout)):
-                    if provider.name == "openai":
-                        chat = provider.chat.with_structured_output(
-                            schema, method="json_schema", strict=True
-                        )
-                    else:
-                        chat = provider.chat.with_structured_output(schema, method="json_schema")
-                    call_config = _call_config(node, meter.callbacks, config)
-                    if call_config is not None:
-                        raw = await chat.ainvoke(messages, config=call_config)
-                    else:
-                        raw = await chat.ainvoke(messages)
+            # The time limit is outside the meter: topping up the spend reservation waits on
+            # the database (a provider row lock another match may hold) and counts as part
+            # of the call, so a slow database cannot hold a stage past its deadline.
+            async with (
+                asyncio.timeout(min(remaining, call_timeout)),
+                metered(
+                    provider.name,
+                    provider.model,
+                    input_tokens=estimate_input_tokens(messages),
+                    max_output_tokens=getattr(provider, "max_output_tokens", MAX_OUTPUT_TOKENS),
+                ) as meter,
+            ):
+                if provider.name == "openai":
+                    chat = provider.chat.with_structured_output(
+                        schema, method="json_schema", strict=True
+                    )
+                else:
+                    chat = provider.chat.with_structured_output(schema, method="json_schema")
+                call_config = _call_config(node, meter.callbacks, config)
+                if call_config is not None:
+                    raw = await chat.ainvoke(messages, config=call_config)
+                else:
+                    raw = await chat.ainvoke(messages)
             if raw is None:
                 raise ValueError("empty reply")
             value = raw if isinstance(raw, schema) else schema.model_validate(raw)

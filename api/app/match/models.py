@@ -38,7 +38,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from app.config import Settings
-from app.qa.models import CALL_TIMEOUT_S, MAX_OUTPUT_TOKENS, ChatProvider, gemini_thinking
+from app.qa.models import MAX_OUTPUT_TOKENS, ChatProvider, gemini_thinking
 
 Step = Literal["read", "match", "check", "write"]
 STEPS: tuple[Step, ...] = get_args(Step)
@@ -59,6 +59,19 @@ ANTHROPIC_NO_DISABLE = frozenset({"claude-sonnet-5-5"})
 # With thinking the cap also holds the thinking tokens (all three providers count them in
 # the cap), so a thinking choice raises its step's default cap.
 THINKING_MAX_OUTPUT_TOKENS = 4096
+
+# Each chat client's own read timeout and retries. Every attempt of one provider together
+# fits in `CLIENT_BUDGET_S`, below the shortest stage (25 s, `graph.DEFAULT_STAGE_TIMEOUTS`),
+# so a provider that never answers cannot use up a stage on its own; the graph's asyncio
+# deadline per stage (`graph.ask_json`) stays the hard limit over everything (a 429's
+# `retry-after` wait, the spend reservation). Without thinking a reply takes 2-6 s (v4 and
+# round-2 runs, 2026-11-19: Haiku at most 4.8 s, Gemini at most 14 s), so Anthropic and
+# OpenAI keep one quick retry (a 429 / 529 / dropped connection) at 11 s an attempt; a
+# thinking choice and Gemini get one attempt with the whole budget. Gemini's `max_retries=1`
+# already means a single attempt (langchain-google-genai passes it as
+# `HttpRetryOptions(attempts=1)`).
+CLIENT_BUDGET_S = 22.0
+RETRY_TIMEOUT_S = 11.0
 
 
 @dataclass(frozen=True)
@@ -82,6 +95,22 @@ class ModelChoice:
 
     def __str__(self) -> str:
         return f"{self.provider}:{self.model}:{self.effort}"
+
+
+def client_limits(choice: ModelChoice) -> tuple[float, int]:
+    """(read timeout in seconds, `max_retries`) for this choice's chat client."""
+    if choice.provider == "google":
+        return CLIENT_BUDGET_S, 1  # one attempt, see above
+    if choice.thinks:
+        return CLIENT_BUDGET_S, 0
+    return RETRY_TIMEOUT_S, 1
+
+
+def client_attempts(choice: ModelChoice) -> int:
+    """How many requests the client may send for one call (Gemini: `max_retries` is the
+    number of attempts)."""
+    _, retries = client_limits(choice)
+    return retries if choice.provider == "google" else retries + 1
 
 
 @dataclass(frozen=True)
@@ -247,13 +276,14 @@ def build_chat(choice: ModelChoice, settings: Settings, max_output_tokens: int) 
     """The chat object for one choice. No `temperature`/`top_p` anywhere: Haiku and Sonnet
     5.5 reject non-default values, and reasoning models ignore or reject them."""
     key = _key(settings, choice.provider)
+    timeout, retries = client_limits(choice)
     if choice.provider == "anthropic":
         return ChatAnthropic(
             model=choice.model,
             api_key=key,
             max_tokens=max_output_tokens,
-            timeout=CALL_TIMEOUT_S,
-            max_retries=1,
+            timeout=timeout,
+            max_retries=retries,
             **anthropic_thinking(choice),
         )
     if choice.provider == "google":
@@ -261,8 +291,8 @@ def build_chat(choice: ModelChoice, settings: Settings, max_output_tokens: int) 
             model=choice.model,
             google_api_key=key,
             max_output_tokens=max_output_tokens,
-            timeout=CALL_TIMEOUT_S,
-            max_retries=1,
+            timeout=timeout,
+            max_retries=retries,
             **google_thinking(choice),
         )
     # Chat Completions (not the Responses API) with `store=False`: nothing kept by OpenAI
@@ -273,8 +303,8 @@ def build_chat(choice: ModelChoice, settings: Settings, max_output_tokens: int) 
         max_completion_tokens=max_output_tokens,
         reasoning_effort=choice.effort,
         store=False,
-        timeout=CALL_TIMEOUT_S,
-        max_retries=1,
+        timeout=timeout,
+        max_retries=retries,
     )
 
 
