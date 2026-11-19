@@ -553,7 +553,8 @@ print_variables() {
   say "  Not from this script (DEPLOY.md A):"
   printf '  %-36s %s\n' \
     CLOUDFLARE_ACCOUNT_ID "Cloudflare dashboard, Account ID" \
-    PUBLIC_TURNSTILE_SITEKEY "Turnstile widget Site Key"
+    PUBLIC_TURNSTILE_SITEKEY "Turnstile widget Site Key" \
+    SPEND_CAPS "six spend caps, NAME=value joined by |; values from the SPEC variables table (docs)"
   say "  Environment secrets: CLOUDFLARE_API_TOKEN, PATROL_GEMINI_API_KEY"
 }
 

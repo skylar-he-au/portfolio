@@ -11,6 +11,9 @@ describe('Cloudflare deployment configuration', () => {
       name: 'portfolio',
       main: 'worker/index.ts',
       compatibility_date: '2026-11-18',
+      // Only the Custom Domain serves the site: no workers.dev or preview URLs.
+      workers_dev: false,
+      preview_urls: false,
       assets: {
         directory: './dist',
         run_worker_first: ['/api/*'],
@@ -21,7 +24,6 @@ describe('Cloudflare deployment configuration', () => {
       vars: { ORIGIN_URL: 'http://localhost:8000' },
     });
     expect(config).not.toHaveProperty('routes');
-    expect(config).not.toHaveProperty('workers_dev');
     expect(existsSync(join(root, config.main))).toBe(true);
   });
 

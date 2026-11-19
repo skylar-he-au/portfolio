@@ -36,6 +36,7 @@ jobs:
           CLEANUP_INVOKER_EMAIL: ${{ vars.CLEANUP_INVOKER_EMAIL }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           PUBLIC_TURNSTILE_SITEKEY: ${{ vars.PUBLIC_TURNSTILE_SITEKEY }}
+          SPEND_CAPS: ${{ vars.SPEND_CAPS }}
           SECRET_VERSION_ANTHROPIC_API_KEY: ${{ vars.SECRET_VERSION_ANTHROPIC_API_KEY }}
           SECRET_VERSION_GEMINI_API_KEY: ${{ vars.SECRET_VERSION_GEMINI_API_KEY }}
           SECRET_VERSION_OPENAI_API_KEY: ${{ vars.SECRET_VERSION_OPENAI_API_KEY }}
@@ -51,7 +52,7 @@ jobs:
           missing=()
           for name in GCP_WIF_PROVIDER GCP_DEPLOY_SA SITE_DOMAIN ORIGIN_URL \
             CLEANUP_AUDIENCE CLEANUP_INVOKER_EMAIL CLOUDFLARE_ACCOUNT_ID PUBLIC_TURNSTILE_SITEKEY \
-            SECRET_VERSION_ANTHROPIC_API_KEY SECRET_VERSION_GEMINI_API_KEY \
+            SPEND_CAPS SECRET_VERSION_ANTHROPIC_API_KEY SECRET_VERSION_GEMINI_API_KEY \
             SECRET_VERSION_OPENAI_API_KEY SECRET_VERSION_DATABASE_URL \
             SECRET_VERSION_DATABASE_URL_DIRECT SECRET_VERSION_ORIGIN_SECRET \
             SECRET_VERSION_SESSION_SECRET SECRET_VERSION_TURNSTILE_SECRET \
@@ -70,6 +71,40 @@ jobs:
           done
           [[ "$ORIGIN_URL" == https://* && "$ORIGIN_URL" != */ ]] \
             || { echo "::error::ORIGIN_URL must start with https:// and have no trailing /"; exit 1; }
+          # SPEND_CAPS: the six spend caps as NAME=value joined by "|" (values in
+          # the docs SPEC, kept out of this public repo). Errors name the
+          # setting, never its value.
+          want=(SPEND_DAILY_USD_ANTHROPIC SPEND_DAILY_USD_GOOGLE SPEND_DAILY_USD_OPENAI
+            SPEND_MONTHLY_USD_ANTHROPIC SPEND_MONTHLY_USD_GOOGLE SPEND_MONTHLY_USD_OPENAI)
+          declare -A seen=()
+          bad=()
+          IFS='|' read -ra caps <<< "$SPEND_CAPS"
+          n=0
+          for item in "${caps[@]}"; do
+            n=$((n + 1))
+            key=${item%%=*}
+            value=${item#*=}
+            if [[ "$item" != *=* ]]; then
+              bad+=("entry $n is not NAME=value")
+              continue
+            elif [[ " ${want[*]} " != *" $key "* ]]; then
+              bad+=("entry $n has an unknown name")
+              continue
+            elif [[ -n "${seen[$key]:-}" ]]; then
+              bad+=("$key twice")
+            elif [[ ! "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+              bad+=("$key is not a number")
+            fi
+            seen[$key]=1
+          done
+          for key in "${want[@]}"; do
+            [[ -n "${seen[$key]:-}" ]] || bad+=("$key missing")
+          done
+          if ((${#bad[@]})); then
+            printf -v msg '%s; ' "${bad[@]}"
+            echo "::error::SPEND_CAPS: ${msg%; }"
+            exit 1
+          fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -161,6 +196,7 @@ jobs:
           V_SESSION: ${{ vars.SECRET_VERSION_SESSION_SECRET }}
           V_TURNSTILE: ${{ vars.SECRET_VERSION_TURNSTILE_SECRET }}
           V_PATROL: ${{ vars.SECRET_VERSION_PATROL_SECRET }}
+          SPEND_CAPS: ${{ vars.SPEND_CAPS }}
         run: |
           secrets=(
             "DATABASE_URL=database-url:$V_DATABASE"
@@ -173,14 +209,10 @@ jobs:
             "PATROL_SECRET=patrol-secret:$V_PATROL"
           )
           # TURNSTILE_HOSTNAMES holds a comma, so the list uses "|" as its
-          # delimiter (gcloud topic escaping: a leading ^|^).
-          env_vars=(
-            "SPEND_DAILY_USD_ANTHROPIC=0.15"
-            "SPEND_DAILY_USD_GOOGLE=0.09"
-            "SPEND_DAILY_USD_OPENAI=0.06"
-            "SPEND_MONTHLY_USD_ANTHROPIC=5"
-            "SPEND_MONTHLY_USD_GOOGLE=3"
-            "SPEND_MONTHLY_USD_OPENAI=2"
+          # delimiter (gcloud topic escaping: a leading ^|^). The spend caps come
+          # from SPEND_CAPS, checked in the first step.
+          IFS='|' read -ra env_vars <<< "$SPEND_CAPS"
+          env_vars+=(
             "TURNSTILE_HOSTNAMES=$SITE_DOMAIN,www.$SITE_DOMAIN"
             "CLEANUP_AUDIENCE=$CLEANUP_AUDIENCE"
             "CLEANUP_INVOKER_EMAIL=$CLEANUP_INVOKER_EMAIL"
