@@ -20,6 +20,7 @@ from app.qa.models import ChatProvider
 from evals.grading import read_jsonl
 from evals.match_checks import GoldRequirement, MatchJob
 from evals.match_replay import (
+    V4_MAX_REQUIREMENTS,
     V4_RUN,
     Option,
     SourceError,
@@ -381,9 +382,15 @@ def test_options_set_only_the_replayed_step() -> None:
     assert run_id == "20261120T010203-match-v5+check-v2-replay-check-luna-none"
 
 
-def test_step_worst_cases_add_up_to_the_apps_reservation() -> None:
+def test_step_worst_cases_add_up_to_the_apps_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The first models' worst cases of the four steps are the app's reservation for a
-    match (`match_worst_steps`) without the embedding."""
+    match (`match_worst_steps`) without the embedding, both at v4's 8 requirements (the
+    app reserves for 12 since step 6 round 2)."""
+    from app.api import match as match_api
+
+    monkeypatch.setattr(match_api, "MAX_REQUIREMENTS", V4_MAX_REQUIREMENTS)
 
     def one(text: str) -> match_models.StepModels:
         return match_models.step_models(match_models.parse_choice(text))
@@ -578,6 +585,8 @@ def test_main_stops_before_any_call_when_the_stored_run_is_missing(
     assert not (tmp_path / "l.csv").exists()
 
 
-def test_default_max_requirements_is_the_graphs() -> None:
-    assert option_for("read").max_requirements == MAX_REQUIREMENTS == 8
+def test_default_max_requirements_is_the_stored_runs() -> None:
+    # The live graph reads 12 since step 6 round 2; replays of v4 keep its 8 by default.
+    assert option_for("read").max_requirements == V4_MAX_REQUIREMENTS == 8
+    assert MAX_REQUIREMENTS == 12
     assert _pools("claude-haiku-5-5", 1.0) == {"real": 0.0, "credit": 1.0}

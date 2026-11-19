@@ -44,7 +44,6 @@ from typing import Any, cast
 
 from app.match import models as match_models
 from app.match.prompts import PROMPT_VERSION
-from app.match.state import MAX_REQUIREMENTS
 from evals.match_checks import MatchJob, MatchSample, load_match_set, run_match_checks, select_jobs
 from evals.match_run import (
     STEPS,
@@ -62,7 +61,11 @@ from evals.pricing import POOLS
 from evals.types import CapReached, UnknownModel
 
 V4_RUN = "20261119T030433-match-v4-default"
-REPLAY_MAX_REQUIREMENTS = (MAX_REQUIREMENTS, 12)
+# The stored run (v4) read at most 8; the live graph reads 12 since step 6 round 2
+# (`state.MAX_REQUIREMENTS`). Replays keep the stored run's 8 unless the read step is told
+# to read 12, so the match, check and write replays see the same inputs as before.
+V4_MAX_REQUIREMENTS = 8
+REPLAY_MAX_REQUIREMENTS = (V4_MAX_REQUIREMENTS, 12)
 # Grading kinds a replay of each step needs from the subscription graders; the others are
 # the stored run's own grades (r2e): align for match/check/write, pair for check.
 STEP_KINDS: Mapping[str, tuple[str, ...]] = {
@@ -86,7 +89,7 @@ class Option:
 
     step: match_models.Step
     models: match_models.StepModels
-    max_requirements: int = MAX_REQUIREMENTS
+    max_requirements: int = V4_MAX_REQUIREMENTS
 
     @property
     def slug(self) -> str:
@@ -95,7 +98,7 @@ class Option:
         name = first.model.removeprefix("claude-").removeprefix("gemini-")
         name = name.removeprefix("gpt-6-").replace(".", "")
         slug = f"{name}-{first.effort}"
-        return slug if self.max_requirements == MAX_REQUIREMENTS else f"{slug}-max12"
+        return slug if self.max_requirements == V4_MAX_REQUIREMENTS else f"{slug}-max12"
 
     def describe(self) -> str:
         line = f"{' -> '.join(str(c) for c in self.models.choices)}"
@@ -115,7 +118,7 @@ def make_option(
     models: Sequence[str] = (),
     fallbacks: Sequence[str] = (),
     max_output: Sequence[str] = (),
-    max_requirements: int = MAX_REQUIREMENTS,
+    max_requirements: int = V4_MAX_REQUIREMENTS,
 ) -> Option:
     """`--step` with `--model` / `--fallback` / `--max-output` (`apply_overrides`); a flag
     for another step is an error: only this step runs, so it would do nothing."""
@@ -127,7 +130,7 @@ def make_option(
             raise ValueError(f"{text!r}: this replay runs only the {step} step")
     if max_requirements not in REPLAY_MAX_REQUIREMENTS:
         raise ValueError(f"max requirements must be one of {REPLAY_MAX_REQUIREMENTS}")
-    if max_requirements != MAX_REQUIREMENTS and step != "read":
+    if max_requirements != V4_MAX_REQUIREMENTS and step != "read":
         raise ValueError("--max-requirements is for the read step only")
     name = cast(match_models.Step, step)
     out = match_models.apply_overrides(base, models, fallbacks, max_output)
@@ -162,11 +165,11 @@ def _step_calls(step: str) -> tuple[int, int]:
         return 1, estimate_input_tokens(prompts.read_messages("x" * MAX_JD_CHARS, marker))
     if step == "match":
         messages = prompts.match_messages(requirement, [section] * MAX_SECTIONS, marker)
-        return MAX_REQUIREMENTS, estimate_input_tokens(messages)
+        return V4_MAX_REQUIREMENTS, estimate_input_tokens(messages)
     if step == "check":
-        pairs = [(n, requirement, section) for n in range(1, MAX_REQUIREMENTS * MAX_LINKS + 1)]
+        pairs = [(n, requirement, section) for n in range(1, V4_MAX_REQUIREMENTS * MAX_LINKS + 1)]
         return 1, estimate_input_tokens(prompts.check_messages(pairs, marker))
-    numbered = [(n, requirement, [section] * MAX_LINKS) for n in range(1, MAX_REQUIREMENTS + 1)]
+    numbered = [(n, requirement, [section] * MAX_LINKS) for n in range(1, V4_MAX_REQUIREMENTS + 1)]
     return 1, estimate_input_tokens(prompts.write_messages(numbered, "en", marker))
 
 
@@ -719,7 +722,7 @@ def _parser() -> argparse.ArgumentParser:
             f"--{flag}", action="append", default=[], help=f"this step only, e.g. {example}"
         )
     parser.add_argument(
-        "--max-requirements", type=int, default=MAX_REQUIREMENTS, choices=REPLAY_MAX_REQUIREMENTS
+        "--max-requirements", type=int, default=V4_MAX_REQUIREMENTS, choices=REPLAY_MAX_REQUIREMENTS
     )
     parser.add_argument(
         "--tasks-out", type=Path, help="grading dir, tasks go to <dir>/<run_id>/ (default:"
@@ -748,7 +751,7 @@ def _option_parser() -> argparse.ArgumentParser:
     parser.add_argument("--step", choices=STEPS, required=True)
     for flag in ("model", "fallback", "max-output"):
         parser.add_argument(f"--{flag}", action="append", default=[])
-    parser.add_argument("--max-requirements", type=int, default=MAX_REQUIREMENTS)
+    parser.add_argument("--max-requirements", type=int, default=V4_MAX_REQUIREMENTS)
     return parser
 
 
