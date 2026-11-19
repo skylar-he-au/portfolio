@@ -169,6 +169,9 @@ class MatchState(TypedDict):
     # requirement id -> sections found for it; None when the search itself failed
     retrieved: NotRequired[dict[str, list[Section] | None]]  # written by search
     match_deadline: NotRequired[float]  # time.monotonic() deadline, written by search
+    # what the check said per pair it asked about (`missing` included), written by check
+    # only when it asked; for the evals, never streamed
+    check_verdicts: NotRequired[list[PairVerdict]]
 
 
 class MatchTask(TypedDict):

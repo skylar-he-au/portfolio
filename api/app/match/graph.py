@@ -317,7 +317,7 @@ NOTE_ACCESS: Mapping[str, tuple[frozenset[str], frozenset[str]]] = {
     "match": (frozenset({"requirement", "sections", "deadline", "board"}), frozenset({"findings"})),
     "check": (
         frozenset({"requirements", "findings", "retrieved"}),
-        frozenset({"checked_findings"}),
+        frozenset({"checked_findings", "check_verdicts"}),
     ),
     "write": (
         frozenset({"requirements", "checked_findings", "retrieved", "language", "top8"}),
@@ -704,7 +704,10 @@ def build_match_graph(deps: MatchDeps) -> CompiledStateGraph[Any, Any, Any, Any]
             deps,
             writer=get_stream_writer(),
         )
-        return {"checked_findings": result.findings}
+        update: dict[str, Any] = {"checked_findings": result.findings}
+        if result.verdicts:  # only when the check asked about pairs (evals store them)
+            update["check_verdicts"] = result.verdicts
+        return update
 
     async def write(view: dict[str, Any]) -> dict[str, Any]:
         guide = await write_step(

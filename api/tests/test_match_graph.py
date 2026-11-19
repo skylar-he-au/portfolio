@@ -1418,3 +1418,26 @@ async def test_match_one_and_write_step_run_outside_the_graph() -> None:
     assert [s.url for s in finding.sections] == [sec.url]
     guide = await write_step([req], [finding], {"r1": [sec]}, "en", False, deps)
     assert [i.text for i in guide.items] == ["guide text 1"]
+
+
+async def test_the_graph_state_keeps_the_check_verdicts_for_the_evals() -> None:
+    script = Script(reqs("Python", "SQL"))
+
+    async def check(messages: list[BaseMessage]) -> Any:
+        return {"verdicts": [{"n": 1, "shows": True}]}  # pair 2 gets no verdict
+
+    script.check = check  # type: ignore[method-assign]
+    deps, _, _ = make_deps(script, search=one_section_each(["Python", "SQL"]))
+    custom, final = await run(deps, JD)
+    assert [(v.requirement_id, v.url, v.shows) for v in final["check_verdicts"]] == [
+        ("r1", "/projects/roleradar#sec-python", True),
+        ("r2", "/projects/roleradar#sec-sql", "missing"),
+    ]
+    assert all("check_verdicts" not in json.dumps(c, default=str) for c in custom)
+
+    async def not_found(messages: list[BaseMessage]) -> Any:
+        return {"reasoning": "No.", "found": False, "sections": []}
+
+    script.match = not_found  # type: ignore[method-assign]
+    _, final = await run(deps, JD)
+    assert "check_verdicts" not in final  # no check call, no key
