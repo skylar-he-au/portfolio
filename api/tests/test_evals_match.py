@@ -623,6 +623,9 @@ async def test_runner_runs_the_real_graph_and_keeps_everything(tmp_path: Path) -
     assert summary["kind"] == "match"
     assert summary["code_checks"]["all"] == {"passed": 2, "total": 2}
     assert summary["scores"]["tune"]["faithfulness"]["mean"] == 0.9
+    assert set(summary["cost_pools_usd"]) == {"real", "credit"}
+    assert summary["cost_pools_usd"]["credit"] > 0
+    assert sum(summary["cost_pools_usd"].values()) == pytest.approx(summary["cost_usd"], abs=1e-5)
     assert "Python" not in json.dumps(summary)  # no requirement or guide text in public output
     ledger = (tmp_path / "ledger.csv").read_text(encoding="utf-8").splitlines()
     assert len(ledger) == 1 + 2 * 2  # header + two pools per item and pass

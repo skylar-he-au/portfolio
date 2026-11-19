@@ -499,6 +499,8 @@ async def test_private_repeat_counts_and_scoring_selection(tmp_path: Path) -> No
 async def test_summary_splits_cost_by_pool(tmp_path: Path) -> None:
     outcome = await run_eval(tmp_path)
     assert "cost_pools_usd" not in summary(outcome.rows)
+    written = json.loads((tmp_path / "public" / "invented-run.json").read_text(encoding="utf-8"))
+    assert written["cost_pools_usd"] == {"real": 0.0, "credit": 0.0}
     pooled = build_summary(
         outcome.rows,
         run_id="invented-run",

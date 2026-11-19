@@ -393,6 +393,7 @@ async def evaluate(
                     repeats=repeats,
                     questions=len(questions),
                     models={**(models or {}), **({"judge": None} if no_ragas else {})},
+                    cost_pools=meter.run_cost,
                 ),
                 summary_out,
             )

@@ -493,6 +493,7 @@ async def evaluate_match(
                     repeats=repeats,
                     questions=len(jobs),
                     models={**(models or {}), **({"judge_faithfulness": None} if no_ragas else {})},
+                    cost_pools=meter.run_cost,
                 ),
                 summary_out,
             )
