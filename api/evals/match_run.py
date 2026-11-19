@@ -13,6 +13,11 @@ step's worst-case cost left under the pass cap and the total cap (`MatchMeter.ch
 the total cap is compared with the whole ledger, so this runner gets its own ledger
 (docs/evals/spend-step6.csv).
 
+`--no-judge` (6 r2) calls no judge at all: the run only stores what the graders need
+(`section_texts`, `checked_findings`, `check_verdicts`, the tokens of every call) and
+exports the grading tasks for the subscription graders (`evals.grading`), who replace the
+two Sonnet calls.
+
 `--route gemini-answer` switches Claude off (as in `evals.run`): read, match and write run
 on Gemini. Those rows are marked with the route, and a provider other than Claude
 answering is expected there, not counted as a fallback.
@@ -36,6 +41,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 
 from app.match.prompts import PROMPT_VERSION
+from app.match.state import MAX_REQUIREMENTS
 from evals.cost import Meter
 from evals.match_checks import (
     MatchJob,
@@ -65,10 +71,7 @@ FAITH_OVERHEAD_CHARS = 6000  # RAGAS's own instructions and examples per call
 MAX_GUIDE_CHARS = 8 * 400  # 8 items, requirement + sentence
 MAX_CONTEXT_CHARS = 24 * 2400  # 8 items x 3 links x the longest section estimate (6b2)
 ROUTES = ("default", "gemini-answer")
-EXPECTED_PROVIDER = {
-    "default": {"read": "anthropic", "match": "anthropic", "write": "anthropic", "check": "google"},
-    "gemini-answer": {"read": "google", "match": "google", "write": "google", "check": "google"},
-}
+STEPS = ("read", "match", "check", "write")
 
 type Pools = dict[str, float]
 type Scorer = Callable[[ScoreInput, MeterLike], Awaitable[dict[str, float | None]]]
@@ -117,19 +120,50 @@ def _add(*parts: Pools) -> Pools:
     return {pool: sum(part.get(pool, 0.0) for part in parts) for pool in POOLS}
 
 
-def graph_worst(answer_model: str, check_model: str, embed_model: str, route: str) -> Pools:
-    """One match on its main path at the largest input, every call at max_output_tokens
-    (`app.api.match.match_worst`, the reservation's own numbers), in eval pools; doubled for
-    the embedding the eval meters from characters x 2."""
-    from app.api.match import match_worst
+def route_models(models: Any, route: str) -> Any:
+    """The steps' models as the route runs them: on `gemini-answer` Claude is switched off,
+    so each step starts at its first choice from another provider."""
+    from app.match.models import StepModels
 
-    answer = check_model if route == "gemini-answer" else answer_model
-    worst = match_worst(answer, check_model, embed_model)
-    return _add(
-        _pools(answer, float(worst["anthropic"])),
-        _pools(check_model, float(worst["google"])),
-        _pools(embed_model, 2 * float(worst["openai"])),
-    )
+    if route != "gemini-answer":
+        return models
+    out = dict(models)
+    for step, config in models.items():
+        others = tuple(c for c in config.choices if c.provider != "anthropic")
+        if others and others != config.choices:
+            out[step] = StepModels(others, config.max_output_tokens)
+    return out
+
+
+def graph_worst(
+    answer_model: str,
+    check_model: str,
+    embed_model: str,
+    route: str,
+    models: Any = None,
+) -> Pools:
+    """One match on its main path at the largest input, every call at its step's output cap
+    (`app.api.match.match_worst_steps`, the reservation's own numbers), each step at its
+    first model (`models`, `app.match.models`; None: the defaults from `answer_model` and
+    `check_model`), in eval pools; the embedding doubled, as the eval meters it from
+    characters x 2. An OpenAI chat model (GPT-6 Luna) is priced as a chat model, not as
+    part of the embedding."""
+    from app.api.match import match_worst_steps
+    from app.match.models import default_models
+
+    models = route_models(models or default_models(answer_model, check_model), route)
+    worst = match_worst_steps(models, embed_model)
+    # The embedding alone: the same reservation with no OpenAI step.
+    embed = float(match_worst_steps(default_models(), embed_model)["openai"])
+    model_of: dict[str, str] = {}
+    for step in STEPS:
+        model_of.setdefault(models[step].first.provider, models[step].first.model)
+    parts: list[Pools] = [_pools(embed_model, 2 * embed)]
+    for provider, amount in worst.items():
+        amount_f = float(amount) - (embed if provider == "openai" else 0.0)
+        if provider in model_of:
+            parts.append(_pools(model_of[provider], amount_f))
+    return _add(*parts)
 
 
 def align_worst() -> Pools:
@@ -153,8 +187,31 @@ def _provider(name: Any) -> str | None:
     return "google" if name.startswith("google") else name
 
 
+def _usage(response: Any) -> tuple[str | None, int, int] | None:
+    """Model and token usage of one LLM response, summed over its generations; None when
+    no generation carries `usage_metadata`. Thinking tokens are part of `output_tokens` in
+    all three LangChain providers (Anthropic, Google, OpenAI)."""
+    model: str | None = None
+    input_tokens = output_tokens = 0
+    seen = False
+    for generations in getattr(response, "generations", None) or []:
+        for generation in generations:
+            message = getattr(generation, "message", None)
+            usage = getattr(message, "usage_metadata", None)
+            if not usage:
+                continue
+            seen = True
+            input_tokens += int(usage.get("input_tokens") or 0)
+            output_tokens += int(usage.get("output_tokens") or 0)
+            metadata = getattr(message, "response_metadata", None) or {}
+            model = model or metadata.get("model_name") or metadata.get("model_version")
+    return (model, input_tokens, output_tokens) if seen else None
+
+
 class CallLog(BaseCallbackHandler):
-    """Every chat-model call of one item: node, provider, model, ok, error type, ms."""
+    """Every chat-model call of one item: node, provider, model, ok, error type, ms, and
+    the tokens and cost it used (None when the call reported no usage, or the model has
+    no price)."""
 
     run_inline = True
     raise_error = False
@@ -180,7 +237,7 @@ class CallLog(BaseCallbackHandler):
             "started": time.monotonic(),
         }
 
-    def _finish(self, run_id: UUID, error: BaseException | None) -> None:
+    def _finish(self, run_id: UUID, error: BaseException | None, response: Any = None) -> None:
         call = self._open.pop(run_id, None)
         if call is None:
             return
@@ -189,19 +246,45 @@ class CallLog(BaseCallbackHandler):
             ok=error is None,
             error=None if error is None else type(error).__name__,
             ms=round((time.monotonic() - started) * 1000),
+            input_tokens=None,
+            output_tokens=None,
+            cost_usd=None,
         )
+        try:
+            usage = _usage(response)
+        except Exception:  # noqa: BLE001 - a callback must never break the call it logs
+            usage = None
+        if usage is not None:
+            model, input_tokens, output_tokens = usage
+            call.update(input_tokens=input_tokens, output_tokens=output_tokens)
+            priced = model or call.get("model")
+            if priced:
+                with suppress(UnknownModel):
+                    call["cost_usd"] = cost_usd(priced, input_tokens, output_tokens)
         self.calls.append(call)
 
     def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:
-        self._finish(run_id, None)
+        self._finish(run_id, None, response)
 
     def on_llm_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
         self._finish(run_id, error)
 
 
-def fallback_nodes(calls: Sequence[Mapping[str, Any]], route: str) -> list[str]:
-    """Nodes where a provider other than the route's first choice gave the answer."""
-    expected = EXPECTED_PROVIDER[route]
+def expected_providers(deps: Any, route: str = "default") -> dict[str, str]:
+    """Each step's first provider in this run's settings (`MatchDeps.order`, from
+    `app.match.models` and `--model`); on `gemini-answer`, its first one that is not Claude."""
+    expected: dict[str, str] = {}
+    for step in STEPS:
+        names = [str(provider.name) for provider in deps.order(step)]
+        if route == "gemini-answer":
+            names = [name for name in names if name != "anthropic"] or names
+        expected[step] = names[0]
+    return expected
+
+
+def fallback_nodes(calls: Sequence[Mapping[str, Any]], expected: Mapping[str, str]) -> list[str]:
+    """Nodes where a provider other than the step's first choice (`expected_providers`)
+    gave the answer."""
     return sorted(
         {
             call["node"]
@@ -217,7 +300,7 @@ def fallback_nodes(calls: Sequence[Mapping[str, Any]], route: str) -> list[str]:
 @dataclasses.dataclass(frozen=True)
 class GraphRun:
     sample: MatchSample
-    section_texts: dict[str, str]  # url -> judge context of every retrieved section (not stored)
+    section_texts: dict[str, str]  # url -> judge context of every retrieved section
 
 
 def judge_context(section: Any) -> str:
@@ -227,20 +310,36 @@ def judge_context(section: Any) -> str:
     return f'Skylar\'s project page {section.page}, section "{section.heading}":\n{section.text}'
 
 
+def _plain(value: Any) -> Any:
+    """A state value as JSON: pydantic models dumped, dataclasses as dicts."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.asdict(value)
+    return json.loads(json.dumps(value, default=str))
+
+
 def _sample(events: list[dict[str, Any]], final: Mapping[str, Any]) -> GraphRun:
     retrieved = final.get("retrieved") or {}
     texts = {s.url: judge_context(s) for found in retrieved.values() if found for s in found}
     result = final.get("result")
+    findings = tuple(f.model_dump() for f in final.get("findings") or [])
+    checked = final.get("checked_findings")
     return GraphRun(
         MatchSample(
             events=tuple(json.loads(json.dumps(event, default=str)) for event in events),
             requirements=tuple(r.model_dump() for r in final.get("requirements") or []),
-            findings=tuple(f.model_dump() for f in final.get("findings") or []),
+            findings=findings,
             retrieved={
                 rid: None if found is None else [s.url for s in found]
                 for rid, found in retrieved.items()
             },
             result=None if result is None else result.model_dump(),
+            # no check step on this item (nothing found): the findings went through as they are
+            checked_findings=findings
+            if checked is None
+            else tuple(f.model_dump() for f in checked),
+            check_verdicts=tuple(_plain(v) for v in final.get("check_verdicts") or []),
         ),
         texts,
     )
@@ -260,16 +359,26 @@ async def run_graph(job: MatchJob, graph: Any, callbacks: list[Any]) -> GraphRun
     return _sample(events, final)
 
 
+def switch_off_claude(deps: Any) -> Any:
+    """`deps` with every Claude chat failing (route `gemini-answer`), in the per-step
+    orders too."""
+    from evals.failing_chat import FailingChat
+
+    def off(provider: Any) -> Any:
+        if provider.name != "anthropic":
+            return provider
+        return dataclasses.replace(provider, chat=FailingChat())
+
+    steps = deps.steps
+    if steps is not None:
+        steps = {step: tuple(off(p) for p in providers) for step, providers in steps.items()}
+    return dataclasses.replace(deps, claude=off(deps.claude), steps=steps)
+
+
 def make_graph(deps: Any, *, route: str = "default") -> Any:
     from app.match.graph import build_match_graph
 
-    if route == "gemini-answer":
-        from evals.failing_chat import FailingChat
-
-        deps = dataclasses.replace(
-            deps, claude=dataclasses.replace(deps.claude, chat=FailingChat())
-        )
-    return build_match_graph(deps)
+    return build_match_graph(switch_off_claude(deps) if route == "gemini-answer" else deps)
 
 
 # --- judging --------------------------------------------------------------------------------
@@ -420,9 +529,33 @@ async def evaluate_match(
     date: str | None = None,
     prompt_version: str = PROMPT_VERSION,
     models: dict[str, str | None] | None = None,
+    max_requirements: int = MAX_REQUIREMENTS,
+    no_judge: bool = False,
+    tasks_out: Path | None = None,
+    content: str | None = None,
+    expected: Mapping[str, str] | None = None,
 ) -> RunOutcome:
     """Every job `repeats` times (pass by pass). `worst` is one item's worst case in both
-    pools (graph + judge): an item starts only if it fits."""
+    pools (graph + judge): an item starts only if it fits.
+
+    `no_judge`: no API judge at all (no alignment call, no RAGAS); after the run the
+    grading tasks go to `tasks_out/<run_id>/tasks.jsonl` for the subscription graders
+    (`evals.grading`), and the summary is written when their grades are read back, not here.
+    `content` is the hash of the project pages (`evals.grading.content_hash`), kept in meta.
+    `expected` is each step's first provider in this run's settings (`expected_providers`;
+    None: the default models): another provider answering is a fallback."""
+    from evals.grading import content_hash, export_tasks, write_tasks
+
+    if no_judge:
+        aligner, scorer = None, None
+        if tasks_out is None:
+            raise ValueError("no_judge needs tasks_out")
+    content = content or content_hash()
+    if expected is None:
+        from app.match.models import default_models
+
+        models = route_models(default_models(), route)
+        expected = {step: models[step].first.provider for step in STEPS}
     rows: list[dict[str, Any]] = []
     status, reason = "complete", None
     date = date or datetime.now(UTC).date().isoformat()
@@ -436,7 +569,7 @@ async def evaluate_match(
                     row = await _one(
                         job, repeat, graph=graph, meter=meter, aligner=aligner,
                         scorer=None if no_ragas else scorer, worst=worst, route=route,
-                        run_id=run_id,
+                        run_id=run_id, max_requirements=max_requirements, expected=expected,
                     )  # fmt: skip
                     output.write(json.dumps(row, ensure_ascii=False) + "\n")
                     output.flush()
@@ -476,12 +609,27 @@ async def evaluate_match(
         "samples": len(rows),
         "worst_per_item": worst,
         "run_cost": meter.run_cost,
+        "prompt_version": prompt_version,
+        "max_requirements": max_requirements,
+        "expected_providers": dict(expected),
+        "content_hash": content,
+        "grader": "subscription" if no_judge else "api",
+        "models": models or {},
     }
     try:
+        if no_judge and rows and tasks_out is not None:
+            tasks = export_tasks(rows, jobs, section_texts=lambda row: row["section_texts"] or {})
+            meta["tasks"] = str(
+                write_tasks(
+                    tasks,
+                    tasks_out / run_id,
+                    {"run_id": run_id, "content_hash": content, "section_texts": "run rows"},
+                )
+            )
         out_path.with_suffix(".meta.json").write_text(
             json.dumps(meta, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-        if status == "complete" and summary_out is not None:
+        if status == "complete" and summary_out is not None and not no_judge:
             write_summary(
                 build_match_summary(
                     rows,
@@ -517,6 +665,8 @@ async def _one(
     worst: Pools,
     route: str,
     run_id: str,
+    expected: Mapping[str, str],
+    max_requirements: int = MAX_REQUIREMENTS,
 ) -> dict[str, Any]:
     """One item once. CapReached / UnknownModel propagate (after the spend is recorded)."""
     recorded = False
@@ -539,8 +689,12 @@ async def _one(
                 if attempt:
                     error_name = type(error).__name__
         sample = run.sample if run is not None else MatchSample()
-        checks = failed_match_checks() if error_name else run_match_checks(job, sample)
-        fallback = fallback_nodes(log.calls, route)
+        checks = (
+            failed_match_checks()
+            if error_name
+            else run_match_checks(job, sample, max_requirements=max_requirements)
+        )
+        fallback = fallback_nodes(log.calls, expected)
 
         alignment = scores = None
         judge_errors: list[str] = []
@@ -591,6 +745,9 @@ async def _one(
             "forced_gemini": route == "gemini-answer",
             "requirements": list(sample.requirements),
             "findings": list(sample.findings),
+            "checked_findings": list(sample.checked_findings),
+            "check_verdicts": list(sample.check_verdicts),
+            "section_texts": {} if run is None else dict(run.section_texts),
             "result": sample.result,
             "retrieved": dict(sample.retrieved),
             "events": list(sample.events),
@@ -638,11 +795,38 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeats", type=_positive_int, default=1)
     parser.add_argument("--route", choices=ROUTES, default="default")
     parser.add_argument("--no-ragas", action="store_true")
+    parser.add_argument(
+        "--no-judge",
+        action="store_true",
+        help="no API judge (no alignment, no RAGAS): export grading tasks for the subscription",
+    )
+    parser.add_argument(
+        "--tasks-out",
+        type=Path,
+        help="with --no-judge: grading dir, tasks go to <dir>/<run_id>/ (default: ../grading"
+        " next to --out)",
+    )
     parser.add_argument("--summary-out", type=Path)
+    for flag, example in (
+        ("model", "check=openai:gpt-6-luna:none"),
+        ("fallback", "check= (no fallback) or read=google:gemini-3.5-flash-lite:minimal"),
+        ("max-output", "read=4096"),
+    ):
+        parser.add_argument(
+            f"--{flag}",
+            action="append",
+            default=[],
+            help=f"per step (app.match.models), e.g. {example}",
+        )
     parser.add_argument(
         "--estimate", action="store_true", help="print the worst case per item and pass; no calls"
     )
     return parser
+
+
+def _lines(models: Any) -> list[str]:
+    """Each step's choices in order, `provider:model:effort -> ...`, in `STEPS` order."""
+    return [" -> ".join(str(c) for c in models[step].choices) for step in STEPS]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -653,16 +837,40 @@ def main(argv: list[str] | None = None) -> int:
         print(f"invalid match set: {error}", file=sys.stderr)
         return 2
     from app.config import get_settings
+    from app.match.models import apply_overrides, describe, models_for
 
     settings = get_settings()
+    try:
+        step_models = apply_overrides(
+            models_for(settings), args.model, args.fallback, args.max_output
+        )
+    except ValueError as error:
+        print(f"invalid --model / --fallback / --max-output: {error}", file=sys.stderr)
+        return 2
+    run_models = route_models(step_models, args.route)
     worst = _add(
-        graph_worst(settings.answer_model, settings.check_model, settings.embed_model, args.route),
-        align_worst(),
-        {} if args.no_ragas else faith_worst(),
+        graph_worst(
+            settings.answer_model,
+            settings.check_model,
+            settings.embed_model,
+            args.route,
+            step_models,
+        ),
+        {} if args.no_judge else align_worst(),
+        {} if args.no_ragas or args.no_judge else faith_worst(),
     )
     if args.estimate:
         per_pass = {pool: round(worst[pool] * len(jobs), 6) for pool in POOLS}
-        print(json.dumps({"jobs": len(jobs), "worst_per_item": worst, "worst_per_pass": per_pass}))
+        print(
+            json.dumps(
+                {
+                    "models": describe(run_models),
+                    "jobs": len(jobs),
+                    "worst_per_item": worst,
+                    "worst_per_pass": per_pass,
+                }
+            )
+        )
         return 0
     try:
         from anthropic import AsyncAnthropic
@@ -674,7 +882,7 @@ def main(argv: list[str] | None = None) -> int:
         from evals.run import MeteredEmbedder
 
         score: Scorer | None = None
-        if not args.no_ragas:
+        if not args.no_ragas and not args.no_judge:
             from evals.ragas_score import score as ragas_score
 
             score = ragas_score
@@ -693,15 +901,21 @@ def main(argv: list[str] | None = None) -> int:
         try:
             meter = MatchMeter(caps, args.ledger, run_id)
             embedder = MeteredEmbedder(OpenAIEmbedder(settings), meter, settings.embed_model)
-            key = settings.anthropic_api_key
-            if key is None or not key.get_secret_value():
-                raise RuntimeError("ANTHROPIC_API_KEY is required for judging")
-            client = meter_anthropic(AsyncAnthropic(api_key=key.get_secret_value()), meter)
+            aligner: Aligner | None = None
+            if not args.no_judge:
+                key = settings.anthropic_api_key
+                if key is None or not key.get_secret_value():
+                    raise RuntimeError("ANTHROPIC_API_KEY is required for judging")
+                client = meter_anthropic(AsyncAnthropic(api_key=key.get_secret_value()), meter)
+                aligner = ClaudeAligner(client)
+            judge = None if args.no_judge else JUDGE_MODEL
+            deps = build_match_deps(settings, db, embedder, models=step_models)
             outcome = await evaluate_match(
                 jobs,
-                graph=make_graph(build_match_deps(settings, db, embedder), route=args.route),
+                graph=make_graph(deps, route=args.route),
+                expected=expected_providers(deps, args.route),
                 meter=meter,
-                aligner=ClaudeAligner(client),
+                aligner=aligner,
                 scorer=score,
                 repeats=args.repeats,
                 run_id=run_id,
@@ -713,14 +927,20 @@ def main(argv: list[str] | None = None) -> int:
                 summary_out=args.summary_out,
                 date=started.date().isoformat(),
                 models={
-                    "answer": settings.check_model
-                    if args.route == "gemini-answer"
-                    else settings.answer_model,
-                    "check": settings.check_model,
+                    "answer": run_models["read"].first.model,
+                    "check": run_models["check"].first.model,
                     "embed": settings.embed_model,
-                    "judge_align": JUDGE_MODEL,
-                    "judge_faithfulness": JUDGE_MODEL,
+                    **{
+                        f"step_{step}": line
+                        for step, line in zip(STEPS, _lines(run_models), strict=True)
+                    },
+                    "judge_align": judge,
+                    "judge_faithfulness": judge,
                 },
+                no_judge=args.no_judge,
+                tasks_out=(args.tasks_out or args.out.parent / "grading")
+                if args.no_judge
+                else None,
             )
             return outcome.exit_code
         finally:

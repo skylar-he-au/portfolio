@@ -21,6 +21,7 @@ POOLS = ("real", "credit")
 _POOL_PREFIXES = (
     ("claude-", "credit"),
     ("gemini-", "real"),
+    ("gpt-", "real"),
     ("text-embedding-", "real"),
 )
 _MILLION = 1_000_000

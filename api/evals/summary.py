@@ -175,8 +175,15 @@ def build_match_summary(
     questions: int,
     models: dict[str, str | None],
     cost_pools: dict[str, float] | None = None,
+    grader: str | None = None,
+    grading: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Aggregates of a job-match run, no job ad, requirement or guide text."""
+    """Aggregates of a job-match run, no job ad, requirement or guide text.
+
+    `grader` and `grading` are set when the scores come from subscription grades
+    (`evals.grading`): who graded, and whether every required grade came back
+    (`grading["status"]` "incomplete": the run cannot be declared over the line). Runs
+    judged through the API leave both out, so their summary is as before."""
     from evals.match_checks import CODE_CHECKS, KINDS
 
     groups = {
@@ -226,6 +233,8 @@ def build_match_summary(
             "missing": sum(len((row["scores"] or {}).get("missing", [])) for row in ok),
         },
         **_cost_fields(rows, cost_pools),
+        **({"grader": grader} if grader is not None or grading is not None else {}),
+        **({"grading": grading} if grading is not None else {}),
     }
 
 

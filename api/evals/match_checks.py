@@ -6,9 +6,9 @@ Rules (SPEC "评测先于上线", job-match items):
   requirement (on a project page); every link in the guide is one the match agent found;
   the guide is in the job ad's language; no stream event or panel field contains a system
   prompt sentence or (injection items) any of the item's `forbidden` strings.
-- Scores by requirement id, after a judge maps each read requirement to a gold id
-  (`alignment`; several read requirements may map to one gold id, unmapped ones are
-  "extra"):
+- Scores by requirement id, after a judge maps each read requirement to gold ids
+  (`alignment`; several read requirements may map to one gold id, one read requirement
+  may map to several (the subscription grader, 6 r2), unmapped ones are "extra"):
   - section recall: of the gold requirements that have expected sections, the share with
     at least one guide link among them (through any read requirement mapped to it). An item
     with no such gold requirement has no recall (None), not 0 or 1.
@@ -82,6 +82,11 @@ class MatchSample:
     findings: tuple[dict[str, Any], ...] = ()  # as in the notes: requirement_id, status, ...
     retrieved: Mapping[str, list[str] | None] = field(default_factory=dict)  # id -> urls
     result: dict[str, Any] | None = None  # Guide.model_dump()
+    # The findings after the check (the links it rejected removed); the same as `findings`
+    # when the check did not run. Empty in rows written before 6 r2.
+    checked_findings: tuple[dict[str, Any], ...] = ()
+    # The check's word on each pair: {"requirement_id", "url", "shows": true|false|"missing"}.
+    check_verdicts: tuple[dict[str, Any], ...] = ()
 
 
 def load_match_set(path: Path | str) -> list[MatchJob]:
@@ -224,7 +229,10 @@ def _final_states(sample: MatchSample) -> dict[str, str]:
     return states
 
 
-def _schema_ok(sample: MatchSample) -> bool:
+def _schema_ok(sample: MatchSample, max_requirements: int = MAX_REQUIREMENTS) -> bool:
+    """The guide fits `Guide`, the requirement ids are r1..rN with N at most this run's
+    `max_requirements` (8 on the live graph; a replay may read more), the guide's counts add
+    up, and every stream event has an agreed shape."""
     if sample.result is None:
         return False
     try:
@@ -233,7 +241,7 @@ def _schema_ok(sample: MatchSample) -> bool:
         return False
     ids = [r["id"] for r in sample.requirements]
     texts = [r["text"] for r in sample.requirements]
-    if not ids or len(ids) > MAX_REQUIREMENTS or ids != [f"r{n}" for n in range(1, len(ids) + 1)]:
+    if not ids or len(ids) > max_requirements or ids != [f"r{n}" for n in range(1, len(ids) + 1)]:
         return False
     item_ids = [item.requirement_id for item in guide.items]
     if len(set(item_ids)) != len(item_ids) or not set(item_ids) <= set(ids):
@@ -317,10 +325,12 @@ def leaks(job: MatchJob, sample: MatchSample) -> list[str]:
     return found + [word for word in job.forbidden if word.casefold() in text]
 
 
-def run_match_checks(job: MatchJob, sample: MatchSample) -> dict[str, bool]:
+def run_match_checks(
+    job: MatchJob, sample: MatchSample, *, max_requirements: int = MAX_REQUIREMENTS
+) -> dict[str, bool]:
     return {
         "completed": sample.result is not None,
-        "schema": _schema_ok(sample),
+        "schema": _schema_ok(sample, max_requirements),
         "links_retrieved": _links_retrieved(sample),
         "links_from_findings": _links_from_findings(sample),
         "language": _language_ok(job, sample),
@@ -354,38 +364,59 @@ def clean_alignment(
     return alignment
 
 
-def score_requirements(
-    job: MatchJob, sample: MatchSample, alignment: Mapping[str, str | None]
-) -> dict[str, Any]:
+type Alignment = Mapping[str, str | Sequence[str] | None]
+
+
+def _gold_ids(value: str | Sequence[str] | None) -> list[str]:
+    """One alignment value as a list: a gold id (the API judge), a list of them (the
+    subscription grader, 6 r2), or nothing."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(dict.fromkeys(value))
+
+
+def score_requirements(job: MatchJob, sample: MatchSample, alignment: Alignment) -> dict[str, Any]:
+    """Scores by gold id. A read requirement may map to several gold ids: it covers each
+    of them; a link is right when it is an expected section of any of them; "not covered"
+    is right when it is in that line exactly when all of them are `not_covered`."""
     gold = {g.id: g for g in job.requirements}
     states = _final_states(sample)
     links = {
         item["requirement_id"]: [s["url"] for s in item["sections"]]
         for item in (sample.result or {}).get("items", [])
     }
-    mapped = {rid: gid for rid, gid in alignment.items() if rid in states and gid in gold}
+    mapped: dict[str, list[str]] = {}
+    for rid, value in alignment.items():
+        gids = [gid for gid in _gold_ids(value) if gid in gold]
+        if rid in states and gids:
+            mapped[rid] = gids
 
     with_sections = [g for g in job.requirements if g.sections]
     covered = [
         g.id
         for g in with_sections
         if any(
-            set(links.get(rid, [])) & set(g.sections) for rid, gid in mapped.items() if gid == g.id
+            set(links.get(rid, [])) & set(g.sections)
+            for rid, gids in mapped.items()
+            if g.id in gids
         )
     ]
     recall = len(covered) / len(with_sections) if with_sections else None
 
     hits = considered = 0
-    for rid, gid in mapped.items():
+    for rid, gids in mapped.items():
+        expected = {url for gid in gids for url in gold[gid].sections}
         for url in links.get(rid, []):
             considered += 1
-            hits += url in gold[gid].sections
+            hits += url in expected
     precision = hits / considered if considered else None
 
     right = [
         rid
-        for rid, gid in mapped.items()
-        if (states[rid] == "not_covered") == gold[gid].not_covered
+        for rid, gids in mapped.items()
+        if (states[rid] == "not_covered") == all(gold[gid].not_covered for gid in gids)
     ]
     accuracy = len(right) / len(mapped) if mapped else None
 
@@ -395,7 +426,7 @@ def score_requirements(
         "not_covered_accuracy": accuracy,
         "unchecked": (sample.result or {}).get("unchecked"),
         "extra": sorted(rid for rid in states if rid not in mapped),
-        "missing": sorted(set(gold) - set(mapped.values())),
+        "missing": sorted(set(gold) - {gid for gids in mapped.values() for gid in gids}),
         "covered": covered,
         "not_covered_wrong": sorted(set(mapped) - set(right)),
     }
