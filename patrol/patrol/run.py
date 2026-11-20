@@ -203,7 +203,16 @@ async def _run_agent(base: str, port: int, gemini_key: str, run: AgentRun) -> No
         allowed_domains=[domain_pattern(base)],
         keep_alive=True,  # Playwright owns the browser and looks at it after the run
     )
-    agent = Agent(task_text(base), llm=llm, browser=browser, judge=False, reasoning="low")
+    # ultrafast: browser-use's accessibility-tree helpers (bu.state/click/type, browser_use/ax.py),
+    # which click and type with real input events; Flash-Lite's own page-JS clicks were missed.
+    agent = Agent(
+        task_text(base),
+        llm=llm,
+        browser=browser,
+        judge=False,
+        reasoning="low",
+        mode="ultrafast",
+    )
     try:
         result = await asyncio.wait_for(
             agent.run(max_steps=MAX_STEPS, timeout=AGENT_TIMEOUT_S), HARD_TIMEOUT_S
