@@ -1,0 +1,35 @@
+[project]
+name = "portfolio-patrol"
+version = "0.1.0"
+description = "Post-deploy browser patrol: a browser-use agent walks the live site like a recruiter."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # 1.0 is a rewrite released 2026-11-10; pinned exactly, as its README asks.
+    "browser-use==1.0.6",
+    "playwright==1.65.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+]
+
+[tool.uv]
+# A script run from this folder (`uv run python -m patrol`), never installed or published.
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-rs"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "BLE", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
