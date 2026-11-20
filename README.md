@@ -12,8 +12,9 @@ Skylar He's personal site: write-ups of my projects, plus an assistant that answ
 │   ├── app/             Application code (app.main:app, app.migrate)
 │   ├── migrations/      Plain SQL migrations, applied in order (NNNN_name.sql)
 │   └── tests/
+├── scripts/             dev-up.sh (local stack), gcp-setup.sh (one-time Google Cloud setup)
 ├── docker-compose.yml   Local stack: db -> migrate -> api -> web
-└── .github/workflows/   CI for api (ruff, pytest) and web (check, tests, build)
+└── .github/workflows/   CI for api (ruff, pytest) and web (check, tests, build); manual deploy
 ```
 
 ## Run it locally
@@ -40,7 +41,7 @@ All ports are bound to `127.0.0.1` only. If one is already taken on your machine
 
 With `APP_ENV=dev`, `GET /api/health` also reports whether the database is reachable and which pgvector version is installed. Outside dev that route does not exist.
 
-Stop with `./scripts/dev-up.sh --down`; this uses the same workaround and keeps the local database volume. Direct `docker compose down` can also hit the credential helper. `docker compose down -v` stops everything and deletes the local database volume.
+Stop with `./scripts/dev-up.sh --down`; this uses the same workaround and stops only this checkout's `web`, `api` and `migrate`, so the database keeps running (other checkouts may share it). `./scripts/dev-up.sh --down-all` stops everything including the database and keeps the data volume; `./scripts/dev-up.sh --down-all -v` also deletes it. Direct `docker compose down` can hit the credential helper.
 
 ### Screenshots
 
@@ -115,6 +116,31 @@ Raw JSONL results and a metadata sidecar go to `--out` and must stay private. Ad
 `--summary-out ../content/evals` only for baseline/final runs to publish aggregates without
 question or answer text. An incomplete run keeps its raw results and writes no summary.
 Exit codes: `0` complete, `1` incomplete, `2` invalid arguments/set or missing eval modules.
+
+## Deployment
+
+Production is a Cloudflare Worker that serves the static `web/` build and forwards `/api/*` to the FastAPI container on Google Cloud Run (service `portfolio-api`, region `australia-southeast1`), which uses a Neon Postgres database.
+
+**One-time setup.** `scripts/gcp-setup.sh` creates the Google Cloud side: Artifact Registry, Secret Manager secrets, service accounts, Workload Identity Federation for GitHub Actions, the Cloud Run service, a Cloud Scheduler job and a log exclusion. It needs `gcloud` (logged in), `openssl`, `curl` and `python3`. It is safe to re-run: it skips what already exists. At the end it prints the variables to set in the GitHub `production` environment.
+
+```bash
+scripts/gcp-setup.sh --project <project-id> --domain <domain> --dry-run   # print the commands, change nothing
+scripts/gcp-setup.sh --project <project-id> --domain <domain>
+scripts/gcp-setup.sh --project <project-id> --rotate <secret-name>        # new version of one secret
+```
+
+See `scripts/gcp-setup.sh --help` for the options.
+
+**Deploy.** A push to `main` never deploys. In GitHub, open Actions, then `deploy`, then Run workflow with branch `main`. The workflow (`.github/workflows/deploy.yml`) runs in the `production` environment, signs in to Google Cloud through Workload Identity Federation (no stored keys), and goes in this order: build and push the image, build the front end, run the database migrations, deploy Cloud Run, load the content for Ask, deploy the Worker, then run a patrol (a browser agent that asks the live site a question).
+
+**Roll back.** There is no automatic rollback. Run both from your own terminal:
+
+```bash
+gcloud run services update-traffic portfolio-api --region australia-southeast1 --project <project-id> --to-revisions=<previous-revision>=100
+cd web && npx wrangler rollback
+```
+
+Migrations only add, so the previous backend revision keeps working against the new schema.
 
 ## License
 
