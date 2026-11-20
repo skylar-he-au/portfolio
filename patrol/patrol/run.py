@@ -37,9 +37,9 @@ from patrol.task import task_text
 
 MODEL = "gemini-3.5-flash-lite"
 MAX_TOKENS = 4096  # per model request, thinking included
-MAX_STEPS = 15
-AGENT_TIMEOUT_S = 120  # browser-use's agent loop (model requests and cells)
-HARD_TIMEOUT_S = 180  # the loop plus browser-use's own start and delivery turn, as a backstop
+MAX_STEPS = 25
+AGENT_TIMEOUT_S = 180  # browser-use's agent loop (model requests and cells)
+HARD_TIMEOUT_S = 240  # the loop plus browser-use's own start and delivery turn, as a backstop
 SAMPLE_EVERY_S = 0.5
 API_PATHS = ("/api/ask", "/api/match")
 
