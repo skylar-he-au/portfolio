@@ -51,4 +51,4 @@ Questions used to test the assistant on this site (Skylar's portfolio): a questi
 
 ## Deleting your data
 
-To have your data on this site (Skylar's portfolio) deleted, email me at TBD (address to be added) and include the exact text of your question so I can find it. A job-match record holds no text, so for one of those tell me roughly when you ran the match.
+To have your data on this site (Skylar's portfolio) deleted, email me at {{email}} and include the exact text of your question so I can find it. A job-match record holds no text, so for one of those tell me roughly when you ran the match.

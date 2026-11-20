@@ -26,4 +26,4 @@ I'm Skylar, and I'm looking for internships and part-time work now, and graduate
 Here's how to contact me (Skylar):
 
 - LinkedIn: https://www.linkedin.com/in/skylar-he
-- Email: TBD
+- Email: {{email}}

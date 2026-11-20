@@ -22,3 +22,10 @@ it('exposes neither the email address nor a mailto URL in any built file', () =>
     expect(source, relative(dist, path)).not.toContain('mailto:');
   }
 });
+
+it.each(['about', 'privacy'])('the %s page has an email placeholder that the script upgrades', (page) => {
+  const html = readFileSync(join(dist, page, 'index.html'), 'utf8');
+  expect(html).toContain('data-email-link');
+  expect(html).not.toContain('{{email}}');
+  expect(html).toContain('email-link');
+});
