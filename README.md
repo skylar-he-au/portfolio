@@ -12,9 +12,10 @@ Skylar He's personal site: write-ups of my projects, plus an assistant that answ
 │   ├── app/             Application code (app.main:app, app.migrate)
 │   ├── migrations/      Plain SQL migrations, applied in order (NNNN_name.sql)
 │   └── tests/
+├── patrol/              Post-deploy browser patrol (separate uv project)
 ├── scripts/             dev-up.sh (local stack), gcp-setup.sh (one-time Google Cloud setup)
 ├── docker-compose.yml   Local stack: db -> migrate -> api -> web
-└── .github/workflows/   CI for api (ruff, pytest) and web (check, tests, build); manual deploy
+└── .github/workflows/   CI for api (ruff, pytest), web (check, tests, build) and patrol (unit tests); manual deploy
 ```
 
 ## Run it locally
@@ -131,7 +132,7 @@ scripts/gcp-setup.sh --project <project-id> --rotate <secret-name>        # new 
 
 See `scripts/gcp-setup.sh --help` for the options.
 
-**Deploy.** A push to `main` never deploys. In GitHub, open Actions, then `deploy`, then Run workflow with branch `main`. The workflow (`.github/workflows/deploy.yml`) runs in the `production` environment, signs in to Google Cloud through Workload Identity Federation (no stored keys), and goes in this order: build and push the image, build the front end, run the database migrations, deploy Cloud Run, load the content for Ask, deploy the Worker, then run a patrol (a browser agent that asks the live site a question).
+**Deploy.** A push to `main` never deploys. In GitHub, open Actions, then `deploy`, then Run workflow with branch `main`. The workflow (`.github/workflows/deploy.yml`) runs in the `production` environment, signs in to Google Cloud through Workload Identity Federation (no stored keys), and goes in this order: build and push the image, build the front end, run the database migrations, deploy Cloud Run and send it all the traffic, load the content for Ask, deploy the Worker, then run a patrol (a browser agent that asks the live site a question).
 
 **Roll back.** There is no automatic rollback. Run both from your own terminal:
 
@@ -140,7 +141,7 @@ gcloud run services update-traffic portfolio-api --region australia-southeast1 -
 cd web && npx wrangler rollback
 ```
 
-Migrations only add, so the previous backend revision keeps working against the new schema.
+Migrations only add, so the previous backend revision keeps working against the new schema. A rollback pins the traffic; the next deploy moves it back to the newest revision by itself.
 
 ## License
 
