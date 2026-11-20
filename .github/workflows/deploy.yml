@@ -232,6 +232,16 @@ jobs:
             --set-env-vars="^|^$(IFS='|'; echo "${env_vars[*]}")" \
             --quiet
 
+      # After a rollback pins a revision, later deploys keep that split and the
+      # new revision gets no traffic: https://docs.cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration
+      - name: Send traffic to the new revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --to-latest \
+            --quiet
+
       - name: Ingest the content
         env:
           V_DATABASE: ${{ vars.SECRET_VERSION_DATABASE_URL_DIRECT }}
