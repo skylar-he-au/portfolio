@@ -1,7 +1,7 @@
 ---
 title: Privacy
 summary: What happens to the questions you type and the job ads you paste, who else sees them, and how long each party keeps them.
-updated: 2026-11-20
+updated: 2026-11-23
 rag: true
 ---
 
@@ -29,6 +29,7 @@ Privacy on this site (Skylar's portfolio): this is everything the site stores ab
 - **Job-match record**: each job match is stored for 30 days with these fields only: time, source (a Greenhouse link, a Lever link or pasted text), the job ad's language, prompt version, which model providers were used, cost, a hash of your IP address for that day, and any thumbs-down you gave. Job ads you paste or link to aren't stored by this site; it keeps only the fields above, not the job ad, the requirements read from it or the guide. The record is deleted at the first cleanup after 30 days, so at most about 31 days after the match.
 - **Conversation state**: answers are kept in the conversation for 24 hours. They are deleted at the first cleanup after 24 hours, so at most about 48 hours after you asked.
 - **Session token**: when the bot check passes, the site gives your browser a session token that works for 24 hours. It is kept only in this browser tab (session storage), so closing the tab forgets it, and it is not saved in the site's database. The site counts requests using a hash of the token's random ID, not the token itself.
+- **Conversation in this tab**: so you can keep the conversation while moving between pages, this browser tab also keeps your questions and the answers shown (session storage), up to the last 10. Job ads you paste and match results are not kept there. Closing the tab forgets it.
 - **Daily request counters**: how many requests each session (by token hash) and each daily IP hash made that day (questions, job matches and job links fetched), used to enforce daily limits. Only today's and yesterday's counts are kept; older ones are deleted at the next cleanup.
 - **Spending records**: how much money was spent on each AI provider each day, used for monthly totals. They contain no personal data and are kept.
 - **Thumbs-down**: if you click the thumbs-down button under an answer or a job-match guide, the site sends that answer's or match's ID, plus your session token so it can apply the daily limit, and marks the matching question record or job-match record. The mark lives in that record and is deleted with it after 30 days.

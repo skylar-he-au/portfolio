@@ -382,6 +382,39 @@ export function formatChecks(value: Checks | undefined): string {
   return checks ? `${checks.passed}/${checks.total}` : '–';
 }
 
+export interface HeadlineCard {
+  key: string;
+  label: string;
+  value: string;
+  note: string;
+}
+
+// Headline selection uses run_id alone, independently of the tables' date ordering.
+export function pickHeadlineCards(files: unknown[]): HeadlineCard[] {
+  const { qa, match } = parseEvalFiles(files);
+  const greatestId = <T extends Run>(runs: T[]): T | undefined =>
+    runs.reduce<T | undefined>((latest, run) =>
+      !latest || run.run_id > latest.run_id ? run : latest, undefined);
+  const qaRun = greatestId(qa.filter((run) => run.route === 'default' && run.split === 'all'));
+  const matchRun = greatestId(match);
+  const cards: HeadlineCard[] = [];
+  if (qaRun) {
+    const note = `prompt ${qaRun.prompt_version} · ${qaRun.date}`;
+    cards.push(
+      { key: 'qa-faithfulness', label: 'Faithfulness, held-out questions', value: formatScore(qaRun.ragas.held_out?.faithfulness?.mean), note },
+      { key: 'qa-project', label: 'Project questions, code checks', value: formatChecks(qaRun.code_checks.project), note },
+      { key: 'qa-zh', label: 'Chinese questions, code checks', value: formatChecks(qaRun.code_checks.zh), note },
+    );
+  }
+  if (matchRun) {
+    cards.push({
+      key: 'match-checks', label: 'Job match, code checks', value: formatChecks(matchRun.code_checks),
+      note: `prompt ${matchRun.prompt_version} · ${matchRun.date}`,
+    });
+  }
+  return cards.filter((card) => card.value !== '–');
+}
+
 export function buildRagasRows(run: QaRun): { label: string; cells: string[] }[] {
   const splits = [
     ['Tuning questions', run.ragas.tune],

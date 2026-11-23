@@ -26,7 +26,75 @@ import {
   matchPassLines,
   METRIC_LABELS,
   parseEvalFiles,
+  pickHeadlineCards,
 } from '../../src/lib/evals';
+
+describe('headline cards', () => {
+  const latestQa = {
+    ...threePasses,
+    run_id: '20261118T031419-v7-default',
+    date: '2026-11-18',
+    prompt_version: 'v7',
+    ragas: { ...threePasses.ragas, held_out: { faithfulness: { mean: .974 } } },
+    code_checks: { ...threePasses.code_checks, project: { passed: 59, total: 60 } },
+  };
+  // A later date must not outweigh the greater run_id.
+  const lesserQa = { ...threePasses, run_id: '20261117T031419-v6-default', date: '2026-11-21' };
+  const qaCards = [
+    { key: 'qa-faithfulness', label: 'Faithfulness, held-out questions', value: '0.97', note: 'prompt v7 · 2026-11-18' },
+    { key: 'qa-project', label: 'Project questions, code checks', value: '59/60', note: 'prompt v7 · 2026-11-18' },
+    { key: 'qa-zh', label: 'Chinese questions, code checks', value: '18/18', note: 'prompt v7 · 2026-11-18' },
+  ];
+
+  it.each([
+    [latestQa, lesserQa],
+    [lesserQa, latestQa],
+  ])('picks QA by greatest run_id in either input order and formats values and notes (%#)', (first, last) => {
+    expect(pickHeadlineCards([first, last])).toEqual(qaCards);
+  });
+
+  it('ignores a greater QA run_id on another route', () => {
+    expect(pickHeadlineCards([latestQa, {
+      ...lesserQa, run_id: '20261119T031419-v7-gemini-answer', route: 'gemini-answer',
+    }])).toEqual(qaCards);
+  });
+
+  it('ignores a greater QA run_id on another split', () => {
+    expect(pickHeadlineCards([{
+      ...lesserQa, run_id: '20261119T031419-v7-default', split: 'tune',
+    }, latestQa])).toEqual(qaCards);
+  });
+
+  it('picks match by greatest run_id regardless of date, route, split or input order', () => {
+    const latestMatch = {
+      ...match, run_id: `${match.run_id}-z`, date: '2026-11-18',
+      route: 'other', split: 'tune', code_checks: { all: { passed: 77, total: 78 } },
+    };
+    const expected = {
+      key: 'match-checks', label: 'Job match, code checks', value: '77/78',
+      note: 'prompt match-v9 · 2026-11-18',
+    };
+    for (const runs of [[latestMatch, match], [match, latestMatch]]) {
+      expect(pickHeadlineCards(runs)).toEqual([expected]);
+      expect(pickHeadlineCards([latestQa, ...runs])).toEqual([...qaCards, expected]);
+    }
+  });
+
+  it('returns no cards for no qualifying runs', () => {
+    expect(pickHeadlineCards([])).toEqual([]);
+    expect(pickHeadlineCards([onePass, cot, { ...latestQa, route: 'other' }])).toEqual([]);
+  });
+
+  it('omits missing values without falling back to an older run', () => {
+    expect(pickHeadlineCards([lesserQa, {
+      ...latestQa, ragas: { held_out: { faithfulness: { mean: null } } },
+      code_checks: { zh: { passed: 0, total: 0 } },
+    }, { ...match, code_checks: {} }])).toEqual([
+      { ...qaCards[2], value: '0/0' },
+    ]);
+    expect(pickHeadlineCards([{ ...latestQa, ragas: {}, code_checks: {} }])).toEqual([]);
+  });
+});
 
 describe('eval summaries', () => {
   it('sorts several files by descending date, then descending run id for both kinds', () => {

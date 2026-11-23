@@ -17,3 +17,18 @@ if (!entry?.rendered) throw new Error('Missing rendered content: privacy');
   )} />
   <EmailLinks />
 </Base>
+
+<style>
+  .markdown :global(ul) {
+    margin-block: var(--space-5);
+    padding-inline-start: var(--space-5);
+  }
+
+  .markdown :global(li + li) {
+    margin-block-start: var(--space-4);
+  }
+
+  .markdown :global(strong) {
+    font-weight: var(--font-weight-semibold);
+  }
+</style>

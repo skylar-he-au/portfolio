@@ -7,13 +7,116 @@ import { renderEmailPlaceholder } from '../lib/email';
 
 const entry = await getEntry('pages', 'about');
 if (!entry?.rendered) throw new Error('Missing rendered content: about');
+const sections = [
+  { label: 'Work rights', id: 'work-rights' },
+  { label: 'Location', id: 'location' },
+  { label: 'Availability', id: 'availability' },
+  { label: 'Contact', id: 'contact' },
+];
 ---
 
 <Base title={entry.data.title} description={entry.data.summary}>
   <h1>{entry.data.title}</h1>
+  <p class="lede">{entry.data.summary}</p>
+  <nav class="about-cards" aria-label="About sections">
+    <ul>
+      {sections.map(({ label, id }) => (
+        <li>
+          <a class="section-link" href={`#${id}`}>{label}<span aria-hidden="true">→</span></a>
+          {id === 'contact' && (
+            <>
+              <span class="contact-email" set:html={renderEmailPlaceholder(
+                '{{email}}',
+                'turn on JavaScript to see the email link',
+              )} />
+              <a class="contact-profile" href="https://www.linkedin.com/in/skylar-he">LinkedIn</a>
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
+  </nav>
   <div class="markdown" set:html={renderEmailPlaceholder(
     addSectionAnchors(entry.rendered.html),
     'turn on JavaScript to see the email link',
   )} />
   <EmailLinks />
 </Base>
+
+<style>
+  .lede {
+    color: var(--color-muted);
+    margin-block-end: var(--space-6);
+  }
+
+  .about-cards {
+    display: block;
+    margin-block-end: var(--space-section);
+  }
+
+  .about-cards ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--space-3);
+    list-style: none;
+    margin: var(--space-0);
+    padding: var(--space-0);
+  }
+
+  .about-cards li {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: var(--space-0);
+    margin: var(--space-0);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+
+  .section-link {
+    display: flex;
+    flex: 1;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-block-size: var(--target-min);
+    padding: var(--space-4);
+    color: var(--color-text);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    border-radius: var(--radius-card);
+  }
+
+  .contact-email,
+  .contact-profile {
+    margin-inline: var(--space-4);
+    margin-block-end: var(--space-3);
+    font-size: var(--font-size-small);
+  }
+
+  .contact-email {
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .contact-profile,
+  .contact-email :global(a) {
+    display: block;
+    min-block-size: var(--target-min);
+    color: var(--color-accent);
+  }
+
+  /* At 320px two columns are too narrow for the section names: stack the cards. */
+  @media (max-width: 24rem) {
+    .about-cards ul {
+      grid-template-columns: minmax(var(--space-0), 1fr);
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .about-cards {
+      inline-size: var(--content-width-wide);
+      margin-inline: calc((var(--size-full) - var(--content-width-wide)) / 2);
+    }
+  }
+</style>

@@ -20,12 +20,14 @@ import {
   matchPassLines,
   METRIC_LABELS,
   parseEvalFiles,
+  pickHeadlineCards,
   type CheckName,
 } from '../lib/evals';
 import compareStep6R2 from '../../../content/evals/compare/step6-r2.json';
 
 const files = import.meta.glob('../../../content/evals/*.json', { eager: true, import: 'default' });
 const { qa, cot, match } = parseEvalFiles(Object.values(files));
+const headlineCards = pickHeadlineCards(Object.values(files));
 const compare = parseCompare(compareStep6R2);
 const judges = [...new Set(qa.map((run) => run.models.judge).filter((judge): judge is string => !!judge))];
 const judgeNames = judges.length ? judges.join(', ') : 'claude-sonnet-5-5';
@@ -48,6 +50,17 @@ const cotNotes: Record<string, string> = {
 
 <Base title="Evals" description="Public scores and counts measuring how well project answers are supported by the project pages.">
   <h1>Evals</h1>
+  {headlineCards.length > 0 && (
+    <ul class="headline-cards" aria-label="Headline scores">
+      {headlineCards.map((card) => (
+        <li>
+          <span class="headline-value">{card.value}</span>
+          <span class="headline-label">{card.label}</span>
+          <small>{card.note}</small>
+        </li>
+      ))}
+    </ul>
+  )}
   <div class="intro">
     <p>
       This is how I measure whether “Ask about my projects” answers are supported by the project pages.
@@ -305,6 +318,51 @@ const cotNotes: Record<string, string> = {
 </Base>
 
 <style>
+  .headline-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--space-3);
+    list-style: none;
+    margin: var(--space-0) var(--space-0) var(--space-6);
+    padding: var(--space-0);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .headline-cards li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-inline-size: var(--space-0);
+    margin: var(--space-0);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+
+  .headline-value {
+    font-size: var(--font-size-proof);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-heading);
+  }
+
+  .headline-label {
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .headline-cards small {
+    color: var(--color-muted);
+    font-size: var(--font-size-small);
+  }
+
+  /* Two 9rem tracks plus the gap exceed the column at 320px; let both shrink. */
+  @media (max-width: 24rem) {
+    .headline-cards {
+      grid-template-columns: repeat(2, minmax(var(--space-0), 1fr));
+    }
+  }
+
   .definitions {
     margin: var(--space-0) var(--space-0) var(--space-5);
   }
@@ -347,9 +405,10 @@ const cotNotes: Record<string, string> = {
     margin-block: var(--space-5);
   }
 
-  /* From 64rem the score tables use the wide column, as #projects does on the home page,
+  /* From 64rem the cards and score tables use the wide column, as #projects does on the home page,
      so every column shows without scrolling; narrower screens scroll inside the frame. */
   @media (min-width: 64rem) {
+    .headline-cards,
     .table-scroll {
       inline-size: var(--content-width-wide);
       max-inline-size: none;

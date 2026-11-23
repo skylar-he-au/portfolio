@@ -103,6 +103,46 @@ it('renders the Evals heading, and run tables when summaries exist or the empty 
   expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
 });
 
+it('shows headline scores from the greatest qualifying run ids with published versions and dates', () => {
+  const evalsDir = join(root, '../content/evals');
+  const runs = existsSync(evalsDir)
+    ? readdirSync(evalsDir).filter((name) => name.endsWith('.json'))
+      .map((name) => JSON.parse(readFileSync(join(evalsDir, name), 'utf8')))
+    : [];
+  const document = readPage('/evals');
+  const list = document.querySelector('ul.headline-cards');
+  if (runs.length === 0) {
+    expect(list).toBeNull();
+    return;
+  }
+  // Read raw summaries independently of the library: dates do not select headlines.
+  const greatestIdFirst = (a: { run_id: string }, b: { run_id: string }) =>
+    a.run_id === b.run_id ? 0 : a.run_id > b.run_id ? -1 : 1;
+  const qa = runs.filter((run) => run.kind === 'qa' && run.route === 'default' && run.split === 'all')
+    .sort(greatestIdFirst)[0];
+  const match = runs.filter((run) => run.kind === 'match').sort(greatestIdFirst)[0];
+  expect(qa).toBeDefined();
+  expect(match).toBeDefined();
+  const cards = [...(list?.querySelectorAll(':scope > li') ?? [])];
+  expect(list?.getAttribute('aria-label')).toBe('Headline scores');
+  expect(document.querySelector('main h1')?.nextElementSibling).toBe(list);
+  expect(list?.nextElementSibling?.classList.contains('intro')).toBe(true);
+  expect(cards).toHaveLength(4);
+  expect(cards.map((card) => card.querySelector('.headline-label')?.textContent)).toEqual([
+    'Faithfulness, held-out questions', 'Project questions, code checks',
+    'Chinese questions, code checks', 'Job match, code checks',
+  ]);
+  expect(cards.map((card) => card.firstElementChild?.textContent)).toEqual([
+    qa.ragas.held_out.faithfulness.mean.toFixed(2),
+    `${qa.code_checks.project.passed}/${qa.code_checks.project.total}`,
+    `${qa.code_checks.zh.passed}/${qa.code_checks.zh.total}`,
+    `${match.code_checks.all.passed}/${match.code_checks.all.total}`,
+  ]);
+  expect(cards.map((card) => card.querySelector('small')?.textContent)).toEqual(
+    [qa, qa, qa, match].map((run) => `prompt ${run.prompt_version} · ${run.date}`),
+  );
+});
+
 it('shows a Job match block with a score table for each published match summary', () => {
   const evalsDir = join(root, '../content/evals');
   const matchRuns = existsSync(evalsDir)
@@ -210,7 +250,40 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
       expect(main.firstElementChild?.tagName).toBe('H1');
       expect(main.querySelector('h1')?.textContent).toBe(title);
       expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
-      expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+      const lede = main.querySelector('h1')?.nextElementSibling;
+      expect(lede?.matches('p.lede')).toBe(true);
+      expect(lede?.textContent).toBe(frontMatter(markdown, 'summary'));
+      const nav = lede?.nextElementSibling;
+      expect(nav?.matches('nav.about-cards[aria-label="About sections"]')).toBe(true);
+      expect(nav?.nextElementSibling).toBe(main.querySelector('.markdown'));
+      const cards = [...(nav?.querySelectorAll('ul > li') ?? [])];
+      expect(cards).toHaveLength(4);
+      const sections = fixtures[path]!.filter((section) => section.id !== 'about-me');
+      const links = cards.map((card) => card.querySelector(':scope > a')!);
+      expect(links.map((link) => link.getAttribute('href')))
+        .toEqual(['#work-rights', '#location', '#availability', '#contact']);
+      expect(links.map((link) => link.getAttribute('href')))
+        .toEqual(sections.map((section) => `#${section.id}`));
+      for (const [index, link] of links.entries()) {
+        const heading = main.querySelector(`.markdown h2${link.getAttribute('href')}`)!;
+        expect(heading).not.toBeNull();
+        const headingText = heading.cloneNode(true) as HTMLElement;
+        headingText.querySelector('a.anchor')!.remove();
+        const linkText = link.cloneNode(true) as HTMLElement;
+        expect(linkText.querySelector('span[aria-hidden="true"]')?.textContent).toBe('→');
+        linkText.querySelector('span[aria-hidden="true"]')!.remove();
+        expect(linkText.textContent?.trim()).toBe(headingText.textContent?.trim());
+        expect(linkText.textContent?.trim()).toBe(sections[index]!.heading);
+      }
+      expect(cards[3]?.querySelector('span[data-email-link]')?.textContent)
+        .toBe('turn on JavaScript to see the email link');
+      expect(cards[3]?.querySelector('a[href="https://www.linkedin.com/in/skylar-he"]')?.textContent)
+        .toBe('LinkedIn');
+      const workRights = main.querySelector('.markdown h2#work-rights')!;
+      const workRightsText = markdown.match(/^## Work rights\r?\n\r?\n([^\n]+)/m)?.[1];
+      expect(workRightsText).toBeDefined();
+      // Astro's Markdown renderer turns apostrophes into typographic quotes.
+      expect(workRights.nextElementSibling?.textContent?.replace(/’/g, "'")).toBe(workRightsText);
     } else {
       // Every other content page (/privacy).
       expect(main.firstElementChild?.tagName).toBe('H1');
