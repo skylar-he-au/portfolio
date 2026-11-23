@@ -153,7 +153,8 @@
   gap: var(--space-4);
 }
 
-/* Phone: kicker, then the name with its figure on the right, the figure's label under it,
+/* Phone: kicker, then the name with its figure on the right, the figure's label on its own
+   full-width line under them (left-aligned, so it doesn't wrap into a narrow right column),
    then the summary. The DOM keeps the name first for screen readers. */
 .project-card {
   position: relative;
@@ -167,7 +168,7 @@
   gap: var(--space-1) var(--space-4);
   align-items: baseline;
   min-inline-size: var(--space-0);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-4);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
@@ -243,7 +244,6 @@
   grid-area: label;
   color: var(--color-muted);
   font-size: var(--font-size-small);
-  text-align: end;
 }
 
 .project-card-next {
@@ -292,10 +292,6 @@
   .project-proof-value {
     margin-block-start: var(--space-4);
     font-size: var(--font-size-proof);
-  }
-
-  .project-proof-label {
-    text-align: start;
   }
 
   .project-card-next {
