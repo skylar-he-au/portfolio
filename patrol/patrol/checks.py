@@ -143,9 +143,9 @@ def verdict(obs: Observation) -> list[Step]:
         Step(
             "home",
             obs.home_status == 200 and obs.home,
-            "home page shows Ask and Match"
+            "home page shows the ask box"
             if obs.home_status == 200 and obs.home
-            else f"home page HTTP {obs.home_status}, Ask and Match boxes "
+            else f"home page HTTP {obs.home_status}, ask box "
             + ("shown" if obs.home else "missing"),
         ),
         Step(
