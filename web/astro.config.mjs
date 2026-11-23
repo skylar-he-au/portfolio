@@ -34,6 +34,11 @@ export default defineConfig({
         },
       },
     },
+    build: {
+      // Fonts stay files: CSP default-src 'self' blocks data: fonts (Vite inlines files under
+      // 4 kB, such as the JetBrains Mono Cyrillic-ext subset). Other assets use the default.
+      assetsInlineLimit: (filePath) => (/\.(?:woff2?|ttf|otf|eot)$/i.test(filePath) ? false : undefined),
+    },
     envDir: '..',
     plugins: [{
       name: 'dev-api-headers',

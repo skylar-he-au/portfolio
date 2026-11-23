@@ -3,6 +3,10 @@ title: OnCallOps Operations Dashboard
 summary: My part of a nine-person team project, the Operations Dashboard and its API for staff who review AI-answered phone calls, built in Next.js and FastAPI.
 updated: 2026-11-17
 rag: true
+kicker: Team project
+proof:
+  - value: 62
+    label: pull requests merged under my name
 ---
 
 ## In 30 seconds

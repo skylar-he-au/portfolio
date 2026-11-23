@@ -5,9 +5,11 @@ import Match from '../components/Match';
 import Base from '../layouts/Base.astro';
 import { addSectionAnchors } from '../lib/anchors';
 import { parseExamples } from '../lib/examples';
+import '../styles/home.css';
 
 const entry = await getEntry('pages', 'home');
 if (!entry?.rendered) throw new Error('Missing rendered content: home');
+if (!entry.data.kicker) throw new Error('Missing front matter: home kicker');
 
 const examplesEntry = await getEntry('pages', 'examples');
 if (!examplesEntry?.body) throw new Error('Missing content: examples');
@@ -16,28 +18,74 @@ const examples = parseExamples(examplesEntry.body);
 const projectIds = ['projects/roleradar', 'projects/oncallops'];
 const projects = (await getCollection('pages', ({ id }) => projectIds.includes(id)))
   .sort((a, b) => projectIds.indexOf(a.id) - projectIds.indexOf(b.id));
+for (const project of projects) {
+  if (!project.data.proof?.length) throw new Error(`Missing front matter: ${project.id} proof`);
+}
 // Every project page's title, so the job match can say which page a section is on.
 const pageTitles = Object.fromEntries(
   (await getCollection('pages', ({ id }) => id.startsWith('projects/')))
     .map((page) => [`/${page.id}`, page.data.title]),
 );
+
+// The example answer before anyone asks. It is not a real answer, so it shows no
+// "Checked" line, and like a real answer it quotes no source text.
+const exampleSource = {
+  href: '/projects/roleradar#how-roleradar-matches-jobs',
+  label: 'RoleRadar · How RoleRadar matches jobs',
+};
 ---
 
-<Base title={entry.data.title} description={entry.data.summary}>
-  <h1>{entry.data.title}</h1>
-  <div class="markdown" set:html={addSectionAnchors(entry.rendered.html)} />
+<Base title={entry.data.title} description={entry.data.summary} layout="wide" glow>
+  <div class="home-hero">
+    <div class="home-hero-main">
+      <p class="home-kicker">{entry.data.kicker}</p>
+      <h1><span>Ask about my work.</span> <span>Every answer cites its page.</span></h1>
+      <div class="markdown home-intro" set:html={addSectionAnchors(entry.rendered.html)} />
+      <noscript><p class="home-noscript">The assistant needs JavaScript. The project pages work without it.</p></noscript>
+      <section id="ask" aria-label="Ask about my projects"><Ask client:load examples={examples} /></section>
+      <section id="match" aria-label="Paste a job ad"><Match client:load pageTitles={pageTitles} /></section>
+    </div>
+    <div class="example-answer">
+      <p class="example-label"><span class="example-dot" aria-hidden="true"></span>Example answer</p>
+      <p class="example-question">How does RoleRadar decide which jobs match a user?</p>
+      <div class="example-reply">
+        <p>
+          RoleRadar matches jobs in two layers: an AI model reads each full ad once, and plain code decides the fit tier.
+          <a class="example-cite" href={exampleSource.href} aria-label={`Source 1: ${exampleSource.label}`}>1</a>
+        </p>
+        <div class="example-sources">
+          <p class="example-sources-title">Sources</p>
+          <ol>
+            <li><a href={exampleSource.href}>{exampleSource.label}</a></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
   <section id="projects" aria-label="Projects">
-    <h2>Projects</h2>
+    <div class="home-projects-head">
+      <h2>Projects</h2>
+      <p class="home-projects-count">{projects.length} projects · 1 coming</p>
+    </div>
     <div class="project-grid">
-      {projects.map((project) => (
-        <article class="project-card">
-          <h3>{project.data.title}</h3>
-          <p>{project.data.summary}</p>
-          <a href={`/${project.id}`}>Read about {project.data.title}</a>
-        </article>
-      ))}
+      {projects.map((project) => {
+        const [proof] = project.data.proof!;
+        return (
+          <article class="project-card">
+            <h3><a href={`/${project.id}`}>{project.data.title}</a></h3>
+            {project.data.kicker && <span class="project-kicker">{project.data.kicker}</span>}
+            <p class="project-summary">{project.data.summary}</p>
+            <div class="project-proof">
+              <span class="project-proof-value">{proof!.value}</span>
+              <span class="project-proof-label">{proof!.label}</span>
+            </div>
+          </article>
+        );
+      })}
+      {/* Written here, not in the content collection, so the assistant never counts it as a project. */}
+      <div class="project-card project-card-next">
+        <p><span>Next project</span> · <span>Coming soon</span></p>
+      </div>
     </div>
   </section>
-  <section id="ask" aria-label="Ask about my projects"><Ask client:load examples={examples} /></section>
-  <section id="match" aria-label="Paste a job ad"><Match client:load pageTitles={pageTitles} /></section>
 </Base>

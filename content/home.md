@@ -1,10 +1,9 @@
 ---
 title: Skylar He
 summary: Skylar He's portfolio, with an assistant that answers questions about the projects and compares them with a job ad.
-updated: 2026-11-17
+updated: 2026-11-23
 rag: false
+kicker: AI and full-stack developer · Sydney
 ---
 
-I'm Skylar, a Master of Computer Science student in Sydney building AI and full stack projects. This site has two project write-ups, RoleRadar and my part of a team system called OnCallOps, each with the details of how it was built.
-
-Ask the assistant about the projects, and it answers with links to the page sections it used. You can also paste a Greenhouse or Lever job link, or paste the job description text, and it will show where my projects match the job and what the pages don't cover.
+I'm a Master of Computer Science student building AI products. Answers come only from my project write-ups, and a second model checks every sentence.

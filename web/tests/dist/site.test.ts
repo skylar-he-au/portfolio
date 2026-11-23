@@ -38,12 +38,27 @@ function readPage(path: string): Document {
   );
 }
 
-function frontMatter(markdown: string, field: 'title' | 'summary'): string {
+function frontMatter(markdown: string, field: 'title' | 'summary' | 'kicker'): string {
   const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1];
   // These content files use single-line plain scalars for title and summary.
   const value = front?.match(new RegExp(`^${field}: (.+)$`, 'm'))?.[1]?.trim();
   if (!value) throw new Error(`Missing front matter field: ${field}`);
   return value;
+}
+
+interface Proof {
+  value: string;
+  label: string;
+}
+
+// The project pages write proof as a block list of { value, label } plain scalars.
+function proofs(markdown: string): Proof[] {
+  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1] ?? '';
+  const block = /^proof:\r?\n((?:[ \t]+.*(?:\r?\n|$))+)/m.exec(front)?.[1] ?? '';
+  return Array.from(
+    block.matchAll(/^\s*- value: (.+)\r?\n\s+label: (.+)$/gm),
+    (match) => ({ value: match[1]!.trim(), label: match[2]!.trim() }),
+  );
 }
 
 function expectLocalResource(value: string, context: string, allowData = true): void {
@@ -234,11 +249,19 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
     const title = frontMatter(markdown, 'title');
     const main = document.querySelector('main#main')!;
     if (path === '/') {
-      // Home (9h).
-      expect(main.firstElementChild?.tagName).toBe('H1');
-      expect(main.querySelector('h1')?.textContent).toBe('Skylar He');
-      expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
-      expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+      // Home (9h): kicker, the two-line headline, then home.md as the intro. These may move
+      // into the assistant's intro slot (9a1b), so only their order is pinned, not their parent.
+      const h1 = main.querySelector('h1')!;
+      expect(Array.from(h1.querySelectorAll(':scope > span'), (line) => line.textContent))
+        .toEqual(['Ask about my work.', 'Every answer cites its page.']);
+      expect(h1.textContent).toBe('Ask about my work. Every answer cites its page.');
+      expect(h1.previousElementSibling?.classList.contains('home-kicker')).toBe(true);
+      expect(h1.previousElementSibling?.textContent).toBe(frontMatter(markdown, 'kicker'));
+      const intro = h1.nextElementSibling!;
+      expect(intro.classList.contains('markdown')).toBe(true);
+      // Markdown renders ' as a typographic apostrophe.
+      expect(intro.textContent?.replace(/’/g, "'").replace(/\s+/g, ' ').trim())
+        .toBe(markdown.replace(/^---[\s\S]*?\n---\r?\n/, '').replace(/\s+/g, ' ').trim());
     } else if (path.startsWith('/projects/')) {
       // Project pages (9p).
       expect(main.firstElementChild?.tagName).toBe('H1');
@@ -336,31 +359,85 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
   });
 });
 
-it('renders two project cards followed by the Ask component on Home', () => {
+it('keeps every proof figure to at most 3, with numbers the project page body states', () => {
+  for (const file of ['projects/roleradar.md', 'projects/oncallops.md']) {
+    const markdown = readFileSync(join(root, '../content', file), 'utf8');
+    const body = markdown.replace(/^---[\s\S]*?\n---\r?\n/, '');
+    const items = proofs(markdown);
+    expect(items.length, file).toBeGreaterThan(0);
+    expect(items.length, file).toBeLessThanOrEqual(3);
+    for (const { value } of items) {
+      for (const number of value.match(/\d[\d,.]*/g) ?? []) {
+        expect(body, `${file}: ${value}`).toMatch(new RegExp(`(?<![\\d.,])${number.replace(/[.,]/g, '\\$&')}(?![\\d])`));
+      }
+    }
+  }
+});
+
+it('shows an unchecked example answer that cites the RoleRadar matching section on Home', () => {
   const document = readPage('/');
-  const projects = document.querySelector('section#projects')!;
+  const example = document.querySelector('main .example-answer')!;
+  expect(example.querySelector('.example-label')?.textContent).toBe('Example answer');
+  expect(example.querySelector('.example-question')?.textContent)
+    .toBe('How does RoleRadar decide which jobs match a user?');
+  // The example says what the cited section says, in its own words.
+  const roleradar = readFileSync(join(root, '../content/projects/roleradar.md'), 'utf8');
+  const claim = 'an AI model reads each full ad once, and plain code decides the fit tier';
+  expect(roleradar).toContain(claim);
+  expect(example.querySelector('.example-reply')?.textContent).toContain(claim);
+  const href = '/projects/roleradar#how-roleradar-matches-jobs';
+  expect(example.querySelector('.example-reply a.example-cite')?.getAttribute('href')).toBe(href);
+  expect(example.querySelector('.example-reply a.example-cite')?.textContent).toBe('1');
+  const source = example.querySelector('.example-sources a')!;
+  expect(source.getAttribute('href')).toBe(href);
+  expect(source.textContent).toBe('RoleRadar · How RoleRadar matches jobs');
+  // Not run through the checker and no quoted source text, like a real answer.
+  expect(example.textContent).not.toMatch(/Checked/);
+  expect(example.querySelector('blockquote, q, mark')).toBeNull();
+  expect(document.querySelector('main noscript')?.textContent)
+    .toContain('The assistant needs JavaScript. The project pages work without it.');
+});
+
+it('renders the Ask component, then two project cards with proof figures and a coming-soon card, on Home', () => {
+  const document = readPage('/');
+  const projects = document.querySelector('section#projects[aria-label="Projects"]')!;
   const headings = projects.querySelectorAll('h2');
   expect(headings).toHaveLength(1);
   const heading = headings[0]!;
   expect(heading.textContent).toBe('Projects');
   expect(heading.querySelector('a.anchor')).toBeNull();
+  expect(projects.querySelector('.home-projects-count')?.textContent).toBe('2 projects · 1 coming');
   const grid = projects.querySelector('.project-grid')!;
   expect(grid).not.toBeNull();
   expect(heading.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(Array.from(projects.querySelectorAll('a'), (link) => link.getAttribute('href')))
     .toEqual(['/projects/roleradar', '/projects/oncallops']);
-  const cards = projects.querySelectorAll('article');
-  expect(cards).toHaveLength(2);
-  expect(heading.compareDocumentPosition(cards[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const cards = grid.querySelectorAll(':scope > .project-card');
+  expect(cards).toHaveLength(3);
   for (const [index, file] of ['projects/roleradar.md', 'projects/oncallops.md'].entries()) {
     const markdown = readFileSync(join(root, '../content', file), 'utf8');
-    expect(cards[index]!.firstElementChild?.tagName).toBe('H3');
-    expect(cards[index]!.querySelector('h3')?.textContent).toBe(frontMatter(markdown, 'title'));
-    expect(cards[index]!.querySelector('p')?.textContent).toBe(frontMatter(markdown, 'summary'));
+    const card = cards[index]!;
+    expect(card.tagName).toBe('ARTICLE');
+    expect(card.firstElementChild?.tagName).toBe('H3');
+    expect(card.querySelector('h3 > a')?.getAttribute('href')).toBe(`/${file.replace(/\.md$/, '')}`);
+    expect(card.querySelector('h3')?.textContent).toBe(frontMatter(markdown, 'title'));
+    expect(card.querySelector('.project-kicker')?.textContent).toBe(frontMatter(markdown, 'kicker'));
+    expect(card.querySelector('p')?.textContent).toBe(frontMatter(markdown, 'summary'));
+    // The card shows the first proof figure; the project page shows them all.
+    const [first] = proofs(markdown);
+    expect(card.querySelector('.project-proof-value')?.textContent).toBe(first!.value);
+    expect(card.querySelector('.project-proof-label')?.textContent).toBe(first!.label);
   }
+  expect(cards[1]!.querySelector('.project-kicker')?.textContent).toBe('Team project');
+  // The third card lives in the template, not the content collection: no link, no page.
+  const next = cards[2]!;
+  expect(next.classList.contains('project-card-next')).toBe(true);
+  expect(next.querySelector('a')).toBeNull();
+  expect(next.textContent?.replace(/\s+/g, ' ').trim()).toBe('Next project · Coming soon');
   const ask = document.querySelector('section#ask[aria-label="Ask about my projects"]')!;
   expect(document.querySelectorAll('section#ask')).toHaveLength(1);
-  expect(projects.nextElementSibling).toBe(ask);
+  // The assistant is on the first screen, above the projects.
+  expect(ask.compareDocumentPosition(projects) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   // The Ask component is server-rendered into the page.
   const field = ask.querySelector('textarea, input[type="text"]')!;
   expect(field).not.toBeNull();
@@ -374,8 +451,13 @@ it('self-hosts Instrument Sans and JetBrains Mono and no longer ships Inter or S
   const faces = Array.from(css.matchAll(/@font-face\s*\{[^}]*\}/g), (match) => match[0]);
   const families = new Set(faces.map((face) => /font-family:\s*['"]?([^;'"]+)/.exec(face)?.[1]));
   expect([...families].sort()).toEqual(['Instrument Sans Variable', 'JetBrains Mono Variable']);
-  // Vite inlines subsets under 4 kB (JetBrains Mono Cyrillic-ext) as data: URIs.
-  for (const face of faces) expect(face).toMatch(/url\(\s*["']?(?:\/_astro\/[^)]+\.woff2|data:font\/woff2;)/);
+  // astro.config.mjs keeps every font a file: CSP default-src 'self' blocks data: fonts.
+  expect(css).not.toMatch(/data:(?:font|application\/(?:x-)?font)/i);
+  for (const face of faces) {
+    for (const match of face.matchAll(/url\(\s*["']?([^"')]+)/g)) {
+      expect(match[1]).toMatch(/^\/_astro\/[^/]+\.woff2$/);
+    }
+  }
 });
 
 it('loads no third-party resources from any generated HTML or CSS file', () => {

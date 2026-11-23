@@ -3,6 +3,14 @@ title: RoleRadar
 summary: An AI job-search assistant for Australian tech roles that matches jobs to your resume and tailors resumes without inventing experience.
 updated: 2026-11-17
 rag: true
+kicker: Project · live at roleradar.org
+proof:
+  - value: 154 / 164
+    label: tier checks agreed with labelled answers
+  - value: 17 / 17
+    label: resume runs kept every fact
+  - value: 332
+    label: company job boards
 ---
 
 ## In 30 seconds

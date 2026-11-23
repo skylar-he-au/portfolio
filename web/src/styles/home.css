@@ -1,0 +1,321 @@
+/* Home page (step 9, 9h): first screen, example answer, project cards.
+   Colors come only from tokens.css. Breakpoint 960px is design.md's desktop line. */
+
+/* First screen: intro and assistant on the left, the example answer on the right.
+   9a1b moves the intro and example into the assistant's slots, which lays out its own columns. */
+.home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.home-kicker {
+  margin: var(--space-0) var(--space-0) var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.home-hero h1 {
+  margin: var(--space-0);
+  font-size: var(--font-size-display);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-display);
+  letter-spacing: var(--tracking-display);
+}
+
+.home-hero h1 > span {
+  display: block;
+}
+
+.home-hero h1 > span + span {
+  color: var(--color-accent);
+}
+
+.home-intro {
+  max-inline-size: var(--content-width);
+  margin-block-start: var(--space-4);
+  color: var(--color-muted);
+}
+
+.home-intro > :last-child,
+.home-noscript {
+  margin-block-end: var(--space-0);
+}
+
+.home-noscript {
+  margin-block-start: var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+.home-hero #ask,
+.home-hero #match {
+  margin-block-start: var(--space-6);
+}
+
+/* Example answer: desktop only (design.md: no example card on phones). */
+.example-answer {
+  display: none;
+}
+
+.example-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-0);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+}
+
+.example-dot {
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--gradient-ai);
+}
+
+.example-question {
+  inline-size: fit-content;
+  max-inline-size: 85%;
+  margin: var(--space-4) var(--space-0) var(--space-0) auto;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+.example-reply {
+  margin-block-start: var(--space-4);
+}
+
+.example-reply > p {
+  margin: var(--space-0);
+}
+
+.example-cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-small);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-family: var(--font-code);
+  font-size: var(--font-size-mono);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-heading);
+  text-decoration: none;
+}
+
+.example-cite:hover {
+  text-decoration: underline;
+}
+
+.example-sources {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-3);
+  border-block-start: var(--border-width) solid var(--color-border);
+  font-size: var(--font-size-small);
+}
+
+.example-sources-title {
+  margin: var(--space-0) var(--space-0) var(--space-1);
+  color: var(--color-subtle);
+  font-weight: var(--font-weight-semibold);
+}
+
+.example-sources ol {
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+/* Projects. */
+#projects {
+  margin-block-start: var(--space-section);
+}
+
+.home-projects-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-block-end: var(--space-5);
+}
+
+.home-projects-head h2 {
+  margin: var(--space-0);
+}
+
+.home-projects-count {
+  margin: var(--space-0);
+  color: var(--color-subtle);
+  font-size: var(--font-size-small);
+}
+
+.project-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+/* Phone: kicker, then the name with its figure on the right, the figure's label under it,
+   then the summary. The DOM keeps the name first for screen readers. */
+.project-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'kicker kicker'
+    'name value'
+    'label label'
+    'summary summary';
+  gap: var(--space-1) var(--space-4);
+  align-items: baseline;
+  min-inline-size: var(--space-0);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.project-card h3 {
+  grid-area: name;
+  margin: var(--space-0);
+}
+
+.project-card h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The whole card is the link's target area; the focus ring goes round the card. */
+.project-card h3 a::after {
+  position: absolute;
+  inset: var(--space-0);
+  border-radius: var(--radius-card);
+  content: '';
+}
+
+.project-card h3 a:focus-visible {
+  outline: none;
+}
+
+.project-card h3 a:focus-visible::after {
+  outline: var(--focus-width) solid var(--color-accent);
+  outline-offset: var(--focus-offset);
+}
+
+.project-card:hover h3 a {
+  text-decoration: underline;
+  text-decoration-thickness: var(--underline-thickness);
+  text-underline-offset: var(--underline-offset);
+}
+
+.project-kicker {
+  grid-area: kicker;
+  justify-self: start;
+  padding: var(--space-0) var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.project-summary {
+  grid-area: summary;
+  margin: var(--space-2) var(--space-0) var(--space-0);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+/* Value and label are grid items of the card, so the phone layout can split them. */
+.project-proof {
+  display: contents;
+}
+
+.project-proof-value {
+  grid-area: value;
+  color: var(--color-accent);
+  font-size: var(--font-size-proof-compact);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-heading);
+  white-space: nowrap;
+}
+
+.project-proof-label {
+  grid-area: label;
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  text-align: end;
+}
+
+.project-card-next {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  background: var(--color-clear);
+  color: var(--color-subtle);
+  font-size: var(--font-size-small);
+  text-align: center;
+}
+
+.project-card-next p {
+  margin: var(--space-0);
+}
+
+@media (min-width: 960px) {
+  .home-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+    gap: var(--space-7);
+  }
+
+  .example-answer {
+    display: block;
+    padding: var(--space-5);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+
+  .project-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr);
+    gap: var(--space-5);
+  }
+
+  /* Desktop: one column, figures pinned to the bottom so the two cards line up. */
+  .project-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr auto auto;
+    grid-template-areas:
+      'kicker'
+      'name'
+      'summary'
+      'value'
+      'label';
+    align-items: start;
+    padding: var(--space-5);
+  }
+
+  .project-proof-value {
+    margin-block-start: var(--space-4);
+    font-size: var(--font-size-proof);
+  }
+
+  .project-proof-label {
+    text-align: start;
+  }
+
+  .project-card-next {
+    align-items: center;
+  }
+}
