@@ -1,0 +1,421 @@
+/* Project page (step 9, 9p; docs/design.md "项目页") and the site-wide source highlight.
+   highlight.ts imports this file, so it loads on every page: every rule below is scoped to
+   project-page classes, except the highlight at the end. Colors come only from tokens.css.
+   Breakpoints: 1100px three columns, 960px two columns, below that one column. */
+
+/* Title area: kicker, title, up to three result figures. */
+.project-head h1 {
+  margin-block-end: var(--space-4);
+}
+
+.project-page-kicker {
+  margin: var(--space-0) var(--space-0) var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.project-page-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  margin: var(--space-0) var(--space-0) var(--space-6);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.project-page-proof li {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-0);
+  max-inline-size: 14rem;
+}
+
+.project-page-proof-value {
+  color: var(--color-accent);
+  font-size: var(--font-size-proof);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-heading);
+  white-space: nowrap;
+}
+
+.project-page-proof-label {
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-heading);
+}
+
+/* Layout. Phones: title, "On this page", body; the assistant is a bottom bar. */
+.project-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "head"
+    "toc-collapse"
+    "body";
+  align-items: start;
+}
+
+.project-head { grid-area: head; }
+.toc-side { grid-area: toc; display: none; }
+.toc-collapse { grid-area: toc-collapse; }
+.project-body { grid-area: body; min-inline-size: var(--space-0); }
+
+.project-body > :first-child {
+  margin-block-start: var(--space-0);
+}
+
+/* Contents lists. */
+.toc ol {
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.toc li + li {
+  margin-block-start: var(--space-0);
+}
+
+.toc a {
+  display: block;
+  padding: var(--space-1) var(--space-3);
+  border-inline-start: var(--rule-width) solid var(--color-clear);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-heading);
+  text-decoration: none;
+}
+
+.toc a:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.toc a[aria-current] {
+  border-inline-start-color: var(--color-accent);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.toc-title {
+  margin: var(--space-0) var(--space-0) var(--space-3);
+  padding-inline-start: calc(var(--space-3) + var(--rule-width));
+  color: var(--color-subtle);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+}
+
+.toc-collapse {
+  margin-block-end: var(--space-6);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.toc-collapse summary {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--space-7);
+  padding-inline: var(--space-4);
+  color: var(--color-text);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.toc-collapse nav {
+  display: block;
+  padding: var(--space-0) var(--space-2) var(--space-3);
+}
+
+/* The assistant: below 960px a bar fixed to the bottom edge opens the dialog as a sheet. */
+:root:has(.project-ask) {
+  --ask-bar-height: 4rem;
+  /* The fixed bar must not cover keyboard focus (WCAG 2.4.11). */
+  scroll-padding-block-end: calc(var(--ask-bar-height) + var(--space-4));
+}
+
+body:has(.project-ask) {
+  padding-block-end: var(--ask-bar-height);
+}
+
+.ask-bar {
+  position: fixed;
+  inset-inline: var(--space-0);
+  inset-block-end: var(--space-0);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  inline-size: var(--size-full);
+  min-block-size: var(--ask-bar-height);
+  padding: var(--space-3) var(--page-gutter);
+  padding-block-end: max(var(--space-3), env(safe-area-inset-bottom));
+  border: none;
+  border-block-start: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ask-bar-dot {
+  flex: none;
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--gradient-ai);
+}
+
+.ask-bar-text {
+  flex: 1;
+  min-inline-size: var(--space-0);
+}
+
+.ask-bar-go {
+  flex: none;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--gradient-ai);
+  color: var(--color-on-ai);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ask-bar:hover .ask-bar-text {
+  color: var(--color-text);
+}
+
+/* The sheet. The dialog has no padding or gaps, so a click on the dialog itself is the backdrop. */
+.ask-dialog {
+  flex-direction: column;
+  box-sizing: border-box;
+  inline-size: var(--size-full);
+  max-inline-size: var(--size-full);
+  max-block-size: 88dvh;
+  margin: auto var(--space-0) var(--space-0);
+  padding: var(--space-0);
+  border: none;
+  border-block-start: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card) var(--radius-card) var(--space-0) var(--space-0);
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.ask-dialog[open] {
+  display: flex;
+}
+
+.ask-dialog::backdrop {
+  background: var(--color-text);
+  opacity: 0.4;
+}
+
+.ask-dialog:modal {
+  animation: ask-sheet-in 200ms ease-out;
+}
+
+@keyframes ask-sheet-in {
+  from { transform: translateY(2rem); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.ask-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--page-gutter) var(--space-3);
+}
+
+.ask-dialog-title {
+  margin: var(--space-0);
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--space-0);
+}
+
+.ask-dialog-close {
+  margin: var(--space-0);
+}
+
+.ask-dialog-close button {
+  min-block-size: var(--target-min);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-small);
+  cursor: pointer;
+}
+
+.ask-dialog-close button:hover {
+  border-color: var(--color-subtle);
+}
+
+/* The assistant inside the panel: answers scroll above the box, like a chat. */
+.assistant-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: var(--space-3);
+  min-block-size: var(--space-0);
+  padding: var(--space-0) var(--page-gutter) var(--space-4);
+  overflow: hidden;
+}
+
+.assistant-panel .assistant-answers {
+  display: block;
+  flex: 1 1 auto;
+  min-block-size: var(--space-0);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.assistant-panel .ask-answer,
+.assistant-panel .match-result {
+  padding: var(--space-4);
+}
+
+.assistant-panel .ask-note,
+.assistant-panel .ask-dev {
+  margin: var(--space-0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-dialog:modal {
+    animation: none;
+  }
+}
+
+/* 960–1100px: two columns, the body and the assistant; contents stay collapsed above the body. */
+@media (min-width: 960px) {
+  :root:has(.project-ask) {
+    scroll-padding-block-end: var(--space-0);
+  }
+
+  body:has(.project-ask) {
+    padding-block-end: var(--space-0);
+  }
+
+  .project-page {
+    grid-template-columns: minmax(0, 1fr) var(--aside-width);
+    grid-template-areas:
+      "head ask"
+      "toc-collapse ask"
+      "body ask";
+    column-gap: var(--space-7);
+  }
+
+  .ask-bar {
+    display: none;
+  }
+
+  .project-ask {
+    grid-area: ask;
+    position: sticky;
+    inset-block-start: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    max-block-size: calc(100dvh - 2 * var(--space-5));
+  }
+
+  /* The same dialog, shown in place as the right column (open or not). */
+  .ask-dialog,
+  .ask-dialog[open] {
+    position: static;
+    display: flex;
+    flex: 1;
+    min-block-size: var(--space-0);
+    inline-size: auto;
+    max-block-size: none;
+    margin: var(--space-0);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    animation: none;
+  }
+
+  .ask-dialog-head {
+    padding: var(--space-4) var(--space-4) var(--space-3);
+  }
+
+  .ask-dialog-close {
+    display: none;
+  }
+
+  .assistant-panel {
+    padding: var(--space-0) var(--space-4) var(--space-4);
+  }
+
+  .assistant-panel .ask-answer,
+  .assistant-panel .match-result {
+    padding: var(--space-3);
+  }
+
+  .assistant-panel .ask-examples {
+    display: grid;
+  }
+
+  .assistant-panel .ask-examples ul {
+    display: grid;
+  }
+}
+
+/* From 1100px: three columns, a sticky contents list on the left. */
+@media (min-width: 1100px) {
+  .project-page {
+    grid-template-columns: var(--toc-width) minmax(0, var(--prose-width)) var(--aside-width);
+    grid-template-areas:
+      "toc head ask"
+      "toc body ask";
+    justify-content: space-between;
+    column-gap: var(--space-6);
+  }
+
+  .toc-side {
+    display: block;
+    position: sticky;
+    inset-block-start: var(--space-5);
+    max-block-size: calc(100dvh - 2 * var(--space-5));
+    overflow-y: auto;
+    padding-block-start: var(--space-2);
+  }
+
+  .toc-collapse {
+    display: none;
+  }
+}
+
+/* Source highlight (highlight.ts), on every page: the whole section, about 3 seconds, then a
+   fade. The spread shadow (wider than half of a 1rem block margin) fills the gaps between blocks. */
+.section-highlight {
+  background-color: var(--color-highlight);
+  box-shadow: 0 0 0 var(--space-3) var(--color-highlight);
+  color: var(--color-highlight-text);
+  animation: section-highlight 3.6s ease-out forwards;
+}
+
+@keyframes section-highlight {
+  0%,
+  83% {
+    background-color: var(--color-highlight);
+    box-shadow: 0 0 0 var(--space-3) var(--color-highlight);
+  }
+
+  100% {
+    background-color: var(--color-clear);
+    box-shadow: 0 0 0 var(--space-3) var(--color-clear);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section-highlight {
+    animation: none;
+  }
+}

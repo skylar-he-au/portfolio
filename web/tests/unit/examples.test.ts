@@ -31,6 +31,30 @@ describe('parseExamples', () => {
     expect(() => parseExamples(markdown)).toThrow(/items 1, 2 and 4/i);
   });
 
+  it('picks the RoleRadar page examples 1, 2 and 3 by the page name in brackets', () => {
+    expect(parseExamples(body, 'roleradar')).toEqual([
+      'How does RoleRadar decide which jobs match a user?',
+      'How do you stop the AI from making things up when it rewrites a resume?',
+      "How do you test RoleRadar's AI features?",
+    ]);
+  });
+
+  it('picks the OnCallOps page examples 4 and 5 by the page name in brackets', () => {
+    expect(parseExamples(body, 'oncallops')).toEqual([
+      "What did you build in the team project, and what was someone else's work?",
+      'What happens in your dashboard when one of the data sources fails?',
+    ]);
+  });
+
+  it('matches page names case-insensitively, in numeric order, and ignores colons in the section', () => {
+    const markdown = '5. Fifth? (roleradar: A: B)\n4. Fourth? (Other: X)\n2. Second? (RoleRadar)\n1. First? (RoleRadar: Y)\n3. Third?';
+    expect(parseExamples(markdown, 'RoleRadar')).toEqual(['First?', 'Second?', 'Fifth?']);
+  });
+
+  it('returns no examples for a page no item names', () => {
+    expect(parseExamples(body, 'about')).toEqual([]);
+  });
+
   it('uses numeric order and preserves question text apart from the trailing topic', () => {
     expect(parseExamples('Intro\r\n  4. Fourth (detail) question?   (Page: Section)\r\n3. Spare\r\n2. Second?\r\n1. First  question? (Page: Section)\r\nOutro'))
       .toEqual(['First  question?', 'Second?', 'Fourth (detail) question?']);

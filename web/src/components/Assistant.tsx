@@ -286,6 +286,25 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
     if (field.scrollHeight > 0) field.style.blockSize = `${field.scrollHeight + border}px`;
   }, [input]);
 
+  // Panel only: the answers scroll inside the panel and follow new text while the reader is
+  // at the bottom; scrolling up to read an earlier answer stops the follow.
+  const answersRef = useRef<HTMLDivElement>(null);
+  const followAnswers = useRef(true);
+  function onAnswersScroll() {
+    const box = answersRef.current;
+    if (box) followAnswers.current = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+  }
+  const answerCount = useRef(0);
+  useLayoutEffect(() => {
+    const box = answersRef.current;
+    if (variant !== 'panel' || !box) return;
+    // A new question or job match always brings the reader back to the bottom.
+    const count = turns.length + (matchAt === null ? 0 : 1);
+    if (count !== answerCount.current) followAnswers.current = true;
+    answerCount.current = count;
+    if (followAnswers.current) box.scrollTop = box.scrollHeight;
+  });
+
   // A question sent before /api/ping answered goes out once the backend is ready.
   useEffect(() => {
     if (queued === null) return;
@@ -511,13 +530,17 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
   const status = <p className="assistant-sr" role="status">{announcement}</p>;
 
   if (variant === 'panel') {
-    // 9p builds the project-page panel (right column, bottom bar and dialog) here.
+    // Project page (9p): one instance is the right column from 960px and the bottom sheet
+    // below that ([slug].astro, project-page.css). Answers scroll above the box, like a chat;
+    // this page's examples show until the first question.
     return (
       <section id="ask" aria-label="Ask about my projects" className="assistant assistant-panel">
+        {asked && (
+          <div className="assistant-answers" ref={answersRef} onScroll={onAnswersScroll}>{conversation}</div>
+        )}
         {form}
-        {examplesGroup}
+        {!asked && examplesGroup}
         {notes}
-        {asked && <div className="assistant-answers">{conversation}</div>}
         {status}
       </section>
     );

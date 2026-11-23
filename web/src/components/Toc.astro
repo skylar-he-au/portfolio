@@ -1,0 +1,75 @@
+---
+// "On this page": a sticky side list from 1100px, a collapsed <details> below that.
+// Only one of the two is displayed at a time (project-page.css), so screen readers meet one.
+interface Props {
+  headings: { slug: string; text: string }[];
+}
+
+const { headings } = Astro.props;
+---
+
+<nav class="toc toc-side" aria-label="On this page">
+  <p class="toc-title" aria-hidden="true">On this page</p>
+  <ol>
+    {headings.map((heading) => <li><a href={`#${heading.slug}`}>{heading.text}</a></li>)}
+  </ol>
+</nav>
+<details class="toc toc-collapse">
+  <summary>On this page</summary>
+  <nav aria-label="On this page">
+    <ol>
+      {headings.map((heading) => <li><a href={`#${heading.slug}`}>{heading.text}</a></li>)}
+    </ol>
+  </nav>
+</details>
+
+<script>
+  // Marks the section being read in both lists, and lets Esc or a link close the collapsed list.
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('.toc a[href^="#"]')];
+  const headings = [...new Set(links.map((link) => link.hash.slice(1)))]
+    .map((id) => document.getElementById(decodeURIComponent(id)))
+    .filter((heading): heading is HTMLElement => heading !== null);
+
+  let current: string | null = null;
+  let queued = false;
+
+  function update() {
+    queued = false;
+    // The last heading whose top has passed a quarter of the way down the viewport.
+    const line = window.innerHeight / 4;
+    let active = headings[0]?.id ?? null;
+    for (const heading of headings) {
+      if (heading.getBoundingClientRect().top <= line) active = heading.id;
+      else break;
+    }
+    if (active === current) return;
+    current = active;
+    for (const link of links) {
+      if (decodeURIComponent(link.hash.slice(1)) === active) link.setAttribute('aria-current', 'true');
+      else link.removeAttribute('aria-current');
+    }
+  }
+
+  function schedule() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(update);
+  }
+
+  if (headings.length > 0) {
+    update();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule, { passive: true });
+  }
+
+  for (const details of document.querySelectorAll<HTMLDetailsElement>('details.toc-collapse')) {
+    details.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !details.open) return;
+      details.open = false;
+      details.querySelector('summary')?.focus();
+    });
+    details.addEventListener('click', (event) => {
+      if (event.target instanceof Element && event.target.closest('a')) details.open = false;
+    });
+  }
+</script>

@@ -1,7 +1,12 @@
 ---
-import { getCollection, type CollectionEntry } from 'astro:content';
+import { getCollection, getEntry, render, type CollectionEntry } from 'astro:content';
+import Assistant from '../../components/Assistant';
+import Toc from '../../components/Toc.astro';
 import Base from '../../layouts/Base.astro';
 import { addSectionAnchors } from '../../lib/anchors';
+import { parseExamples } from '../../lib/examples';
+import '../../styles/assistant.css';
+// project-page.css comes with the highlight script in Base.astro, on every page.
 
 export async function getStaticPaths() {
   const projects = await getCollection('pages', ({ id }) => id.startsWith('projects/'));
@@ -17,9 +22,81 @@ interface Props {
 
 const { entry } = Astro.props;
 if (!entry.rendered) throw new Error(`Missing rendered content: ${entry.id}`);
+const slug = entry.id.slice('projects/'.length);
+// The contents list: the same h2 headings and Astro ids the body renders.
+const headings = (await render(entry)).headings
+  .filter((heading) => heading.depth === 2)
+  .map(({ slug: id, text }) => ({ slug: id, text }));
+
+const examplesEntry = await getEntry('pages', 'examples');
+if (!examplesEntry?.body) throw new Error('Missing content: examples');
+const examples = parseExamples(examplesEntry.body, slug);
+
+// Every project page's title, so answers and the job match can say which page a section is on.
+const pageTitles = Object.fromEntries(
+  (await getCollection('pages', ({ id }) => id.startsWith('projects/')))
+    .map((page) => [`/${page.id}`, page.data.title]),
+);
 ---
 
-<Base title={entry.data.title} description={entry.data.summary}>
-  <h1>{entry.data.title}</h1>
-  <div class="markdown" set:html={addSectionAnchors(entry.rendered.html)} />
+<Base title={entry.data.title} description={entry.data.summary} layout="wide" glow>
+  <div class="project-page">
+    <div class="project-head">
+      {entry.data.kicker && <p class="project-page-kicker">{entry.data.kicker}</p>}
+      <h1>{entry.data.title}</h1>
+      {entry.data.proof && (
+        <ul class="project-page-proof" aria-label="Results">
+          {entry.data.proof.map((item) => (
+            <li>
+              <span class="project-page-proof-value">{item.value}</span>
+              <span class="project-page-proof-label">{item.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+    <Toc headings={headings} />
+    <div class="markdown project-body" set:html={addSectionAnchors(entry.rendered.html)} />
+    {/* One assistant for the whole page: the right column from 960px, a bottom bar and a
+        dialog below that (project-page.css). Two copies would be two conversations. */}
+    <div class="project-ask">
+      <button type="button" class="ask-bar" aria-haspopup="dialog" aria-controls="ask-dialog" aria-expanded="false">
+        <span class="ask-bar-dot" aria-hidden="true"></span>
+        <span class="ask-bar-text">Ask about my projects</span>
+        <span class="ask-bar-go" aria-hidden="true">Ask</span>
+      </button>
+      <dialog id="ask-dialog" class="ask-dialog" aria-labelledby="ask-dialog-title">
+        <div class="ask-dialog-head">
+          <h2 id="ask-dialog-title" class="ask-dialog-title">Ask about my projects</h2>
+          <form method="dialog" class="ask-dialog-close">
+            <button type="submit">Close</button>
+          </form>
+        </div>
+        <Assistant client:visible variant="panel" examples={examples} pageTitles={pageTitles} />
+      </dialog>
+    </div>
+  </div>
 </Base>
+
+<script>
+  // Below 960px the panel is a bottom bar that opens the dialog as a sheet; from 960px the
+  // dialog is the right column (CSS shows it while closed), so an open sheet closes on widening.
+  const dialog = document.querySelector<HTMLDialogElement>('#ask-dialog');
+  const bar = document.querySelector<HTMLButtonElement>('.ask-bar');
+  const wide = window.matchMedia('(min-width: 960px)');
+
+  if (dialog && bar) {
+    bar.addEventListener('click', () => {
+      if (!dialog.open) dialog.showModal();
+      bar.setAttribute('aria-expanded', 'true');
+    });
+    dialog.addEventListener('close', () => bar.setAttribute('aria-expanded', 'false'));
+    // A click on the backdrop, outside the sheet, closes it as well.
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog && dialog.matches(':modal')) dialog.close();
+    });
+    wide.addEventListener('change', () => {
+      if (wide.matches && dialog.open) dialog.close();
+    });
+  }
+</script>

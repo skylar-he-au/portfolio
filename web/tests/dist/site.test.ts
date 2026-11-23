@@ -263,11 +263,59 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
       expect(intro.textContent?.replace(/’/g, "'").replace(/\s+/g, ' ').trim())
         .toBe(markdown.replace(/^---[\s\S]*?\n---\r?\n/, '').replace(/\s+/g, ' ').trim());
     } else if (path.startsWith('/projects/')) {
-      // Project pages (9p).
-      expect(main.firstElementChild?.tagName).toBe('H1');
-      expect(main.querySelector('h1')?.textContent).toBe(title);
+      // Project pages (9p): title area, contents (side list and collapsed copy), body, then
+      // one assistant whose dialog is the right column on desktop and a sheet on phones.
+      const page = main.firstElementChild!;
+      expect(page.matches('div.project-page')).toBe(true);
+      // Toc.astro's bundled script lands beside the lists; it takes no grid cell.
+      const blocks = Array.from(page.children).filter((child) => child.tagName !== 'SCRIPT');
+      expect(blocks.map((child) => child.className)).toEqual([
+        'project-head', 'toc toc-side', 'toc toc-collapse', 'markdown project-body', 'project-ask',
+      ]);
+      const head = page.querySelector(':scope > .project-head')!;
+      expect(head.firstElementChild?.matches('p.project-page-kicker')).toBe(true);
+      expect(head.firstElementChild?.textContent).toBe(frontMatter(markdown, 'kicker'));
+      expect(head.querySelector(':scope > h1')?.textContent).toBe(title);
+      expect(head.children[1]?.tagName).toBe('H1');
+      const figures = Array.from(head.querySelectorAll('ul.project-page-proof > li'), (item) => ({
+        value: item.querySelector('.project-page-proof-value')?.textContent,
+        label: item.querySelector('.project-page-proof-label')?.textContent,
+      }));
+      expect(figures.length).toBeGreaterThan(0);
+      expect(figures).toEqual(proofs(markdown));
+
+      const sections = fixtures[path]!;
+      const side = page.querySelector(':scope > nav.toc-side[aria-label="On this page"]')!;
+      const collapse = page.querySelector(':scope > details.toc-collapse')!;
+      expect(collapse.querySelector(':scope > summary')?.textContent).toBe('On this page');
+      for (const list of [side, collapse.querySelector('nav[aria-label="On this page"]')!]) {
+        expect(Array.from(list.querySelectorAll('ol > li > a'), (link) => [link.getAttribute('href'), link.textContent]))
+          .toEqual(sections.map((section) => [`#${section.id}`, section.heading]));
+      }
       expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
-      expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+
+      const ask = page.querySelector(':scope > .project-ask')!;
+      const bar = ask.querySelector(':scope > button.ask-bar')!;
+      expect(bar.getAttribute('aria-controls')).toBe('ask-dialog');
+      expect(bar.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(bar.querySelector('.ask-bar-text')?.textContent).toBe('Ask about my projects');
+      expect(bar.querySelector('.ask-bar-go')?.getAttribute('aria-hidden')).toBe('true');
+      const dialog = ask.querySelector(':scope > dialog#ask-dialog')!;
+      expect(dialog.hasAttribute('open')).toBe(false);
+      expect(document.getElementById(dialog.getAttribute('aria-labelledby')!)?.textContent)
+        .toBe('Ask about my projects');
+      expect(dialog.querySelector('form[method="dialog"] button')?.textContent).toBe('Close');
+      // One assistant instance on the page, so one conversation.
+      expect(document.querySelectorAll('section#ask')).toHaveLength(1);
+      expect(document.querySelectorAll('textarea')).toHaveLength(1);
+      expect(dialog.querySelector('section#ask[aria-label="Ask about my projects"]')).not.toBeNull();
+      // This page's example questions only: RoleRadar 1, 2, 3; OnCallOps 4, 5 (examples.md).
+      const examples = readFileSync(join(root, '../content/examples.md'), 'utf8');
+      const numbers = path === '/projects/roleradar' ? [1, 2, 3] : [4, 5];
+      const expected = numbers.map((number) =>
+        new RegExp(`^${number}\\. (.+?) \\([^()]*\\)$`, 'm').exec(examples)?.[1]);
+      expect(Array.from(dialog.querySelectorAll('[role="group"][aria-label="Example questions"] button'),
+        (button) => button.textContent)).toEqual(expected);
     } else if (path === '/about') {
       // About (9e).
       expect(main.firstElementChild?.tagName).toBe('H1');
@@ -357,6 +405,32 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
     expect(firstFocusable?.getAttribute('href')).toBe('#main');
     expect(firstFocusable?.textContent).toBe('Skip to content');
   });
+});
+
+// 9p: sources point to project pages, /about#… and /privacy#…, so those pages load the section
+// highlight as a bundled module script (never is:inline; csp.test.ts checks its hash).
+// /evals is never a source and keeps no <script> (the Evals test above), so it is left out.
+it('loads the section highlight script and its styles on every page a source can point to', () => {
+  const highlightCss = filesWithin(join(dist, '_astro'))
+    .filter((file) => file.endsWith('.css') && readFileSync(file, 'utf8').includes('.section-highlight'))
+    .map((file) => `/${relative(dist, file)}`);
+  expect(highlightCss.length).toBeGreaterThan(0);
+  const html = filesWithin(dist).filter((name) => name.endsWith('.html'));
+  expect(html.map((file) => relative(dist, file))).toContain('evals/index.html');
+  for (const file of html.filter((name) => relative(dist, name) !== 'evals/index.html')) {
+    const document = new DOMParser().parseFromString(readFileSync(file, 'utf8'), 'text/html');
+    const scripts = Array.from(document.querySelectorAll('script[type="module"]'));
+    // Astro inlines small bundled scripts (with a CSP hash) and links larger ones.
+    const highlight = scripts.filter((script) => {
+      const src = script.getAttribute('src');
+      const code = src ? readFileSync(join(dist, src.replace(/^\//, '')), 'utf8') : script.textContent ?? '';
+      return code.includes('section-highlight');
+    });
+    expect(highlight.length, relative(dist, file)).toBeGreaterThan(0);
+    expect(document.querySelectorAll('script[is\\:inline]')).toHaveLength(0);
+    const sheets = Array.from(document.querySelectorAll('link[rel="stylesheet"]'), (link) => link.getAttribute('href'));
+    expect(sheets.some((href) => highlightCss.includes(href!)), relative(dist, file)).toBe(true);
+  }
 });
 
 it('keeps every proof figure to at most 3, with numbers the project page body states', () => {
