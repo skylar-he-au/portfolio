@@ -99,8 +99,8 @@ describe('shared widget across boxes', () => {
     const fetchMock = mockEndpoints();
     const ask = render(<Ask examples={[]} />);
     const match = render(<Match />);
-    await waitFor(() => expect(screen.queryByText('getting ready…')).not.toBeInTheDocument());
     for (const input of screen.getAllByRole('textbox')) fireEvent.focus(input);
+    await waitFor(() => expect(screen.queryByText('getting ready…')).not.toBeInTheDocument());
     await waitFor(() => expect(widget.api.render).toHaveBeenCalledOnce());
     const container = widget.api.render.mock.calls[0][0];
     expect(container).toHaveAttribute('hidden');
@@ -126,6 +126,7 @@ describe('shared widget across boxes', () => {
     widget.api.execute.mockImplementation(() => {});
     const fetchMock = mockEndpoints();
     const boxes = render(<><Ask key="ask" examples={[]} /><Match key="match" /></>);
+    fireEvent.focus(screen.getByRole('textbox', { name: 'Ask about my projects' }));
     await waitFor(() => expect(screen.queryByText('getting ready…')).not.toBeInTheDocument());
     fireEvent.change(screen.getByRole('textbox', { name: 'Ask about my projects' }), { target: { value: 'Services?' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Send' }).closest('form')!);

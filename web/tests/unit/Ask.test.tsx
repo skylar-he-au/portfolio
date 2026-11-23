@@ -68,6 +68,7 @@ function draft(text: string) {
 }
 
 async function send(text = 'My question?') {
+  fireEvent.focus(screen.getByRole('textbox', { name: 'Ask about my projects' }));
   draft(text);
   const button = screen.getByRole('button', { name: 'Send' });
   await waitFor(() => expect(button).toBeEnabled());
@@ -95,9 +96,12 @@ describe('Ask sessions and Turnstile', () => {
   it('mounts without third-party requests or scripts, and keeps ping unauthenticated', async () => {
     const { fetchMock } = await renderReady();
     expect(turnstileScripts()).toHaveLength(0);
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/ping', '/api/health']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/health']);
     expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('headers');
     expect(widget.api.render).not.toHaveBeenCalled();
+    fireEvent.focus(screen.getByRole('textbox'));
+    await waitFor(() => expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/health', '/api/ping']));
+    expect(fetchMock.mock.calls.find(([url]) => url === '/api/ping')?.[1]).not.toHaveProperty('headers');
   });
 
   it('loads one script and renders one hidden widget on repeated focus', async () => {
@@ -339,6 +343,7 @@ describe('Ask readiness and retained behaviour', () => {
     render(<Ask examples={examples} />);
     const textarea = screen.getByRole('textbox', { name: 'Ask about my projects' });
     expect(textarea).toHaveAttribute('maxlength', '500');
+    fireEvent.focus(textarea);
     expect(screen.getByRole('status')).toHaveTextContent('getting ready…');
     draft('A question');
     const sendButton = screen.getByRole('button', { name: 'Send' });
@@ -353,6 +358,7 @@ describe('Ask readiness and retained behaviour', () => {
   it.each([201, 422, 500])('keeps Send disabled when ping returns %i', async (status) => {
     mockEndpoints({ ping: async () => response(status) });
     render(<Ask examples={examples} />);
+    fireEvent.focus(screen.getByRole('textbox'));
     draft('A question');
     expect(await screen.findByText('Assistant is offline')).toHaveAttribute('role', 'status');
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
@@ -361,6 +367,7 @@ describe('Ask readiness and retained behaviour', () => {
   it('shows offline when ping rejects', async () => {
     mockEndpoints({ ping: async () => { throw new Error('Offline'); } });
     render(<Ask examples={examples} />);
+    fireEvent.focus(screen.getByRole('textbox'));
     expect(await screen.findByText('Assistant is offline')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   });
@@ -416,6 +423,7 @@ describe('Ask readiness and retained behaviour', () => {
   it('omits the health request and dev line in production', async () => {
     vi.stubEnv('DEV', false);
     const { fetchMock } = await renderReady();
+    fireEvent.focus(screen.getByRole('textbox'));
     expect(fetchMock).toHaveBeenCalledWith('/api/ping', expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(fetchMock.mock.calls.some(([input]) => input === '/api/health')).toBe(false);
     expect(screen.queryByText(/^db:/)).not.toBeInTheDocument();
@@ -429,6 +437,7 @@ describe('Ask readiness and retained behaviour', () => {
       })
     )));
     const { unmount, container } = render(<Ask examples={examples} />);
+    fireEvent.focus(screen.getByRole('textbox'));
     expect(requests).toHaveLength(2);
     expect(requests.every(({ signal }) => !signal.aborted)).toBe(true);
     unmount();

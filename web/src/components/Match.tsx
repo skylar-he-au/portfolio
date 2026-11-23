@@ -1,12 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import type { SubmitEvent } from 'react';
 import { safeSiteUrl } from '../lib/answer';
-import {
-  MATCH_DROPPED_MESSAGE, MATCH_MAX_CHARS, MATCH_MESSAGES, matchErrorMessage, matchHttpMessage,
-  matchInputLength, runMatch, sectionLabel, sendMatchFeedback,
-} from '../lib/match';
-import type { MatchEvent, MatchNotes, MatchResult, MatchSection, PageTitles } from '../lib/match';
-import { acquireWidget, HttpError, prepareWidget, VerificationError } from '../lib/session';
+import { sectionLabel } from '../lib/match';
+import type { MatchEvent, MatchNotes, MatchSection, PageTitles } from '../lib/match';
+import { useMatch } from '../hooks/useMatch';
 
 function Sections({ sections, pageTitles }: { sections: MatchSection[]; pageTitles: PageTitles }) {
   if (sections.length === 0) return null;
@@ -65,84 +62,11 @@ function stageMessage(data: Extract<MatchEvent, { event: 'stage' }>['data']): st
 export default function Match({ pageTitles = {} }: { pageTitles?: PageTitles }) {
   const inputId = useId();
   const [input, setInput] = useState('');
-  const [inProgress, setInProgress] = useState(false);
-  const [progress, setProgress] = useState('');
-  const [notes, setNotes] = useState<MatchNotes>();
-  const [result, setResult] = useState<MatchResult>();
-  const [error, setError] = useState<string>();
-  const [done, setDone] = useState(false);
-  const [feedback, setFeedback] = useState<'idle' | 'sending' | 'sent'>('idle');
-  const mounted = useRef(true);
-  const requestRef = useRef<AbortController | null>(null);
-  const feedbackRef = useRef<AbortController | null>(null);
+  const { inProgress, stage, notes, result, error, done, feedback, prepare, match, recordFeedback } = useMatch();
 
-  useEffect(() => {
-    mounted.current = true;
-    const releaseWidget = acquireWidget();
-    return () => {
-      mounted.current = false;
-      requestRef.current?.abort();
-      feedbackRef.current?.abort();
-      releaseWidget();
-    };
-  }, []);
-
-  async function recordFeedback() {
-    if (!mounted.current || !done || error || !result?.match_id || feedback !== 'idle' || feedbackRef.current) return;
-    const controller = new AbortController();
-    feedbackRef.current = controller;
-    setFeedback('sending');
-    const sent = await sendMatchFeedback(result.match_id, controller.signal);
-    if (!mounted.current || controller.signal.aborted) return;
-    feedbackRef.current = null;
-    setFeedback(sent ? 'sent' : 'idle');
-  }
-
-  async function submit(event: SubmitEvent<HTMLFormElement>) {
+  function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed || requestRef.current) return;
-    feedbackRef.current?.abort();
-    feedbackRef.current = null;
-    setResult(undefined);
-    setNotes(undefined);
-    setError(undefined);
-    setProgress('');
-    setDone(false);
-    setFeedback('idle');
-    if (matchInputLength(trimmed) > MATCH_MAX_CHARS) {
-      setError(MATCH_MESSAGES.too_long);
-      return;
-    }
-
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setInProgress(true);
-    try {
-      await runMatch(trimmed, {
-        signal: controller.signal,
-        onEvent(event) {
-          if (!mounted.current || controller.signal.aborted) return;
-          switch (event.event) {
-            case 'stage': setProgress(stageMessage(event.data)); break;
-            case 'notes': setNotes(event.data); break;
-            case 'result': setResult(event.data); break;
-            case 'done': setDone(true); break;
-            case 'error': setError(matchErrorMessage(event.data.code, event.data.message)); break;
-          }
-        },
-      });
-    } catch (error) {
-      if (!mounted.current || controller.signal.aborted) return;
-      setError(error instanceof VerificationError ? MATCH_MESSAGES.unavailable
-        : error instanceof HttpError ? matchHttpMessage(error) : MATCH_DROPPED_MESSAGE);
-    } finally {
-      if (requestRef.current === controller) requestRef.current = null;
-      if (mounted.current && !controller.signal.aborted) {
-        setInProgress(false);
-        setProgress('');
-      }
-    }
+    match(input);
   }
 
   const items = result?.items.filter((item) => item.sections.length > 0) ?? [];
@@ -156,14 +80,14 @@ export default function Match({ pageTitles = {} }: { pageTitles?: PageTitles }) 
           rows={6}
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          onFocus={prepareWidget}
+          onFocus={prepare}
         />
         <button type="submit" disabled={inProgress || !input.trim()} className="ask-control ask-send">Match</button>
       </form>
       <p className="ask-note">
         Your job ad is processed by AI providers. <a href="/privacy">See Privacy.</a>
       </p>
-      {progress && <p className="ask-status" role="status">{progress}</p>}
+      {inProgress && stage && <p className="ask-status" role="status">{stageMessage(stage)}</p>}
       {result && (
         <div className="ask-answer" aria-live="polite">
           {items.length > 0 && <>
