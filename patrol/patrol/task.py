@@ -27,13 +27,16 @@ You are a recruiter looking at a developer's portfolio site. Start on its home p
 {base_url}: if the tab you are on does not show it, open it there. Use only this site, in one
 tab. You have few steps: chain actions in one Python call where you can. Do these steps in order:
 
-1. Ask a question: click one button under "Example questions", then click "Send".
-2. Wait until the answer is finished: wait_for_element('#ask [aria-label="This answer is wrong"]')
+1. Ask a question: click one button under "Example questions". It sends the question by itself.
+2. Wait until the answer is finished:
+   wait_for_element('#ask .ask-turn:not([data-restored]) [aria-label="This answer is wrong"]')
    (the answer can take up to 60 seconds). Then click one link to a project page inside the
    answer and check that the page opened.
-3. Go back to the home page {base_url}. Type exactly the job ad below (between the markers)
-   into the "Paste a job ad" box, then click "Match". Wait until the result is shown:
-   wait_for_element('#match [aria-label="This guide is wrong"]') (up to 90 seconds).
+3. Go back to the home page {base_url}. The earlier answer may be shown again (it is marked
+   data-restored): ignore it. Click the box labelled "Ask a question, or paste a job ad", type
+   exactly the job ad below (between the markers) into it, then click the button "Match job"
+   (the box's button is named "Ask" until the job ad is typed). Wait until the result is shown:
+   wait_for_element('#ask .match-result [aria-label="This guide is wrong"]') (up to 90 seconds).
 4. Stop and say in one or two sentences what you saw.
 
 How to act: find ids with bu.state(), click with bu.click(id) and type with bu.type(id, text).

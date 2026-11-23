@@ -45,18 +45,20 @@ API_PATHS = ("/api/ask", "/api/match")
 
 SNAPSHOT_JS = """() => {
   const ask = document.querySelector('#ask');
-  const match = document.querySelector('#match');
   const chars = (nodes) => nodes.map((node) => node.innerText.trim()).join('').length;
-  const askAnswers = ask ? [...ask.querySelectorAll('.ask-answer')] : [];
-  const matchAnswers = match ? [...match.querySelectorAll('.ask-answer')] : [];
+  // Turns read back from sessionStorage carry data-restored: they are not this run's answer.
+  const askAnswers = ask
+    ? [...ask.querySelectorAll('.ask-turn:not([data-restored]) .ask-answer')]
+    : [];
+  const matchResults = ask ? [...ask.querySelectorAll('.match-result')] : [];
   return {
     url: location.href,
-    home: !!(ask && match && ask.querySelector('textarea') && match.querySelector('textarea')),
+    home: !!(ask && ask.querySelector('textarea')),
     answer_chars: chars(askAnswers),
-    answer_done: !!(ask && ask.querySelector('[aria-label="This answer is wrong"]')),
+    answer_done: askAnswers.some((a) => a.querySelector('[aria-label="This answer is wrong"]')),
     answer_links: askAnswers.flatMap((a) => [...a.querySelectorAll('a[href]')].map((l) => l.href)),
-    match_chars: chars(matchAnswers),
-    match_done: !!(match && match.querySelector('[aria-label="This guide is wrong"]')),
+    match_chars: chars(matchResults),
+    match_done: matchResults.some((m) => m.querySelector('[aria-label="This guide is wrong"]')),
     errors: [...document.querySelectorAll('.ask-error')].map((e) => e.innerText.trim()).slice(0, 5),
   };
 }"""
@@ -261,7 +263,7 @@ async def run_patrol(base: str, secret: str, gemini_key: str) -> Report:
             response = await page.goto(base + "/", wait_until="load", timeout=30_000)
             obs.home_status = response.status if response else None
             with contextlib.suppress(PlaywrightError):
-                await page.wait_for_selector("#match textarea", timeout=15_000)
+                await page.wait_for_selector("#ask textarea", timeout=15_000)
             await _sample(context, base, obs)
             if not (obs.home_status == 200 and obs.home):
                 return report
