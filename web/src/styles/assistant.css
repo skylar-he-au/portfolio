@@ -1,0 +1,608 @@
+/* Assistant (web/src/components/Assistant.tsx, step 9 9a1b): input box, answers, job match,
+   progress pills. Colors come only from tokens.css. 960px is design.md's desktop line.
+   9p adds the project-page panel (variant="panel") at the end of this file. */
+
+.assistant-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: var(--space-0);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: var(--space-0);
+}
+
+/* Home: one column on phones (intro, box, Try, answers); two columns from 960px. */
+.assistant-home {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.assistant-start,
+.assistant-answers {
+  display: grid;
+  gap: var(--space-4);
+  min-inline-size: var(--space-0);
+}
+
+.assistant-answers:empty {
+  display: none;
+}
+
+.assistant-start .ask-form {
+  margin-block-start: var(--space-2);
+}
+
+@media (min-width: 960px) {
+  .assistant-home {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+    gap: var(--space-7);
+  }
+
+  /* Long answers scroll past; the box and examples stay in view. */
+  .assistant-home .assistant-start {
+    position: sticky;
+    inset-block-start: var(--space-6);
+  }
+}
+
+/* Input box: one textarea with the button inside, bottom right. */
+.ask-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.ask-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--control-border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.ask-box:hover {
+  border-color: var(--color-subtle);
+}
+
+.ask-box:focus-within {
+  border-color: var(--color-accent);
+}
+
+.ask-input {
+  display: block;
+  inline-size: var(--size-full);
+  min-inline-size: var(--space-0);
+  /* About eight lines, then it scrolls. */
+  max-block-size: calc(var(--line-height-body) * 8em);
+  padding: var(--space-1);
+  border: none;
+  background: var(--color-clear);
+  color: var(--color-text);
+  font: inherit;
+  line-height: var(--line-height-body);
+  resize: none;
+  overflow-y: auto;
+}
+
+.ask-input::placeholder {
+  color: var(--color-subtle);
+  opacity: 1;
+}
+
+/* The box draws the focus line; keyboard focus still gets the ring. */
+.ask-input:focus {
+  outline: none;
+}
+
+.ask-box:has(.ask-input:focus-visible) {
+  outline: var(--focus-width) solid var(--color-accent);
+  outline-offset: var(--focus-offset);
+}
+
+.ask-send {
+  align-self: flex-end;
+  min-block-size: var(--target-min);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--gradient-ai);
+  color: var(--color-on-ai);
+  font: inherit;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.ask-send:hover {
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+.ask-below {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--font-size-small);
+}
+
+.ask-hint {
+  margin: var(--space-0);
+  color: var(--color-text);
+}
+
+.ask-switch,
+.ask-example {
+  padding: var(--space-0);
+  border: none;
+  background: var(--color-clear);
+  color: var(--color-accent);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  text-decoration-thickness: var(--underline-thickness);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+.ask-switch {
+  margin-inline-start: auto;
+}
+
+.ask-switch:hover,
+.ask-example:hover {
+  color: var(--color-text);
+}
+
+/* "Try:" and the example questions: one per line on phones, wrapping on desktop. */
+.ask-examples {
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--font-size-small);
+}
+
+.ask-examples-label {
+  color: var(--color-subtle);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ask-examples ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.ask-examples li + li {
+  margin-block-start: var(--space-0);
+}
+
+.ask-example {
+  min-block-size: var(--target-min);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 960px) {
+  .ask-examples {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .ask-examples ul {
+    display: contents;
+  }
+
+  .ask-answer,
+  .match-result {
+    padding: var(--space-5);
+  }
+
+  .match-item {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+.ask-note,
+.ask-dev {
+  margin: var(--space-0);
+  color: var(--color-subtle);
+  font-size: var(--font-size-small);
+}
+
+.ask-dev {
+  font-family: var(--font-code);
+  font-size: var(--font-size-mono);
+}
+
+/* Conversation. */
+.ask-forgotten {
+  margin: var(--space-0);
+  color: var(--color-subtle);
+  font-size: var(--font-size-small);
+}
+
+.ask-turns {
+  display: grid;
+  gap: var(--space-5);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.ask-turns > li + li {
+  margin-block-start: var(--space-0);
+}
+
+.ask-turn {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: var(--space-0);
+}
+
+/* The visitor's question: a light bubble on the right. */
+.ask-question {
+  justify-self: end;
+  max-inline-size: 85%;
+  margin: var(--space-0);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The AI's answer and the job match: a surface card (less padding on phones). */
+.ask-answer,
+.match-result {
+  min-inline-size: var(--space-0);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.ask-answer-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-0) var(--space-0) var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ask-dot {
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--gradient-ai);
+}
+
+.ask-answer-text {
+  margin: var(--space-0);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ask-cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  margin-inline: var(--space-1);
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-small);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-family: var(--font-code);
+  font-size: var(--font-size-mono);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-heading);
+  text-decoration: none;
+  vertical-align: baseline;
+}
+
+.ask-cite:hover {
+  text-decoration: underline;
+}
+
+.ask-unsupported {
+  color: inherit;
+  background: var(--color-clear);
+  text-decoration: underline dotted var(--color-accent);
+  text-decoration-thickness: var(--border-width);
+  text-underline-offset: var(--underline-offset);
+}
+
+.ask-incomplete {
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+/* While generating: two soft moving bars, then the progress pills. */
+.ask-shimmer {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.ask-shimmer span {
+  display: block;
+  block-size: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--color-accent-soft), var(--color-border), var(--color-accent-soft));
+  background-size: 200% 100%;
+  animation: ask-shimmer 1.6s ease-in-out infinite;
+}
+
+.ask-shimmer span + span {
+  inline-size: 70%;
+}
+
+@keyframes ask-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-shimmer span {
+    animation: none;
+  }
+}
+
+.ask-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-4) var(--space-0) var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.ask-steps li + li {
+  margin-block-start: var(--space-0);
+}
+
+.ask-step {
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-subtle);
+  font-size: var(--font-size-small);
+}
+
+.ask-step[data-state='active'] {
+  border-color: var(--color-accent-soft);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: var(--font-weight-medium);
+}
+
+.ask-step[data-state='done'] {
+  color: var(--color-muted);
+}
+
+.ask-error {
+  margin: var(--space-3) var(--space-0) var(--space-0);
+  padding-inline-start: var(--space-3);
+  border-inline-start: var(--rule-width) solid var(--color-accent);
+  color: var(--color-text);
+}
+
+.ask-sources {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-3);
+  border-block-start: var(--border-width) solid var(--color-border);
+  font-size: var(--font-size-small);
+}
+
+.ask-sources-title {
+  margin: var(--space-0) var(--space-0) var(--space-1);
+  color: var(--color-subtle);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ask-sources ol {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.ask-sources li + li {
+  margin-block-start: var(--space-0);
+}
+
+.ask-sources li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.ask-source-n {
+  color: var(--color-subtle);
+  font-family: var(--font-code);
+  font-size: var(--font-size-mono);
+}
+
+.ask-answer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-block-start: var(--space-3);
+  font-size: var(--font-size-small);
+}
+
+.ask-checked {
+  margin: var(--space-0);
+  color: var(--color-ok);
+  font-weight: var(--font-weight-medium);
+}
+
+.ask-thanks {
+  margin-inline-start: auto;
+  color: var(--color-muted);
+}
+
+.ask-feedback {
+  margin-inline-start: auto;
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ask-feedback:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.ask-feedback:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* "How it answered" / "How it matched". */
+.ask-panel {
+  margin-block-start: var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+.ask-panel summary {
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.ask-panel-block {
+  margin-block-start: var(--space-3);
+}
+
+.ask-panel-block h3 {
+  margin-block-end: var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--font-size-small);
+}
+
+.ask-panel-block p,
+.ask-panel-block ul,
+.ask-panel-block ol {
+  margin-block-end: var(--space-0);
+}
+
+.ask-trace-steps {
+  padding-inline-start: var(--space-0);
+  list-style: none;
+}
+
+.ask-trace-steps li {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ask-trace-icon {
+  color: var(--color-ok);
+}
+
+/* Job match result. */
+.match-source {
+  margin: var(--space-0) var(--space-0) var(--space-3);
+  color: var(--color-subtle);
+  font-family: var(--font-code);
+  font-size: var(--font-size-mono);
+  overflow-wrap: anywhere;
+}
+
+.match-title {
+  margin: var(--space-0) var(--space-0) var(--space-3);
+  font-size: var(--font-size-h3);
+}
+
+.match-items {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+}
+
+.match-items > li + li {
+  margin-block-start: var(--space-0);
+}
+
+.match-item {
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  overflow-wrap: anywhere;
+}
+
+.match-requirement {
+  margin: var(--space-0);
+  font-weight: var(--font-weight-semibold);
+}
+
+.match-guide {
+  margin: var(--space-1) var(--space-0) var(--space-0);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+.match-sections {
+  margin: var(--space-2) var(--space-0) var(--space-0);
+  padding: var(--space-0);
+  list-style: none;
+  font-size: var(--font-size-small);
+}
+
+.match-sections li + li {
+  margin-block-start: var(--space-1);
+}
+
+.match-gaps {
+  margin-block-start: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--color-code-background);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.match-gaps p {
+  margin: var(--space-0) var(--space-0) var(--space-1);
+  font-weight: var(--font-weight-semibold);
+}
+
+.match-gaps ul {
+  margin: var(--space-0);
+  padding-inline-start: var(--space-5);
+}
+
+.match-note {
+  margin: var(--space-3) var(--space-0) var(--space-0);
+  color: var(--color-muted);
+  font-size: var(--font-size-small);
+}
+
+.match-followup {
+  margin: var(--space-0);
+  color: var(--color-subtle);
+}

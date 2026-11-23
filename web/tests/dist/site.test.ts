@@ -438,11 +438,15 @@ it('renders the Ask component, then two project cards with proof figures and a c
   expect(document.querySelectorAll('section#ask')).toHaveLength(1);
   // The assistant is on the first screen, above the projects.
   expect(ask.compareDocumentPosition(projects) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  // The Ask component is server-rendered into the page.
-  const field = ask.querySelector('textarea, input[type="text"]')!;
-  expect(field).not.toBeNull();
-  expect(ask.querySelector(`label[for="${field.id}"]`)).not.toBeNull();
+  // The assistant (9a1b) is server-rendered into the page: one box for questions and job ads.
+  expect(ask.querySelectorAll('textarea')).toHaveLength(1);
+  const field = ask.querySelector('textarea')!;
+  expect(ask.querySelector(`label[for="${field.id}"]`)?.textContent).toBe('Ask a question, or paste a job ad');
+  expect(ask.querySelector('button[type="submit"]')?.textContent).toBe('Ask');
+  expect(ask.querySelectorAll('[role="group"][aria-label="Example questions"] button').length).toBeGreaterThan(0);
   expect(ask.querySelector('a[href="/privacy"]')).not.toBeNull();
+  expect(ask.querySelector('[aria-atomic]')).toBeNull();
+  expect(document.querySelector('#match')).toBeNull();
 });
 
 it('self-hosts Instrument Sans and JetBrains Mono and no longer ships Inter or Source Serif', () => {

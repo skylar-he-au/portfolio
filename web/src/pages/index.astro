@@ -1,10 +1,10 @@
 ---
 import { getCollection, getEntry } from 'astro:content';
-import Ask from '../components/Ask';
-import Match from '../components/Match';
+import Assistant from '../components/Assistant';
 import Base from '../layouts/Base.astro';
 import { addSectionAnchors } from '../lib/anchors';
 import { parseExamples } from '../lib/examples';
+import '../styles/assistant.css';
 import '../styles/home.css';
 
 const entry = await getEntry('pages', 'home');
@@ -21,7 +21,7 @@ const projects = (await getCollection('pages', ({ id }) => projectIds.includes(i
 for (const project of projects) {
   if (!project.data.proof?.length) throw new Error(`Missing front matter: ${project.id} proof`);
 }
-// Every project page's title, so the job match can say which page a section is on.
+// Every project page's title, so answers and the job match can say which page a section is on.
 const pageTitles = Object.fromEntries(
   (await getCollection('pages', ({ id }) => id.startsWith('projects/')))
     .map((page) => [`/${page.id}`, page.data.title]),
@@ -36,16 +36,14 @@ const exampleSource = {
 ---
 
 <Base title={entry.data.title} description={entry.data.summary} layout="wide" glow>
-  <div class="home-hero">
-    <div class="home-hero-main">
+  <Assistant client:visible variant="home" examples={examples} pageTitles={pageTitles}>
+    <Fragment slot="intro">
       <p class="home-kicker">{entry.data.kicker}</p>
-      <h1><span>Ask about my work.</span> <span>Every answer cites its page.</span></h1>
+      <h1 class="home-headline"><span>Ask about my work.</span> <span>Every answer cites its page.</span></h1>
       <div class="markdown home-intro" set:html={addSectionAnchors(entry.rendered.html)} />
       <noscript><p class="home-noscript">The assistant needs JavaScript. The project pages work without it.</p></noscript>
-      <section id="ask" aria-label="Ask about my projects"><Ask client:load examples={examples} /></section>
-      <section id="match" aria-label="Paste a job ad"><Match client:load pageTitles={pageTitles} /></section>
-    </div>
-    <div class="example-answer">
+    </Fragment>
+    <div slot="example" class="example-answer">
       <p class="example-label"><span class="example-dot" aria-hidden="true"></span>Example answer</p>
       <p class="example-question">How does RoleRadar decide which jobs match a user?</p>
       <div class="example-reply">
@@ -61,7 +59,7 @@ const exampleSource = {
         </div>
       </div>
     </div>
-  </div>
+  </Assistant>
   <section id="projects" aria-label="Projects">
     <div class="home-projects-head">
       <h2>Projects</h2>

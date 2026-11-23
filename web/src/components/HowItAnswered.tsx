@@ -34,10 +34,11 @@ export default function HowItAnswered({ trace, checkResult }: { trace?: AnswerTr
       )}
       <div className="ask-panel-block">
         <h3>Steps</h3>
-        <ol>
+        <ol className="ask-trace-steps">
           {trace.nodes.map((node, index) => (
             <li key={index}>
-              {node.name} · {node.provider ?? 'no model'}{node.model ? ` · ${node.model}` : ''} · {node.ms} ms
+              <span className="ask-trace-icon" aria-hidden="true">✓</span>
+              <span>{node.name} · {node.provider ?? 'no model'}{node.model ? ` · ${node.model}` : ''} · {node.ms} ms</span>
             </li>
           ))}
         </ol>
