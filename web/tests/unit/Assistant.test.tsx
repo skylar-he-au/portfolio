@@ -481,6 +481,127 @@ describe('Assistant panel variant', () => {
   });
 });
 
+describe('Assistant fixes from the 9c1 check', () => {
+  it('numbers sources 1..N by first appearance in the answer and keeps their links', async () => {
+    mockEndpoints({ ask: async () => eventResponse([
+      ['meta', { conversation_id: 'c', turn_id: 't' }],
+      ['answer', {
+        text: 'Ranked [6], then [2], and [6] again.',
+        citations: [
+          { n: 2, url: '/projects/roleradar#b', heading: 'Bravo' },
+          { n: 4, url: '/about', heading: 'About Skylar' },
+          { n: 5, url: 'javascript:alert(1)', heading: 'Unsafe' },
+          { n: 6, url: '/projects/roleradar#a', heading: 'Alpha' },
+        ],
+      }],
+      ['check', { passed: true, unsupported: [], retried: false }],
+      ['done', {}],
+    ]) });
+    const { container } = renderAssistant();
+    await submit('Which sources?');
+    await screen.findByText('Sources');
+    const chips = [...container.querySelectorAll('.ask-answer-text a.ask-cite')]
+      .map((chip) => [chip.textContent, chip.getAttribute('href'), chip.getAttribute('aria-label')]);
+    expect(chips).toEqual([
+      ['1', '/projects/roleradar#a', 'Source 1: Alpha'],
+      ['2', '/projects/roleradar#b', 'Source 2: Bravo'],
+      ['1', '/projects/roleradar#a', 'Source 1: Alpha'],
+    ]);
+    const sources = [...container.querySelectorAll('.ask-sources li')].map((item) => [
+      item.querySelector('.ask-source-n')!.textContent,
+      item.querySelector('a')!.textContent,
+      item.querySelector('a')!.getAttribute('href'),
+    ]);
+    expect(sources).toEqual([
+      ['1', 'RoleRadar · Alpha', '/projects/roleradar#a'],
+      ['2', 'RoleRadar · Bravo', '/projects/roleradar#b'],
+      ['3', 'About Skylar', '/about'],
+    ]);
+  });
+
+  it('scrolls a new question or job match into view on the home page, gently unless motion is reduced', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    let top = 2000;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ top } as DOMRect));
+    let reduce = true;
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: reduce })));
+    try {
+      mockEndpoints();
+      renderAssistant();
+      await submit('First question?');
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Answer ready.'));
+      expect(scroll).toHaveBeenCalledTimes(1);
+      expect(scroll).toHaveBeenLastCalledWith({ behavior: 'auto', block: 'start' });
+      expect(scroll.mock.contexts[0]).toHaveClass('ask-turn');
+      expect(scroll.mock.contexts[0]).toHaveTextContent('First question?');
+
+      reduce = false;
+      await submit(jobLink);
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Job match ready.'));
+      expect(scroll).toHaveBeenCalledTimes(2);
+      expect(scroll).toHaveBeenLastCalledWith({ behavior: 'smooth', block: 'start' });
+      expect(scroll.mock.contexts[1]).toHaveClass('match-turn');
+
+      // Already in the upper part of the screen: no jump.
+      top = 120;
+      await submit('Second question?');
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Answer ready.'));
+      expect(container().querySelectorAll('.ask-turn')).toHaveLength(2);
+      expect(scroll).toHaveBeenCalledTimes(2);
+      cleanup();
+
+      // The project-page panel keeps its own follow-scroll.
+      top = 2000;
+      renderAssistant({ variant: 'panel' });
+      await submit('Panel question?');
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Answer ready.'));
+      expect(scroll).toHaveBeenCalledTimes(2);
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+
+    function container() {
+      return document.querySelector('section#ask')!;
+    }
+  });
+
+  it('speaks the offline sentence through the status line and ties it to the box', async () => {
+    const fetchMock = mockEndpoints();
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) => input === '/api/ping'
+      ? Promise.reject(new TypeError('Failed to fetch')) : base(input, init));
+    renderAssistant();
+    await submit('Are you there?');
+    const hint = await screen.findByText('The assistant is offline right now — please try again later.', { selector: '.ask-hint' });
+    expect(hint.id).not.toBe('');
+    expect(box().getAttribute('aria-describedby')?.split(' ')).toContain(hint.id);
+    await waitFor(() => expect(screen.getByRole('status'))
+      .toHaveTextContent('The assistant is offline right now — please try again later.'));
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(urls(fetchMock)).not.toContain('/api/ask');
+  });
+
+  it('keeps text typed into the server-rendered box before hydration', async () => {
+    mockEndpoints();
+    const { renderToString } = await import('react-dom/server');
+    const host = document.createElement('div');
+    host.innerHTML = renderToString(<Assistant examples={examples} pageTitles={pageTitles} />);
+    document.body.appendChild(host);
+    host.querySelector('textarea')!.value = jobLink;
+    await act(async () => {
+      render(<Assistant examples={examples} pageTitles={pageTitles} />, { container: host, hydrate: true });
+    });
+    expect(box()).toHaveValue(jobLink);
+    expect(screen.getByRole('button', { name: 'Match job' })).toBeInTheDocument();
+    // Later renders (the ping on focus) keep it too.
+    fireEvent.focus(box());
+    await waitFor(() => expect(urls(vi.mocked(fetch))).toContain('/api/ping'));
+    await act(async () => {});
+    expect(box()).toHaveValue(jobLink);
+  });
+});
+
 describe('HowItAnswered', () => {
   it.each([
     ['not_in_about', "The About page doesn't answer this."],

@@ -26,6 +26,7 @@ export interface AssistantProps {
 type Mode = 'ask' | 'match' | 'bad-link';
 
 const REQUIREMENT_MAX_CHARS = 120;
+const OFFLINE_MESSAGE = 'The assistant is offline right now — please try again later.';
 
 function codePoints(text: string): number {
   return [...text].length;
@@ -64,9 +65,28 @@ function truncate(text: string, max: number): string {
   return points.length > max ? `${points.slice(0, max - 1).join('')}…` : text;
 }
 
-function renderInline(segment: InlineSegment, key: number) {
+/**
+ * Display numbers for one answer's sources: 1..N in the order they first appear in its text,
+ * then any safe source the text never cites. The backend's numbers are retrieval ranks
+ * (kept in "How it answered"); readers expect a single source to be "1", not "6".
+ */
+function sourceNumbers(text: string, citations: Citation[]): Map<number, number> {
+  const safe = new Set(citations.filter(({ url }) => safeSiteUrl(url) !== null).map(({ n }) => n));
+  const numbers = new Map<number, number>();
+  for (const match of text.matchAll(/\[(\d+)\]/g)) {
+    const n = Number(match[1]);
+    if (safe.has(n) && !numbers.has(n)) numbers.set(n, numbers.size + 1);
+  }
+  for (const { n } of citations) {
+    if (safe.has(n) && !numbers.has(n)) numbers.set(n, numbers.size + 1);
+  }
+  return numbers;
+}
+
+function renderInline(segment: InlineSegment, key: number, numbers: Map<number, number>) {
   if (segment.type !== 'link') return segment.text;
-  const n = segment.text.replace(/[[\]]/g, '');
+  const rank = Number(segment.text.replace(/[[\]]/g, ''));
+  const n = numbers.get(rank) ?? rank;
   return (
     <a key={key} className="ask-cite" href={segment.href} title={segment.title} aria-label={`Source ${n}: ${segment.title}`}>
       {n}
@@ -106,8 +126,14 @@ function AiLabel({ children }: { children: string }) {
   );
 }
 
-function Sources({ citations, pageTitles }: { citations: Citation[]; pageTitles: PageTitles }) {
-  const safe = citations.filter(({ url }) => safeSiteUrl(url) !== null);
+function Sources({ citations, numbers, pageTitles }: {
+  citations: Citation[];
+  numbers: Map<number, number>;
+  pageTitles: PageTitles;
+}) {
+  const safe = citations
+    .filter(({ n, url }) => safeSiteUrl(url) !== null && numbers.has(n))
+    .sort((a, b) => numbers.get(a.n)! - numbers.get(b.n)!);
   if (safe.length === 0) return null;
   return (
     <div className="ask-sources">
@@ -115,7 +141,7 @@ function Sources({ citations, pageTitles }: { citations: Citation[]; pageTitles:
       <ol>
         {safe.map((citation) => (
           <li key={citation.n}>
-            <span className="ask-source-n" aria-hidden="true">{citation.n}</span>
+            <span className="ask-source-n" aria-hidden="true">{numbers.get(citation.n)}</span>
             <a href={citation.url}>{sourceLabel(citation.url, citation.heading, pageTitles)}</a>
           </li>
         ))}
@@ -133,6 +159,8 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
   // A private question shows nothing until its check is done (SPEC); the steps carry the wait.
   const showText = !turn.private || turn.checkResult !== undefined || turn.finished;
   const segments = showText ? answerSegments(turn.text, turn.citations, turn.unsupported) : [];
+  const numbers = sourceNumbers(turn.text, turn.citations);
+  const inline = (segment: InlineSegment, key: number) => renderInline(segment, key, numbers);
   return (
     <li className="ask-turn" data-restored={turn.restored ? '' : undefined}>
       <p className="ask-question"><span className="assistant-sr">You asked: </span>{turn.question}</p>
@@ -143,9 +171,9 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
             {segments.map((segment, index) => (
               segment.type === 'unsupported'
                 ? <mark key={index} className="ask-unsupported" title="Not found in the project pages">
-                  {segment.children.map(renderInline)}
+                  {segment.children.map(inline)}
                 </mark>
-                : renderInline(segment, index)
+                : inline(segment, index)
             ))}
             {turn.incomplete && turn.text && <span className="ask-incomplete"> (incomplete)</span>}
           </p>
@@ -153,7 +181,7 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
         {generating && <Shimmer />}
         {generating && <Steps steps={turn.steps} />}
         {turn.error && <p className="ask-error">{turn.error}</p>}
-        {turn.finished && !turn.error && <Sources citations={turn.citations} pageTitles={pageTitles} />}
+        {turn.finished && !turn.error && <Sources citations={turn.citations} numbers={numbers} pageTitles={pageTitles} />}
         {turn.finished && !turn.error && (turn.checkResult?.passed === true || turn.turnId) && (
           <div className="ask-answer-foot">
             {turn.checkResult?.passed === true
@@ -233,6 +261,7 @@ function MatchItemCard({ item, pageTitles }: { item: MatchItem; pageTitles: Page
 export default function Assistant({ variant = 'home', examples, pageTitles = {}, intro, example }: AssistantProps) {
   const inputId = useId();
   const hintId = useId();
+  const offlineId = useId();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState('');
   const [override, setOverride] = useState<'ask' | 'match' | null>(null);
@@ -243,6 +272,14 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
   // Where the job match sits among the questions (the hook keeps only the latest match).
   const [matchAt, setMatchAt] = useState<number | null>(null);
   const [matchLink, setMatchLink] = useState<string | null>(null);
+
+  // The island hydrates when it scrolls into view (client:visible), so a visitor can type into
+  // the server-rendered box first. React keeps that text at hydration but would wipe it on the
+  // next render; take it into state before any other update commits.
+  useLayoutEffect(() => {
+    const early = inputRef.current?.value;
+    if (early) setInput(early);
+  }, []);
 
   const askState = useAsk({ persist: true });
   const { turns, readiness, forgotten, prepare, ask, recordFeedback } = askState;
@@ -305,16 +342,37 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
     if (followAnswers.current) box.scrollTop = box.scrollHeight;
   });
 
+  // Home only: a new question or job match is scrolled into view, unless its start is already
+  // in the upper part of the screen (the first answer on a desktop sits next to the box).
+  const turnsRef = useRef<HTMLOListElement>(null);
+  const scrollTo = useRef<'turn' | 'match' | null>(null);
+  useEffect(() => {
+    const target = scrollTo.current;
+    const list = turnsRef.current;
+    if (variant !== 'home' || target === null || !list) return;
+    const item = target === 'match'
+      ? list.querySelector<HTMLElement>(':scope > .match-turn')
+      : list.querySelector<HTMLElement>(':scope > .ask-turn:last-child');
+    if (!item) return;
+    scrollTo.current = null;
+    const top = item.getBoundingClientRect().top;
+    if (top >= 0 && top <= window.innerHeight * 0.6) return;
+    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (typeof item.scrollIntoView === 'function') item.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  });
+
+  function started(target: 'turn' | 'match') {
+    scrollTo.current = target;
+    setInput('');
+    setOverride(null);
+  }
+
   // A question sent before /api/ping answered goes out once the backend is ready.
   useEffect(() => {
     if (queued === null) return;
     if (readiness === 'ready') {
       setQueued(null);
-      const { started } = ask(queued);
-      if (started) {
-        setInput('');
-        setOverride(null);
-      }
+      if (ask(queued).started) started('turn');
     } else if (readiness === 'offline') {
       setQueued(null);
     }
@@ -344,6 +402,10 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
   function send(text: string, chosen: Mode) {
     const value = text.trim();
     if (!value || busy || queued !== null) return;
+    if (chosen === 'ask' && readiness === 'offline') {
+      setAnnouncement(OFFLINE_MESSAGE);
+      return;
+    }
     if (chosen === 'bad-link') {
       setNotice(BAD_LINK_MESSAGE);
       setAnnouncement(BAD_LINK_MESSAGE);
@@ -354,20 +416,12 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
       const kind = detectInput(value);
       setMatchAt(turns.length);
       setMatchLink(kind.kind === 'match' && kind.source === 'link' ? linkLabel(value) : null);
-      const { started } = matchState.match(value);
-      if (started) {
-        setInput('');
-        setOverride(null);
-      }
+      if (matchState.match(value).started) started('match');
       return;
     }
     prepare();
     if (readiness === 'ready') {
-      const { started } = ask(value);
-      if (started) {
-        setInput('');
-        setOverride(null);
-      }
+      if (ask(value).started) started('turn');
     } else {
       setQueued(value);
     }
@@ -449,7 +503,7 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
       {forgotten && turns.length > 0 && (
         <p className="ask-forgotten">Earlier questions are no longer in the assistant's memory.</p>
       )}
-      <ol className="ask-turns" aria-label="Conversation">
+      <ol className="ask-turns" aria-label="Conversation" ref={turnsRef}>
         {turns.slice(0, insertAt).map((turn) => (
           <AnswerTurn key={turn.id} turn={turn} pageTitles={pageTitles} onFeedback={(item) => { void recordFeedback(item); }} />
         ))}
@@ -471,6 +525,12 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
 
   const waiting = queued !== null && readiness === 'pending';
   const offline = readiness === 'offline' && mode === 'ask';
+  const describedBy = [notice ? hintId : null, offline ? offlineId : null].filter(Boolean).join(' ') || undefined;
+
+  // The offline sentence is spoken through the one status line, like the bad-link hint.
+  useEffect(() => {
+    if (offline) setAnnouncement(OFFLINE_MESSAGE);
+  }, [offline]);
 
   const form = (
     <form className="ask-form" onSubmit={submit}>
@@ -483,7 +543,7 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
           rows={2}
           placeholder="Ask a question, or paste a job ad"
           value={input}
-          aria-describedby={notice ? hintId : undefined}
+          aria-describedby={describedBy}
           onChange={(event) => {
             setInput(event.target.value);
             setNotice(null);
@@ -498,7 +558,7 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
         <div className="ask-below">
           {notice && <p id={hintId} className="ask-hint">{notice}</p>}
           {waiting && <p className="ask-hint">Getting ready…</p>}
-          {offline && <p className="ask-hint">The assistant is offline right now — please try again later.</p>}
+          {offline && <p id={offlineId} className="ask-hint">{OFFLINE_MESSAGE}</p>}
           {switchLink}
         </div>
       )}

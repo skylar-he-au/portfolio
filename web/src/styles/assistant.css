@@ -239,6 +239,11 @@
   margin-block-start: var(--space-0);
 }
 
+/* A new turn on the home page is scrolled to the top of the screen with a little room above. */
+.assistant-home .ask-turns > li {
+  scroll-margin-block-start: var(--space-6);
+}
+
 .ask-turn {
   display: grid;
   gap: var(--space-3);
