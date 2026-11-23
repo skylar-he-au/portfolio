@@ -66,10 +66,6 @@
   background: var(--color-surface);
 }
 
-.ask-box:hover {
-  border-color: var(--color-subtle);
-}
-
 .ask-box:focus-within {
   border-color: var(--color-accent);
 }
