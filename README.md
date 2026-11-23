@@ -146,3 +146,5 @@ Migrations only add, so the previous backend revision keeps working against the 
 ## License
 
 The code is under the [MIT License](LICENSE). The text and images in `content/` are © Skylar He, all rights reserved, and are not covered by the MIT License (see [content/LICENSE](content/LICENSE)).
+
+The site self-hosts two fonts from npm, both under the [SIL Open Font License 1.1](https://openfontlicense.org): Instrument Sans (© 2022 The Instrument Sans Project Authors, `@fontsource-variable/instrument-sans`) and JetBrains Mono (© 2020 The JetBrains Mono Project Authors, `@fontsource-variable/jetbrains-mono`). The license text ships in each package's `LICENSE`.

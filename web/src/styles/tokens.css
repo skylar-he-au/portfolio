@@ -1,33 +1,61 @@
+/* Design tokens (docs/design.md "颜色", "字号和间距"). Literal colors live only in this file. */
 :root {
   color-scheme: light;
-  --color-background: #fbf9f4;
+  --color-background: #f7f9fa;
   --color-surface: #ffffff;
-  --color-text: #1d1b18;
-  --color-muted: #5b5750;
-  --color-accent: #0b5e57;
-  --color-accent-soft: #d5ebe7;
-  --color-border: #dcd6ca;
-  --color-rule: #e7e2d7;
-  --color-control-border: #858075;
-  --color-code-background: #f1eee6;
-  --color-code-text: #1d1b18;
+  --color-text: #1b2330;
+  --color-muted: #4a5563;
+  --color-subtle: #5f6a78;
+  --color-border: #e3e8ed;
+  --color-rule: #e3e8ed;
+  --color-control-border: #1b2330;
+  --color-accent: #2a6770;
+  --color-accent-soft: #e3eff1;
+  --color-ai-from: #2f7c85;
+  --color-ai-to: #5a62b5;
+  --color-on-ai: #ffffff;
+  --color-highlight: #f5edd6;
+  --color-highlight-text: #1b2330;
+  --color-ok: #37754f;
+  --color-code-background: #edf1f4;
+  --color-code-text: #1b2330;
+  --color-glow-teal: rgba(110, 190, 196, 0.14);
+  --color-glow-indigo: rgba(140, 148, 226, 0.12);
   --color-clear: transparent;
-  --font-body: 'Inter Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-heading: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
-  --font-code: ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  /* AI-only gradient (Ask button, streaming shimmer) and the page-top glow. */
+  --gradient-ai: linear-gradient(135deg, var(--color-ai-from), var(--color-ai-to));
+  --gradient-glow:
+    radial-gradient(ellipse 55% 100% at 18% 0, var(--color-glow-teal), var(--color-clear) 70%),
+    radial-gradient(ellipse 55% 100% at 82% 0, var(--color-glow-indigo), var(--color-clear) 70%);
+  --glow-height: 13.75rem;
+
+  --font-fallback: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Instrument Sans Variable', var(--font-fallback);
+  --font-heading: var(--font-body);
+  --font-code: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace;
+
+  --font-size-display: clamp(1.75rem, 1rem + 4vw, 2.75rem);
+  --font-size-h1: clamp(1.75rem, 1.2rem + 2vw, 2.25rem);
+  --font-size-h2: 1.25rem;
+  --font-size-h3: 1.0625rem;
   --font-size-body: 1.0625rem;
   --font-size-small: 0.875rem;
-  --font-size-site-name: 1.25rem;
-  --font-size-h1: clamp(2.25rem, 7vw, 3.5rem);
-  --font-size-h2: clamp(1.5rem, 4vw, 1.875rem);
-  --font-size-h3: 1.25rem;
+  --font-size-mono: 0.75rem;
+  --font-size-proof: 1.5rem;
+  --font-size-proof-compact: 1.125rem;
+  --font-size-site-name: 1.0625rem;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
-  --line-height-body: 1.7;
+  --line-height-body: 1.65;
   --line-height-heading: 1.2;
+  --line-height-display: 1.05;
+  --tracking-display: -0.04em;
+  --tracking-title: -0.035em;
   --tracking-heading: -0.015em;
+
   --space-0: 0;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -37,17 +65,34 @@
   --space-6: 2rem;
   --space-7: 3rem;
   --space-8: 4rem;
+  --space-9: 6rem;
+  /* Between page blocks: one step more than before (design.md "字号和间距"). */
+  --space-section: var(--space-8);
+
   --radius-small: 0.25rem;
-  --radius-card: 0.5rem;
+  --radius-control: 0.75rem;
+  --radius-card: 0.875rem;
+  --radius-pill: 999px;
   --border-width: 1px;
+  --control-border-width: 1.5px;
   --rule-width: 3px;
   --focus-width: 3px;
   --focus-offset: 3px;
   --underline-offset: 0.2em;
   --underline-thickness: 0.08em;
+  /* Smallest pointer target (WCAG 2.5.8), e.g. citation chips. */
+  --target-min: 1.5rem;
+
   --size-full: 100%;
-  --content-width: 36rem;
+  /* Default main column; project-page prose is ~65 characters a line. */
+  --content-width: 40rem;
+  --prose-width: 40rem;
+  /* Header, footer and layout="wide" main (home two columns, project page three columns). */
+  --page-width: 75rem;
+  --page-gutter: var(--space-5);
   --content-width-wide: 56rem;
+  --toc-width: 11.25rem;
+  --aside-width: 18.75rem;
   --project-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   --skip-hidden-position: -100%;
   --layer-skip: 1;
@@ -56,16 +101,25 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --color-background: #161513;
-    --color-surface: #1f1d1a;
-    --color-text: #eeeae2;
-    --color-muted: #b5afa4;
-    --color-accent: #72d2c5;
-    --color-accent-soft: #1f3b38;
-    --color-border: #3f3b35;
-    --color-rule: #2e2b27;
-    --color-control-border: #7f796e;
-    --color-code-background: #26241f;
-    --color-code-text: #eeeae2;
+    --color-background: #11161c;
+    --color-surface: #171d24;
+    --color-text: #e4e9ee;
+    --color-muted: #a3aebb;
+    --color-subtle: #8d98a5;
+    --color-border: #29323c;
+    --color-rule: #29323c;
+    --color-control-border: #c9d2db;
+    --color-accent: #7cc7cd;
+    --color-accent-soft: #20343a;
+    --color-ai-from: #6fb8bf;
+    --color-ai-to: #9ca3ec;
+    --color-on-ai: #0f1418;
+    --color-highlight: #3e3622;
+    --color-highlight-text: #f1e4bf;
+    --color-ok: #7fc9a0;
+    --color-code-background: #1e252e;
+    --color-code-text: #e4e9ee;
+    --color-glow-teal: rgba(110, 190, 196, 0.16);
+    --color-glow-indigo: rgba(140, 148, 226, 0.14);
   }
 }

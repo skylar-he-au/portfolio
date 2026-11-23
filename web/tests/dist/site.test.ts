@@ -176,7 +176,7 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
   const markdown = readFileSync(join(root, '../content', source), 'utf8');
   const document = readPage(path);
 
-  it('uses content metadata and renders the body after its h1 inside main', () => {
+  it('uses content metadata in the head and has one main and one h1', () => {
     const title = frontMatter(markdown, 'title');
     expect(document.documentElement.lang).toBe('en');
     expect(document.title).toBe(path === '/' ? 'Skylar He' : `${title} · Skylar He`);
@@ -187,12 +187,37 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
     expect(document.querySelector('meta[name="viewport"]')).not.toBeNull();
     expect(document.querySelectorAll('main')).toHaveLength(1);
     expect(document.querySelectorAll('h1')).toHaveLength(1);
+  });
+
+  // One branch per page layout (step 9): each block edits only its own page's branch.
+  it('renders the page body in main', () => {
+    const title = frontMatter(markdown, 'title');
     const main = document.querySelector('main#main')!;
-    expect(main.firstElementChild?.tagName).toBe('H1');
-    expect(main.querySelector('h1')?.textContent).toBe(title);
-    if (path === '/') expect(main.querySelector('h1')?.textContent).toBe('Skylar He');
-    expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
-    expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+    if (path === '/') {
+      // Home (9h).
+      expect(main.firstElementChild?.tagName).toBe('H1');
+      expect(main.querySelector('h1')?.textContent).toBe('Skylar He');
+      expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
+      expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+    } else if (path.startsWith('/projects/')) {
+      // Project pages (9p).
+      expect(main.firstElementChild?.tagName).toBe('H1');
+      expect(main.querySelector('h1')?.textContent).toBe(title);
+      expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
+      expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+    } else if (path === '/about') {
+      // About (9e).
+      expect(main.firstElementChild?.tagName).toBe('H1');
+      expect(main.querySelector('h1')?.textContent).toBe(title);
+      expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
+      expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+    } else {
+      // Every other content page (/privacy).
+      expect(main.firstElementChild?.tagName).toBe('H1');
+      expect(main.querySelector('h1')?.textContent).toBe(title);
+      expect(main.querySelector('.markdown')?.children.length).toBeGreaterThan(0);
+      expect(main.querySelector('h1')?.nextElementSibling?.classList.contains('markdown')).toBe(true);
+    }
   });
 
   it('preserves the fixture headings, Astro ids, and accessible section anchors', () => {
@@ -221,8 +246,12 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
 
   it('provides the shared navigation, footer, and first-focusable skip link', () => {
     expect(document.querySelector('header a[href="/"]')?.textContent).toBe('Skylar He');
-    expect(document.querySelector('header a[href="/#projects"]')?.textContent).toBe('Projects');
-    expect(document.querySelector('header a[href="/about"]')?.textContent).toBe('About');
+    expect(Array.from(document.querySelectorAll('header nav a'), (link) =>
+      [link.getAttribute('href'), link.textContent])).toEqual([
+      ['/#projects', 'Projects'],
+      ['/evals', 'Evals'],
+      ['/about', 'About'],
+    ]);
     expect(document.querySelector('footer a[href="/privacy"]')?.textContent).toBe('Privacy');
     expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
     expect(document.querySelector('footer')?.textContent).toContain('© 2026 Skylar He');
@@ -264,6 +293,16 @@ it('renders two project cards followed by the Ask component on Home', () => {
   expect(field).not.toBeNull();
   expect(ask.querySelector(`label[for="${field.id}"]`)).not.toBeNull();
   expect(ask.querySelector('a[href="/privacy"]')).not.toBeNull();
+});
+
+it('self-hosts Instrument Sans and JetBrains Mono and no longer ships Inter or Source Serif', () => {
+  const css = filesWithin(dist).filter((path) => path.endsWith('.css'))
+    .map((path) => readFileSync(path, 'utf8')).join('\n');
+  const faces = Array.from(css.matchAll(/@font-face\s*\{[^}]*\}/g), (match) => match[0]);
+  const families = new Set(faces.map((face) => /font-family:\s*['"]?([^;'"]+)/.exec(face)?.[1]));
+  expect([...families].sort()).toEqual(['Instrument Sans Variable', 'JetBrains Mono Variable']);
+  // Vite inlines subsets under 4 kB (JetBrains Mono Cyrillic-ext) as data: URIs.
+  for (const face of faces) expect(face).toMatch(/url\(\s*["']?(?:\/_astro\/[^)]+\.woff2|data:font\/woff2;)/);
 });
 
 it('loads no third-party resources from any generated HTML or CSS file', () => {

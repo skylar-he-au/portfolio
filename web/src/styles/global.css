@@ -1,5 +1,3 @@
-@import '@fontsource-variable/source-serif-4';
-
 * {
   box-sizing: border-box;
 }
@@ -12,21 +10,42 @@ html {
   line-height: var(--line-height-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   margin: var(--space-0);
+  min-block-size: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Page-top glow (Base.astro glow prop): a faint teal and indigo wash that fades out. */
+body.has-glow {
+  background-image: var(--gradient-glow);
+  background-repeat: no-repeat;
+  background-size: var(--size-full) var(--glow-height);
 }
 
 ::selection {
   background: var(--color-accent-soft);
+  color: var(--color-text);
 }
 
+/* Layout. Header and footer always span the page width; main is narrow by default
+   and page-wide with Base.astro layout="wide". */
 .container {
   inline-size: var(--size-full);
-  max-inline-size: var(--content-width);
+  max-inline-size: calc(var(--content-width) + 2 * var(--page-gutter));
   margin-inline: auto;
-  padding-inline: var(--space-5);
+  padding-inline: var(--page-gutter);
+}
+
+.container-wide,
+.site-header,
+.site-footer {
+  max-inline-size: calc(var(--page-width) + 2 * var(--page-gutter));
 }
 
 .site-header,
@@ -35,23 +54,21 @@ nav {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-5);
 }
 
 .site-header,
 .site-footer {
   justify-content: space-between;
-  padding-block: var(--space-6);
 }
 
 .site-header {
-  border-block-end: var(--border-width) solid var(--color-rule);
+  padding-block: var(--space-5);
 }
 
 .site-name {
-  font-family: var(--font-heading);
   font-size: var(--font-size-site-name);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-bold);
   letter-spacing: var(--tracking-heading);
   color: var(--color-text);
   text-decoration: none;
@@ -59,6 +76,8 @@ nav {
 
 nav a {
   color: var(--color-muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
 }
 
@@ -69,15 +88,21 @@ nav a:hover {
 }
 
 main {
-  padding-block: var(--space-6) var(--space-7);
+  flex: 1 0 auto;
+  padding-block: var(--space-6) var(--space-section);
   min-inline-size: var(--space-0);
   overflow-wrap: anywhere;
 }
 
 .site-footer {
-  border-block-start: var(--border-width) solid var(--color-rule);
-  color: var(--color-muted);
+  padding-block: var(--space-6);
+  border-block-start: var(--border-width) solid var(--color-border);
+  color: var(--color-subtle);
   font-size: var(--font-size-small);
+}
+
+.site-footer a {
+  color: var(--color-muted);
 }
 
 .site-footer p {
@@ -98,6 +123,12 @@ a:hover {
 main:focus {
   outline: var(--focus-width) solid var(--color-accent);
   outline-offset: var(--focus-offset);
+  border-radius: var(--radius-small);
+}
+
+/* main takes focus from the skip link; no ring around the whole page. */
+main:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .skip-link {
@@ -106,8 +137,11 @@ main:focus {
   inset-inline-start: var(--skip-hidden-position);
   z-index: var(--layer-skip);
   padding: var(--space-3) var(--space-4);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
   background: var(--color-surface);
-  border-radius: var(--radius-small);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 
 .skip-link:focus {
@@ -119,24 +153,27 @@ h2,
 h3 {
   font-family: var(--font-heading);
   line-height: var(--line-height-heading);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-bold);
   letter-spacing: var(--tracking-heading);
-  margin-block: var(--space-0) var(--space-5);
+  margin-block: var(--space-0) var(--space-4);
+  text-wrap: balance;
 }
 
 h1 {
   font-size: var(--font-size-h1);
+  letter-spacing: var(--tracking-title);
+  margin-block-end: var(--space-5);
 }
 
 h2 {
   font-size: var(--font-size-h2);
   margin-block-start: var(--space-7);
-  padding-block-start: var(--space-5);
-  border-block-start: var(--border-width) solid var(--color-rule);
 }
 
 h3 {
   font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--space-0);
 }
 
 strong {
@@ -146,7 +183,7 @@ strong {
 p,
 ul,
 ol {
-  margin-block: var(--space-0) var(--space-5);
+  margin-block: var(--space-0) var(--space-4);
 }
 
 ul,
@@ -166,10 +203,16 @@ h2 {
 .anchor {
   font-family: var(--font-body);
   font-weight: var(--font-weight-normal);
-  font-size: var(--font-size-h3);
-  color: var(--color-muted);
+  font-size: var(--font-size-small);
+  color: var(--color-subtle);
   text-decoration: none;
-  padding-inline: var(--space-1);
+  padding-inline: var(--space-2);
+  opacity: 0;
+}
+
+h2:hover .anchor,
+.anchor:focus-visible {
+  opacity: 1;
 }
 
 .anchor:hover,
@@ -178,9 +221,15 @@ h2 {
   text-decoration: underline;
 }
 
+@media (hover: none) {
+  .anchor {
+    opacity: 1;
+  }
+}
+
 #projects,
 #ask {
-  margin-block-start: var(--space-7);
+  margin-block-start: var(--space-section);
 }
 
 /* Allow room for the wide section and page gutters at the body font size. */
@@ -215,26 +264,36 @@ h2 {
 }
 
 code,
-pre {
+pre,
+kbd,
+samp {
   font-family: var(--font-code);
-  font-size: var(--font-size-small);
+}
+
+code,
+pre {
+  font-size: 0.875em;
   color: var(--color-code-text);
   background: var(--color-code-background);
   border-radius: var(--radius-small);
 }
 
 code {
-  padding: var(--space-1);
+  padding: 0.1em var(--space-1);
 }
 
 pre {
   max-inline-size: var(--size-full);
   overflow-x: auto;
   padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
 }
 
 pre code {
   padding: var(--space-0);
+  font-size: inherit;
+  background: var(--color-clear);
 }
 
 table {
@@ -243,13 +302,19 @@ table {
   overflow-x: auto;
   border-collapse: collapse;
   margin-block: var(--space-5);
+  font-size: var(--font-size-small);
 }
 
 th,
 td {
   padding: var(--space-2) var(--space-3);
-  border: var(--border-width) solid var(--color-border);
+  border-block-end: var(--border-width) solid var(--color-border);
   text-align: start;
+  vertical-align: top;
+}
+
+th {
+  font-weight: var(--font-weight-semibold);
 }
 
 img,
@@ -257,12 +322,19 @@ video,
 iframe,
 svg {
   max-inline-size: var(--size-full);
+  block-size: auto;
+}
+
+hr {
+  border: none;
+  border-block-start: var(--border-width) solid var(--color-border);
+  margin-block: var(--space-7);
 }
 
 blockquote {
   margin-inline: var(--space-0);
   padding-inline-start: var(--space-5);
-  border-inline-start: var(--focus-width) solid var(--color-border);
+  border-inline-start: var(--rule-width) solid var(--color-border);
   color: var(--color-muted);
 }
 

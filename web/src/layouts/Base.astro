@@ -1,14 +1,19 @@
 ---
-import '@fontsource-variable/inter';
+import '@fontsource-variable/instrument-sans';
+import '@fontsource-variable/jetbrains-mono';
 import '../styles/tokens.css';
 import '../styles/global.css';
 
 interface Props {
   title: string;
   description: string;
+  /** "wide": main spans --page-width (home two columns, project page three columns). */
+  layout?: 'default' | 'wide';
+  /** Faint teal and indigo glow at the top of the page (home and project pages only). */
+  glow?: boolean;
 }
 
-const { title, description } = Astro.props;
+const { title, description, layout = 'default', glow = false } = Astro.props;
 ---
 
 <!doctype html>
@@ -20,16 +25,17 @@ const { title, description } = Astro.props;
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
-  <body>
+  <body class:list={{ 'has-glow': glow }}>
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header container">
       <a class="site-name" href="/">Skylar He</a>
       <nav aria-label="Main navigation">
         <a href="/#projects">Projects</a>
+        <a href="/evals">Evals</a>
         <a href="/about">About</a>
       </nav>
     </header>
-    <main id="main" class="container" tabindex="-1">
+    <main id="main" class:list={['container', { 'container-wide': layout === 'wide' }]} tabindex="-1">
       <slot />
     </main>
     <footer class="site-footer container">
