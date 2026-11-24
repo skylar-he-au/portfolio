@@ -100,22 +100,17 @@ def _install_metrics(
 def test_metric_failure_is_isolated(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bad_value: float | Exception
 ) -> None:
-    calls, builds = _install_metrics(monkeypatch, {"response_relevancy": bad_value})
+    calls, builds = _install_metrics(monkeypatch, {"faithfulness": bad_value})
     meter = FakeMeter()
     with caplog.at_level("WARNING", logger=ragas_score.__name__):
         result = asyncio.run(ragas_score.score(_item(), meter))
-    assert result == {
-        "faithfulness": 0.75,
-        "response_relevancy": None,
-        "context_recall": 0.75,
-        "factual_correctness": 0.75,
-    }
+    assert result == {"faithfulness": None, "context_recall": 0.75}
     assert [name for name, _ in calls] == list(METRICS)
-    assert meter.checks == 4
+    assert meter.checks == 2
     assert len(builds) == 1
     if isinstance(bad_value, Exception):
         assert any(
-            "response_relevancy" in record.message and record.levelname == "WARNING"
+            "faithfulness" in record.message and record.levelname == "WARNING"
             for record in caplog.records
         )
 
@@ -134,7 +129,6 @@ def test_metric_kwargs_match_ragas_collections(monkeypatch: pytest.MonkeyPatch) 
                 "retrieved_contexts": ["context one", "context two"],
             },
         ),
-        ("response_relevancy", {"user_input": "question", "response": "answer"}),
         (
             "context_recall",
             {
@@ -143,38 +137,30 @@ def test_metric_kwargs_match_ragas_collections(monkeypatch: pytest.MonkeyPatch) 
                 "reference": "reference",
             },
         ),
-        ("factual_correctness", {"response": "answer", "reference": "reference"}),
     ]
 
 
-def test_subset_runs_in_metrics_order(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_subset_runs_and_metrics_no_longer_judged_are_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 10: response_relevancy and factual_correctness are not judged even when asked.
     calls, _ = _install_metrics(monkeypatch)
     meter = FakeMeter()
     result = asyncio.run(
         ragas_score.score(_item(metrics=("factual_correctness", "faithfulness")), meter)
     )
-    assert result == {
-        "faithfulness": 0.75,
-        "response_relevancy": None,
-        "context_recall": None,
-        "factual_correctness": 0.75,
-    }
-    assert [name for name, _ in calls] == ["faithfulness", "factual_correctness"]
-    assert meter.checks == 2
+    assert result == {"faithfulness": 0.75, "context_recall": None}
+    assert [name for name, _ in calls] == ["faithfulness"]
+    assert meter.checks == 1
 
 
 def test_missing_reference_skips_reference_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     calls, _ = _install_metrics(monkeypatch)
     meter = FakeMeter()
     result = asyncio.run(ragas_score.score(_item(reference=None), meter))
-    assert result == {
-        "faithfulness": 0.75,
-        "response_relevancy": 0.75,
-        "context_recall": None,
-        "factual_correctness": None,
-    }
-    assert [name for name, _ in calls] == ["faithfulness", "response_relevancy"]
-    assert meter.checks == 2
+    assert result == {"faithfulness": 0.75, "context_recall": None}
+    assert [name for name, _ in calls] == ["faithfulness"]
+    assert meter.checks == 1
 
 
 def test_nothing_requested_does_not_build_clients(monkeypatch: pytest.MonkeyPatch) -> None:

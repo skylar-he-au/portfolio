@@ -231,13 +231,19 @@ def export_tasks(
     return tasks
 
 
-def write_tasks(tasks: Sequence[Task], directory: Path, meta: Mapping[str, Any]) -> Path:
+def write_tasks(
+    tasks: Sequence[Task],
+    directory: Path,
+    meta: Mapping[str, Any],
+    *,
+    kinds: Sequence[str] = KINDS,
+) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "tasks.jsonl"
     path.write_text(
         "".join(json.dumps(task, ensure_ascii=False) + "\n" for task in tasks), encoding="utf-8"
     )
-    counts = {kind: sum(t["kind"] == kind for t in tasks) for kind in KINDS}
+    counts = {kind: sum(t["kind"] == kind for t in tasks) for kind in kinds}
     (directory / "tasks.meta.json").write_text(
         json.dumps({**meta, "tasks": counts}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -262,13 +268,19 @@ class Grades:
     grades: dict[str, dict[str, Any]] = field(default_factory=dict)  # task id -> valid grade
     errors: dict[str, str] = field(default_factory=dict)  # task id -> why it has no grade
     warnings: list[str] = field(default_factory=list)
+    # The kinds of this export and the ones whose errors block the run (the Q&A export,
+    # `evals.qa_grading`, has its own).
+    kinds: tuple[str, ...] = KINDS
+    required: tuple[str, ...] = REQUIRED
 
     @property
     def graders(self) -> list[str]:
         return sorted({str(g["grader"]) for g in self.grades.values()})
 
     def required_errors(self) -> dict[str, str]:
-        return {tid: why for tid, why in self.errors.items() if self.tasks[tid]["kind"] in REQUIRED}
+        return {
+            tid: why for tid, why in self.errors.items() if self.tasks[tid]["kind"] in self.required
+        }
 
     @property
     def status(self) -> str:
@@ -281,7 +293,7 @@ class Grades:
                 "graded": sum(self.tasks[tid]["kind"] == kind for tid in self.grades),
                 "errors": sum(self.tasks[tid]["kind"] == kind for tid in self.errors),
             }
-            for kind in KINDS
+            for kind in self.kinds
         }
 
 
@@ -320,9 +332,19 @@ def _pair_problem(grade: Mapping[str, Any], task: Task) -> str | None:
 _PROBLEMS = {"faith": _faith_problem, "align": _align_problem, "pair": _pair_problem}
 
 
-def read_grades(tasks: Sequence[Task], lines: Iterable[str]) -> Grades:
-    """Check `grades.jsonl` lines against the tasks."""
-    out = Grades({t["task_id"]: t for t in tasks})
+type Problem = Callable[[Mapping[str, Any], Task], str | None]
+
+
+def read_grades(
+    tasks: Sequence[Task],
+    lines: Iterable[str],
+    *,
+    problems: Mapping[str, Problem] = _PROBLEMS,
+    required: tuple[str, ...] = REQUIRED,
+) -> Grades:
+    """Check `grades.jsonl` lines against the tasks. `problems` checks each kind's shape;
+    a task of a kind it does not know is an error."""
+    out = Grades({t["task_id"]: t for t in tasks}, kinds=tuple(problems), required=required)
     latest: dict[str, dict[str, Any]] = {}
     for number, line in enumerate(lines, start=1):
         if not line.strip():
@@ -350,7 +372,8 @@ def read_grades(tasks: Sequence[Task], lines: Iterable[str]) -> Grades:
         if not isinstance(grade.get("grader"), str) or not grade["grader"]:
             out.errors[tid] = "grader must be a non-empty string"
             continue
-        problem = _PROBLEMS[task["kind"]](grade, task)
+        check = problems.get(task["kind"])
+        problem = f"unknown kind {task['kind']}" if check is None else check(grade, task)
         if problem is not None:
             out.errors[tid] = problem
             continue
@@ -358,7 +381,7 @@ def read_grades(tasks: Sequence[Task], lines: Iterable[str]) -> Grades:
     return out
 
 
-REGRADE_FILE = re.compile(r"grades-(faith|align|pair)-v(\d+)\.jsonl")
+REGRADE_FILE = re.compile(r"grades-([a-z_]+)-v(\d+)\.jsonl")
 
 
 def _line_task(line: str) -> str | None:
@@ -370,7 +393,12 @@ def _line_task(line: str) -> str | None:
     return tid if isinstance(tid, str) else None
 
 
-def load_grades(directory: Path) -> Grades:
+def load_grades(
+    directory: Path,
+    *,
+    problems: Mapping[str, Problem] = _PROBLEMS,
+    required: tuple[str, ...] = REQUIRED,
+) -> Grades:
     """`grades.jsonl`, then each re-grade of one kind (`grades-<kind>-v<N>.jsonl`, GRADING.md
     section 5.7, lowest N first) in place of that kind's lines: a re-grade with a changed
     guide replaces the old grades of its kind, never mixes with them."""
@@ -386,7 +414,7 @@ def load_grades(directory: Path) -> Grades:
     for _, kind, regrade in regrades:
         kept = [line for line in lines if kind_of.get(_line_task(line) or "") != kind]
         lines = kept + regrade.read_text(encoding="utf-8").splitlines()
-    return read_grades(tasks, lines)
+    return read_grades(tasks, lines, problems=problems, required=required)
 
 
 # --- scores ---------------------------------------------------------------------------------

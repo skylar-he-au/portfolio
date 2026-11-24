@@ -571,6 +571,7 @@ async def test_summary_whitelist_and_pass_means(tmp_path: Path) -> None:
         "ragas_nulls",
         "models",
         "ragas",
+        "not_judged",
         "code_checks",
         "quote_match",
         "private_repeat",

@@ -3,7 +3,11 @@
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-METRICS = ("faithfulness", "response_relevancy", "context_recall", "factual_correctness")
+# The RAGAS metrics a Q&A run is judged on: from step 10 only the two with a pass line
+# (SPEC "第 10 步评测"). The other two are no longer judged; summaries list them under
+# `not_judged` so the results page can say so, and they never count as missing scores.
+METRICS = ("faithfulness", "context_recall")
+NOT_JUDGED = ("response_relevancy", "factual_correctness")
 
 
 class CapReached(Exception):

@@ -9,7 +9,7 @@ from typing import Any
 
 from evals.checks import CATEGORIES, quote_counts
 from evals.pricing import POOLS
-from evals.types import METRICS
+from evals.types import METRICS, NOT_JUDGED
 
 
 def _cost_fields(rows: list[dict[str, Any]], pools: dict[str, float] | None) -> dict[str, Any]:
@@ -91,7 +91,13 @@ def build_summary(
     questions: int,
     models: dict[str, str | None],
     cost_pools: dict[str, float] | None = None,
+    grader: str | None = None,
+    grading: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Aggregates of a Q&A run. `ragas` holds the judged metrics (`METRICS`) and
+    `not_judged` the ones no longer judged; `ragas_nulls` counts only judged metrics that
+    have no score. `grader` and `grading` are set when the scores come from subscription
+    grades (`evals.qa_grading`), as in `build_match_summary`."""
     averaged = [row for row in rows if row["repeat"] <= repeats]
     groups = {
         "tune": [row for row in averaged if not row["held_out"]],
@@ -118,6 +124,7 @@ def build_summary(
             (row["ragas"] or {}).get(metric) is None
             for row in rows
             for metric in row["requested_metrics"]
+            if metric in METRICS
         ),
         "models": {
             "answer": _model(rows, "answer"),
@@ -130,6 +137,7 @@ def build_summary(
             for group, samples in groups.items()
             if samples
         },
+        "not_judged": list(NOT_JUDGED),
         "code_checks": {
             category: {
                 "passed": sum(
@@ -153,6 +161,8 @@ def build_summary(
             else None
         ),
         **_cost_fields(rows, cost_pools),
+        **({"grader": grader} if grader is not None or grading is not None else {}),
+        **({"grading": grading} if grading is not None else {}),
     }
 
 
