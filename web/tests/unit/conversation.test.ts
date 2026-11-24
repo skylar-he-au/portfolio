@@ -46,6 +46,8 @@ describe('conversation storage', () => {
   it.each([
     { turnId: 1 }, { question: null }, { text: [] }, { citations: [{ n: '1', url: '/', heading: 'h' }] },
     { citations: [{ n: 1, url: false, heading: 'h' }] }, { citations: [{ n: 1, url: '/', heading: 1 }] },
+    { citations: [{ n: 1, url: '/', heading: 'h', quotes: 'one' }] },
+    { citations: [{ n: 1, url: '/', heading: 'h', quotes: [1] }] },
     { unsupported: [1] }, { private: 'yes' }, { checkResult: { passed: 'yes', reason: null } },
     { checkResult: { passed: true, reason: 1 } }, { trace: { nodes: [], sections: [] } },
     { trace: { nodes: [{ name: 'a', provider: 1, model: null, ms: 1 }], sections: [], memory: [] } },
@@ -54,6 +56,14 @@ describe('conversation storage', () => {
   ])('rejects the whole conversation for a malformed field %j', (change) => {
     sessionStorage.setItem('conversation', JSON.stringify({ ...conversation, turns: [turn, { ...turn, ...change }] }));
     expect(loadConversation()).toBeNull();
+  });
+
+  it('reads back sources with quotes, and sources stored before quotes existed', () => {
+    const quoted = { ...turn, citations: [{ n: 1, url: '/about#work-rights', heading: 'Work rights', quotes: ["I'm studying in Sydney and can work in Australia"] }] };
+    sessionStorage.setItem('conversation', JSON.stringify({ ...conversation, turns: [turn, quoted] }));
+    const loaded = loadConversation()!;
+    expect(loaded.turns[0]!.citations).toEqual([{ n: 1, url: '/about', heading: 'About' }]);
+    expect(loaded.turns[1]!.citations[0]!.quotes).toEqual(["I'm studying in Sydney and can work in Australia"]);
   });
 
   it.each(['sending', undefined, 1])('normalizes feedback %s to idle', (feedback) => {

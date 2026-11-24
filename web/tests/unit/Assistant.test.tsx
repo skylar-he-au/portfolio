@@ -400,7 +400,7 @@ describe('Assistant job match', () => {
     const gaps = screen.getByRole('list', { name: 'Not covered on the pages' });
     expect([...gaps.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Kubernetes', 'Java, Kotlin']);
     expect(screen.getByText("1 requirement couldn't be checked")).toBeInTheDocument();
-    expect(screen.getByText('Top 12 requirements of the job ad shown.')).toBeInTheDocument();
+    expect(screen.getByText('Showing up to 12 requirements from the ad.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'This guide is wrong' })).not.toBeInTheDocument();
     await act(async () => { stream.emit('done', {}); stream.close(); });
     expect(await screen.findByText("Follow-up questions don't include this job ad.")).toBeInTheDocument();
@@ -417,7 +417,7 @@ describe('Assistant job match', () => {
   it('matches pasted text over 500 characters without a link line, and cuts long requirements to 120 characters', async () => {
     const long = 'R'.repeat(200);
     const fetchMock = mockEndpoints({ match: async () => eventResponse([
-      ['result', { ...matchResult, items: [{ ...matchResult.items[0], requirement: long }] }], ['done', {}],
+      ['result', { ...matchResult, top8: false, items: [{ ...matchResult.items[0], requirement: long }] }], ['done', {}],
     ]) });
     const { container } = renderAssistant();
     await submit('Job ad text. '.repeat(50));
@@ -427,6 +427,9 @@ describe('Assistant job match', () => {
     const requirement = container.querySelector('.match-requirement')!.textContent!;
     expect([...requirement]).toHaveLength(120);
     expect(requirement.endsWith('…')).toBe(true);
+    // The line shows with every result, not only when the model listed more (SPEC, step 10).
+    expect(screen.getByText('Showing up to 12 requirements from the ad.')).toBeInTheDocument();
+    expect(screen.queryByText('Top 12 requirements of the job ad shown.')).toBeNull();
   });
 
   it('keeps the job match in its place among the questions', async () => {
@@ -599,6 +602,80 @@ describe('Assistant fixes from the 9c1 check', () => {
     await waitFor(() => expect(urls(vi.mocked(fetch))).toContain('/api/ping'));
     await act(async () => {});
     expect(box()).toHaveValue(jobLink);
+  });
+});
+
+describe('Assistant quoted sentences (step 10)', () => {
+  const roleradarHtml = `<!doctype html><html><body><main>${readFileSync(join(process.cwd(), 'tests/fixtures/quote-pages/roleradar.html'), 'utf8')}</main></body></html>`;
+  const once = 'The second layer runs per user, in code.';
+
+  function withPages(fetchMock: ReturnType<typeof mockEndpoints>, pages: Record<string, string>) {
+    const api = fetchMock.getMockImplementation()!;
+    const pageFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const html = pages[String(input)];
+      if (html === undefined) return api(input, init);
+      return Promise.resolve({
+        ok: true, status: 200, headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+        text: async () => html,
+      });
+    });
+    vi.stubGlobal('fetch', pageFetch);
+    return pageFetch;
+  }
+
+  function answer(citations: unknown[]) {
+    return async () => eventResponse([
+      ['meta', { conversation_id: 'c', turn_id: 't' }],
+      ['answer', { text: 'It runs per user [3]. Old answers [4].', citations }],
+      ['check', { passed: true, unsupported: [], retried: false }],
+      ['done', {}],
+    ]);
+  }
+
+  it('links a quote found once on its page with a Text Fragment and passes the quotes to highlight.ts', async () => {
+    const pageFetch = withPages(mockEndpoints({ ask: answer([
+      { n: 3, url: '/projects/roleradar#how-roleradar-matches-jobs', heading: 'How RoleRadar matches jobs', quotes: [once] },
+      { n: 4, url: '/projects/roleradar#architecture', heading: 'Architecture' },
+    ]) }), { '/projects/roleradar': roleradarHtml });
+    const { container } = renderAssistant();
+    await submit('How does RoleRadar decide the fit tier?');
+    await screen.findByText('Sources');
+    const fragment = '/projects/roleradar#how-roleradar-matches-jobs:~:text=The%20second%20layer%20runs%20per%20user%2C%20in%20code.';
+    await waitFor(() => expect(container.querySelector('.ask-answer-text a.ask-cite')).toHaveAttribute('href', fragment));
+    const chip = container.querySelector('.ask-answer-text a.ask-cite')!;
+    expect(JSON.parse(chip.getAttribute('data-quotes')!)).toEqual([once]);
+    const links = [...container.querySelectorAll('.ask-sources a')];
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([fragment, '/projects/roleradar#architecture']);
+    // A source without quotes (or from an older answer) is a plain section link, as before.
+    expect(links[1]!.hasAttribute('data-quotes')).toBe(false);
+    expect(pageFetch.mock.calls.filter(([url]) => url === '/projects/roleradar')).toHaveLength(1);
+  });
+
+  it('leaves the Text Fragment off when the quote appears more than once on that page', async () => {
+    const twice = roleradarHtml.replace('</main>', `<p>${once}</p></main>`);
+    withPages(mockEndpoints({ ask: answer([
+      { n: 3, url: '/projects/roleradar#how-roleradar-matches-jobs', heading: 'How RoleRadar matches jobs', quotes: [once] },
+    ]) }), { '/projects/roleradar': twice });
+    const { container } = renderAssistant();
+    await submit('How does RoleRadar decide the fit tier?');
+    await screen.findByText('Sources');
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    const chip = container.querySelector('.ask-answer-text a.ask-cite')!;
+    expect(chip).toHaveAttribute('href', '/projects/roleradar#how-roleradar-matches-jobs');
+    expect(JSON.parse(chip.getAttribute('data-quotes')!)).toEqual([once]);
+  });
+
+  it('reads back a stored turn from before quotes and links its sources as before', async () => {
+    sessionStorage.setItem('conversation', JSON.stringify({ v: 1, id: 'c-old', turns: [{
+      turnId: 't1', question: 'Old?', text: 'Old answer [1].', unsupported: [], feedback: 'idle',
+      citations: [{ n: 1, url: '/projects/roleradar#a', heading: 'Alpha' }],
+    }] }));
+    mockEndpoints();
+    const { container } = renderAssistant();
+    expect(await screen.findByText('Old?')).toBeInTheDocument();
+    const chip = container.querySelector('.ask-answer-text a.ask-cite')!;
+    expect(chip).toHaveAttribute('href', '/projects/roleradar#a');
+    expect(chip.hasAttribute('data-quotes')).toBe(false);
   });
 });
 

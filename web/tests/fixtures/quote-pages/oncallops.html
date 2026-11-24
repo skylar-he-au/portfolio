@@ -1,0 +1,73 @@
+<!-- Rendered /projects/oncallops page body (astro build, step 10 10c2): only the .markdown element. Regenerate after content changes. -->
+<div class="markdown project-body"><h2 id="in-30-seconds">In 30 seconds <a class="anchor" href="#in-30-seconds" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps is a multi-tenant operations platform for trade businesses whose phone lines are answered by an AI. It is a team project that is still in progress, built by nine people. I own one part of it: the Operations Dashboard, a Next.js web app where staff review calls, manage jobs and bookings, and change settings, together with the FastAPI Operations API behind it. The rest of the platform (phone handling, the conversation model, escalation, tenancy, evaluation, deployment) belongs to other team members, and this page does not claim any of it.</p>
+<p>Three numbers, all as of 2026-11-17:</p>
+<ul>
+<li>62 pull requests merged under my name, in a team that has merged 965.</li>
+<li>21 teammates’ pull requests that I reviewed.</li>
+<li>33 operations in the Operations API that I own.</li>
+</ul>
+<p>Stack: Next.js 16, React 19, TypeScript, Python, FastAPI, SQLAlchemy, Alembic, PostgreSQL, OpenAPI, pytest, Playwright, GitHub Actions, Claude Code.</p>
+<p>The repository is private, so this page has no code links. OnCallOps has no live usage to measure: a bounded pilot was ruled a no-go on 2026-10-18, so I quote no usage figures.</p>
+<h2 id="the-team-and-my-role">The team and my role <a class="anchor" href="#the-team-and-my-role" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps is built by a team of nine, and the team works on a simple rule: each epic has one owner, with no rotation. The epics cover tenancy and identity, phone and live voice, conversation and rules, jobs and booking, escalation and text messages, the Operations Dashboard, privacy and observability, evaluation, and deployment. I am the primary owner of the Operations Dashboard epic.</p>
+<p>That ownership shapes the work. The Dashboard shows data that other owners’ modules produce, so most of what I build sits on top of someone else’s tables and rules. My job is to make that data usable by staff: what the AI heard, what it decided, what needs a human, and what staff can change.</p>
+<p>In practice, I wrote the Dashboard pages and the Operations API routes that serve them. My counts as of 2026-11-17: 56 of the 92 squash-merged commits on <code>main</code> in the Dashboard app and 31 of the 38 in the Operations API folder are mine. The epic had 75 task cards, and 74 are ticked.</p>
+<p>Some of my work depends on decisions that belong to others, such as the four-role permission matrix, the settings API, or the escalation link’s token and accept endpoint. Where that is the case, I say which half is mine. I also leave out what I only understand and did not build, for example the voice pipeline and the booking transaction logic.</p>
+<h2 id="a-contract-first-dashboard-api">A contract-first Dashboard API <a class="anchor" href="#a-contract-first-dashboard-api" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps has a Dashboard that reads data from several epics, and hand-copied types between a web app and an API drift apart quietly. I chose to generate the client instead of hand-writing it.</p>
+<p>The Operations API is written in FastAPI, which produces an OpenAPI document. I export that document with sorted keys, so the output is deterministic, and generate the TypeScript client from it. A continuous integration check fails the build when the committed client drifts from the API. The check ran as its own workflow at first and now runs as <code>pnpm openapi:check</code> inside the team’s shared guards workflow, after the team merged CI jobs.</p>
+<p>The working rule is that a UI card can only render an endpoint after the API card has added it, and the client is regenerated in the same pull request. There is no second, hand-written schema to keep in step. At the start I also froze the shared error shape and the inbox item shape and added fixtures, so UI work could begin before the real endpoints existed.</p>
+<p>As of 2026-11-17, the shared OpenAPI document holds 76 operations. 33 of them are the Operations API I own, and the rest are other owners’ routes.</p>
+<p>What I would change: add the drift check in the very first pull request, not the second.</p>
+<h2 id="access-control-by-role">Access control by role <a class="anchor" href="#access-control-by-role" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps has a fixed platform matrix of four roles, and it decides who may do what. The matrix is another team member’s design, and I did not change it. My part was making every Operations route follow it.</p>
+<p>The earlier pattern in the codebase was a permission call on the first line of each handler. That works until someone writes a new endpoint and forgets the line. For the Operations routes I chose a route-level FastAPI dependency named <code>requires()</code> instead. The role check sits on the route itself, not inside the handler body. That policy produces an access grid, one table of who can do what, and a test walks that grid for each role.</p>
+<p>Older per-handler checks in other owners’ modules are untouched; the guard covers the Operations routes only.</p>
+<p>A related fix came out of code review. The Dashboard sign-in page accepted a <code>next</code> parameter for where to go after login, and a check meant to block external addresses let a path with a tab character between its two slashes through (<code>/%09/evil.example</code>), because the check looked for <code>//</code> and URL parsing drops the tab, so the path resolved to another host. A reviewer flagged this as a blocker. Instead of patching the check, I removed the parameter. The same change adjusted the cookie lifetime and added five-second timeouts to session calls.</p>
+<p>What I would change: test redirect checks with encoded characters such as <code>%09</code> from the start.</p>
+<h2 id="when-part-of-a-page-fails-to-load">When part of a page fails to load <a class="anchor" href="#when-part-of-a-page-fails-to-load" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps needs four sections of data for a call’s detail page, and they come from three other epics, whose work landed weeks apart.</p>
+<p>I built the Call-detail and Inbox endpoints so that each section reports for itself. Every section carries an <code>available</code> flag and an <code>unavailable_reason</code> code. The page can then show what it has and say plainly what is missing. The first version used fixtures for sections that did not exist yet, and I swapped them for real tables one at a time.</p>
+<p>The Inbox works the same way over four groups of items. A later change isolated each group’s read, so a failing group shows as unavailable and the other groups still load, instead of the whole inbox going blank.</p>
+<p>The reason codes began as an enum in the first aggregate change, but the words people see came later: a follow-up mapped each code to plain text. I would do both in one pull request next time.</p>
+<p>The result is a page that is honest about what it knows. On the Call page’s task list, which is part of my half, a failed read says “could not be read” rather than “nothing waiting”, a change that came out of code review.</p>
+<h2 id="writes-that-may-or-may-not-have-happened">Writes that may or may not have happened <a class="anchor" href="#writes-that-may-or-may-not-have-happened" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps staff can assign a technician, reschedule or cancel a booking, correct a field, and raise a job. These are writes, and a write can end in a way the page cannot know. A server error can arrive after the database has already committed. An early version of a page said “nothing changed, retrying is safe”, and that could be false.</p>
+<p>Instead of a yes-or-no result, I defined four outcomes: <code>not_sent</code>, <code>rejected</code>, <code>committed</code> and <code>unknown</code>. Only a short list of status codes (400, 401, 403, 409, 422 and 429) count as “no write happened”. A timeout or a 5xx is <code>unknown</code>.</p>
+<p>What each outcome does:</p>
+<ul>
+<li>Refused and unknown results keep the person’s draft in the form.</li>
+<li>A 401 clears the session.</li>
+<li>After <code>unknown</code>, the page links to the record and does not claim anything.</li>
+<li>The reschedule and cancel actions re-read the current booking before they write.</li>
+</ul>
+<p>The classification started with the Jobs pages and was extended to the Settings, staff, acknowledgement and call-correction pages in a second pass. Doing that in two steps was a cost: I did not put the result type in a shared helper in the first write change, so the Jobs change later had to retrofit five flows.</p>
+<p>One limit I state openly: duplicate prevention is not finished. The reschedule API generates a fresh idempotency key for every request, so it does not stop a second click from the same person.</p>
+<h2 id="the-dashboard-pages">The Dashboard pages <a class="anchor" href="#the-dashboard-pages" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps staff work in a set of pages I built end to end, with both the FastAPI endpoints and the Next.js pages:</p>
+<ul>
+<li><strong>Calls and Jobs.</strong> Lists use keyset paging, which stays stable when new rows arrive, and a bad cursor has its own state in the interface. Every read goes through the tenant-scoped repositories the platform provides, so one business’s data never mixes with another’s.</li>
+<li><strong>Calendar.</strong> A capacity view for a week in Sydney time, which meant handling week boundaries explicitly.</li>
+<li><strong>Customers.</strong> Built from calls, one row per callback number a caller gave. There is no customer table, and, following a platform rule set by another team member, the carrier’s caller ID is matched but never shown. The first version shipped on fixtures and moved to real data later, which meant migrating the UI twice.</li>
+<li><strong>Call review.</strong> The page where staff check what the AI heard and decided: transcript, extracted fields, summary, and the decision trace, with a notice for gaps in the trace order and a flag for version mismatches. Corrections are append-only events with actor, before, after and reason, so the machine’s original record never changes. The model, the extractor and the trace writer belong to other epics.</li>
+</ul>
+<p>In September 2026, I also hardened every screen for 320px and 375px phones, with a 44px touch floor and AA contrast, using static layout and contrast tests.</p>
+<p>Four pieces are my half only, and the other half is someone else’s:</p>
+<ul>
+<li><strong>Settings and staff pages.</strong> I built the editors and the invitation flow. The settings and staff APIs and the config-version model belong to other owners. Because the version is shared by a whole tenant, I compare a fingerprint of the one section being saved, so an unrelated edit does not block a save.</li>
+<li><strong>Sign-in.</strong> I built the Dashboard side on the platform’s session API.</li>
+<li><strong>Acknowledgement page.</strong> I built the phone page that accepts an urgent job from a link in an escalation text. The token and the accept endpoint are the escalation owner’s.</li>
+<li><strong>Closing review tasks.</strong> I built the route, the page and the compare-and-set update. The task table and its no-rewrite rule belong to the jobs owner.</li>
+</ul>
+<h2 id="delivering-inside-the-team-process">Delivering inside the team process <a class="anchor" href="#delivering-inside-the-team-process" aria-label="Link to this section">#</a></h2>
+<p>OnCallOps runs on a protected <code>main</code> branch. Every change needs one approval and green CI, and the CI guards include a secret scan, pull-request title checks and the OpenAPI drift check. As of 2026-11-17, I had shipped 62 merged pull requests through that process, with 100,468 lines added and 9,248 removed (these totals include docs and the generated client). I also reviewed 21 teammates’ pull requests.</p>
+<p>Reviewers were the bottleneck, and an approval is lost when a diff changes. So I avoided stacked pull requests unless a child cannot build without its parent, because retargeting resets the approval. Each pull request body says what its card does and does not include, and answers each review finding.</p>
+<p>The largest planning job was a six-screen Dashboard redesign. The visual design was a teammate’s. I wrote the plan that split it into nine pull requests, with three columns per screen (what my epic does, what it needs from whom, what waits), and then built the pages and the data side: the Today, Calls and Bookings endpoints, and customers grouped from calls. The plan aimed for three pull requests by 2026-11-16, and all nine merged within three days of the plan.</p>
+<p>The cost: two of those pull requests were far over our roughly 400-line guide, and they took reviewers longer. I would split them smaller next time, even with the shared navigation change.</p>
+<h2 id="how-i-used-claude-code">How I used Claude Code <a class="anchor" href="#how-i-used-claude-code" aria-label="Link to this section">#</a></h2>
+<p>I built the OnCallOps Dashboard with Claude Code, and I want that to be clear. As of 2026-11-17, of the 380 commits in my 62 merged pull requests, 242 list Claude as co-author, spread over 56 of those pull requests. Claude Code wrote most of the code. I set each card’s scope, read every diff, and answered review findings in follow-up pull requests, and a teammate reviewed each pull request before it merged.</p>
+<p>The team’s own review automation and the repository’s rules for Claude are another team member’s work, not mine, so I do not claim them.</p>
+<p>I treat the tool as fast and the judgement as mine. The decisions on this page are the ones I made: the contract-first generation, the route-level guard, the four write outcomes, and the plan for the redesign. Every change still went through CI guards, tests and a human review.</p>
+<p>Tests as of 2026-11-17: <code>pnpm test</code> in the Dashboard app passes 614, and the Operations tests in the API pass 763 (without the database-marked ones). Both counts are broader than my code alone, so I do not present them as a coverage figure for my work.</p>
+</div>

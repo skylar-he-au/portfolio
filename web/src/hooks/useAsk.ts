@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { citationList } from '../lib/answer';
 import type { Citation } from '../lib/answer';
 import { adoptConversationId, loadConversation, saveConversation } from '../lib/conversation';
 import type { StoredTurn } from '../lib/conversation';
@@ -246,7 +247,7 @@ export function useAsk(options?: UseAskOptions): {
             case 'answer':
               if (typeof data.text === 'string') {
                 const text = data.text;
-                const citations = Array.isArray(data.citations) ? data.citations as Citation[] : [];
+                const citations: Citation[] = citationList(data.citations);
                 update((turn) => ({ ...turn, text, citations }));
               }
               break;

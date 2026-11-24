@@ -11,11 +11,15 @@ import {
   formatSeconds,
   matchJudgeLabel,
   parseCompare,
+  SUBSCRIPTION_GRADER,
   SUBSCRIPTION_GRADER_LABEL,
   formatChecks,
   formatCost,
   formatRunCost,
   formatMetric,
+  formatQuoteMatch,
+  qaGapsLabel,
+  qaScoresCaption,
   MATCH_SCORE_LABELS,
   matchPassLines,
   METRIC_LABELS,
@@ -29,7 +33,10 @@ const files = import.meta.glob('../../../content/evals/*.json', { eager: true, i
 const { qa, cot, match } = parseEvalFiles(Object.values(files));
 const headlineCards = pickHeadlineCards(Object.values(files));
 const compare = parseCompare(compareStep6R2);
-const judges = [...new Set(qa.map((run) => run.models.judge).filter((judge): judge is string => !!judge))];
+const judges = [...new Set(qa.map((run) => run.models.judge)
+  .filter((judge): judge is string => !!judge && judge !== SUBSCRIPTION_GRADER))];
+// From step 10 the Q&A runs are graded by the subscription grader on two metrics only.
+const subscriptionGraded = qa.some((run) => run.grader === SUBSCRIPTION_GRADER || run.models.judge === SUBSCRIPTION_GRADER);
 const judgeNames = judges.length ? judges.join(', ') : 'claude-sonnet-5-5';
 const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
 // Notes that explain one published CoT run's numbers, keyed by run_id.
@@ -66,6 +73,7 @@ const cotNotes: Record<string, string> = {
       This is how I measure whether “Ask about my projects” answers are supported by the project pages.
       The questions are not published because some come from visitors’ wording; only scores and counts are shared.
       Answers are scored by {judgeNames} using RAGAS metrics.
+      {subscriptionGraded && <>{' '}From prompt v10, Faithfulness and Context recall are graded by {SUBSCRIPTION_GRADER_LABEL}, and Response relevancy and Factual correctness are not judged.</>}
     </p>
     <dl class="definitions">
       <div>
@@ -83,6 +91,10 @@ const cotNotes: Record<string, string> = {
       <div>
         <dt>Factual correctness</dt>
         <dd>How closely the answer’s facts match a hand-written reference answer.</dd>
+      </div>
+      <div>
+        <dt>Quoted sentences found</dt>
+        <dd>From prompt v10, the answer copies the sentence behind each source; code keeps it only if it finds it word for word in that section, and a source link marks only the kept sentences. This is the share kept; it is recorded, with no pass line.</dd>
       </div>
     </dl>
     <p class="note">
@@ -111,7 +123,7 @@ const cotNotes: Record<string, string> = {
       </p>
       <div class="table-scroll" tabindex="0" role="region" aria-label={`RAGAS scores for ${run.date}, prompt ${run.prompt_version ?? '–'}`}>
         <table>
-          <caption>RAGAS scores: mean and, for repeated passes, lowest–highest pass average.</caption>
+          <caption>{qaScoresCaption(run)}</caption>
           <thead>
             <tr>
               <th scope="col">Questions</th>
@@ -138,6 +150,9 @@ const cotNotes: Record<string, string> = {
           </ul>
         </div>
       )}
+      {formatQuoteMatch(run) && (
+        <p class="note">Quoted sentences found on the page: {formatQuoteMatch(run)}</p>
+      )}
       {run.private_repeat && (
         <p class="note">
           Full-time question repeated {run.private_repeat.runs} {run.private_repeat.runs === 1 ? 'time' : 'times'}: {run.private_repeat.fixed} fixed sentence, {run.private_repeat.answered} answered from the page, {run.private_repeat.failed} failed
@@ -145,7 +160,7 @@ const cotNotes: Record<string, string> = {
       )}
       <p class="meta">
         Errors: {run.errors ?? '–'}
-        {(run.ragas_nulls ?? 0) > 0 && <> · RAGAS gaps: {run.ragas_nulls}</>}
+        {(run.ragas_nulls ?? 0) > 0 && <> · {qaGapsLabel(run)}: {run.ragas_nulls}</>}
         {' · '}Cost: {formatRunCost(run)}
       </p>
     </section>

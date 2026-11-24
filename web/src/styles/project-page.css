@@ -414,8 +414,39 @@ body:has(.project-ask) {
   }
 }
 
+/* Quoted sentences (step 10): the same amber marker on just the sentences a source quotes, one
+   <mark> per text node so bold and links inside keep their own elements. The browser's own mark
+   for a link opened in a new tab (a Text Fragment) gets the same colors. */
+.quote-highlight {
+  background-color: var(--color-highlight);
+  box-shadow: 0 0 0 var(--space-1) var(--color-highlight);
+  color: var(--color-highlight-text);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  animation: quote-highlight 3.6s ease-out forwards;
+}
+
+@keyframes quote-highlight {
+  0%,
+  83% {
+    background-color: var(--color-highlight);
+    box-shadow: 0 0 0 var(--space-1) var(--color-highlight);
+  }
+
+  100% {
+    background-color: var(--color-clear);
+    box-shadow: 0 0 0 var(--space-1) var(--color-clear);
+  }
+}
+
+::target-text {
+  background-color: var(--color-highlight);
+  color: var(--color-highlight-text);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .section-highlight {
+  .section-highlight,
+  .quote-highlight {
     animation: none;
   }
 }

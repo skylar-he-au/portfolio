@@ -1,7 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode, SubmitEvent } from 'react';
-import { answerSegments, safeSiteUrl } from '../lib/answer';
-import type { Citation, InlineSegment } from '../lib/answer';
+import { answerSegments, citationHref, safeSiteUrl } from '../lib/answer';
+import type { Citation, InlineSegment, QuoteFragments } from '../lib/answer';
+import { fragmentDirective, sectionElements, sectionHeadingIn, textBlocks, usableQuotes } from '../lib/quote-text';
 import { ASK_MAX_CHARS, BAD_LINK_MESSAGE, detectInput } from '../lib/detect';
 import type { MatchItem, MatchNotes, MatchSection, PageTitles } from '../lib/match';
 import { useAsk } from '../hooks/useAsk';
@@ -83,12 +84,76 @@ function sourceNumbers(text: string, citations: Citation[]): Map<number, number>
   return numbers;
 }
 
+const NO_FRAGMENTS: QuoteFragments = new Map();
+// Pages a source points to, parsed once, to check that a quote appears only once there.
+const sourcePages = new Map<string, Promise<Document | null>>();
+
+function sourcePage(path: string): Promise<Document | null> {
+  const page = (value: string) => value.replace(/\/+$/, '') || '/';
+  if (page(path) === page(window.location.pathname)) return Promise.resolve(document);
+  let promise = sourcePages.get(page(path));
+  if (!promise) {
+    promise = Promise.resolve()
+      .then(() => fetch(path, { credentials: 'same-origin', headers: { Accept: 'text/html' } }))
+      .then((response) => (response.ok && (response.headers.get('content-type') ?? '').includes('text/html')
+        ? response.text() : null))
+      .then((html) => (html === null ? null : new DOMParser().parseFromString(html, 'text/html')))
+      .catch(() => null);
+    sourcePages.set(page(path), promise);
+  }
+  return promise;
+}
+
+/** The Text Fragment for each source whose quotes appear only once on its page (SPEC "出处标到句子"). */
+async function quoteFragments(citations: Citation[]): Promise<QuoteFragments> {
+  const result = new Map<number, string>();
+  for (const citation of citations) {
+    const quotes = usableQuotes(citation.quotes);
+    const href = safeSiteUrl(citation.url);
+    if (quotes.length === 0 || !href) continue;
+    const [path, hash = ''] = href.split('#');
+    const doc = await sourcePage(path!);
+    const heading = doc ? sectionHeadingIn(doc, hash) : null;
+    if (!doc || !heading) continue;
+    const directive = fragmentDirective(textBlocks([doc.body]), textBlocks(sectionElements(heading)), quotes);
+    if (directive) result.set(citation.n, directive);
+  }
+  return result;
+}
+
+function useQuoteFragments(citations: Citation[], ready: boolean): QuoteFragments {
+  const [fragments, setFragments] = useState<QuoteFragments>(NO_FRAGMENTS);
+  const withQuotes = ready ? citations.filter(({ quotes }) => usableQuotes(quotes).length > 0) : [];
+  const key = JSON.stringify(withQuotes.map(({ n, url, quotes }) => [n, url, quotes]));
+  const latest = useRef(withQuotes);
+  latest.current = withQuotes;
+  useEffect(() => {
+    if (latest.current.length === 0) {
+      setFragments(NO_FRAGMENTS);
+      return undefined;
+    }
+    let live = true;
+    void quoteFragments(latest.current).then((result) => {
+      if (live) setFragments(result);
+    });
+    return () => {
+      live = false;
+    };
+  }, [key]);
+  return fragments;
+}
+
+/** The quotes a source link carries for highlight.ts, which marks them on the page. */
+function quotesAttribute(quotes: string[]): string | undefined {
+  return quotes.length > 0 ? JSON.stringify(quotes) : undefined;
+}
+
 function renderInline(segment: InlineSegment, key: number, numbers: Map<number, number>) {
   if (segment.type !== 'link') return segment.text;
   const rank = Number(segment.text.replace(/[[\]]/g, ''));
   const n = numbers.get(rank) ?? rank;
   return (
-    <a key={key} className="ask-cite" href={segment.href} title={segment.title} aria-label={`Source ${n}: ${segment.title}`}>
+    <a key={key} className="ask-cite" href={segment.href} data-quotes={quotesAttribute(segment.quotes)} title={segment.title} aria-label={`Source ${n}: ${segment.title}`}>
       {n}
     </a>
   );
@@ -126,10 +191,11 @@ function AiLabel({ children }: { children: string }) {
   );
 }
 
-function Sources({ citations, numbers, pageTitles }: {
+function Sources({ citations, numbers, pageTitles, fragments }: {
   citations: Citation[];
   numbers: Map<number, number>;
   pageTitles: PageTitles;
+  fragments: QuoteFragments;
 }) {
   const safe = citations
     .filter(({ n, url }) => safeSiteUrl(url) !== null && numbers.has(n))
@@ -142,7 +208,9 @@ function Sources({ citations, numbers, pageTitles }: {
         {safe.map((citation) => (
           <li key={citation.n}>
             <span className="ask-source-n" aria-hidden="true">{numbers.get(citation.n)}</span>
-            <a href={citation.url}>{sourceLabel(citation.url, citation.heading, pageTitles)}</a>
+            <a href={citationHref(citation, fragments) ?? citation.url} data-quotes={quotesAttribute(usableQuotes(citation.quotes))}>
+              {sourceLabel(citation.url, citation.heading, pageTitles)}
+            </a>
           </li>
         ))}
       </ol>
@@ -158,7 +226,8 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
   const generating = !turn.finished && !turn.error;
   // A private question shows nothing until its check is done (SPEC); the steps carry the wait.
   const showText = !turn.private || turn.checkResult !== undefined || turn.finished;
-  const segments = showText ? answerSegments(turn.text, turn.citations, turn.unsupported) : [];
+  const fragments = useQuoteFragments(turn.citations, turn.finished && !turn.error);
+  const segments = showText ? answerSegments(turn.text, turn.citations, turn.unsupported, fragments) : [];
   const numbers = sourceNumbers(turn.text, turn.citations);
   const inline = (segment: InlineSegment, key: number) => renderInline(segment, key, numbers);
   return (
@@ -181,7 +250,7 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
         {generating && <Shimmer />}
         {generating && <Steps steps={turn.steps} />}
         {turn.error && <p className="ask-error">{turn.error}</p>}
-        {turn.finished && !turn.error && <Sources citations={turn.citations} numbers={numbers} pageTitles={pageTitles} />}
+        {turn.finished && !turn.error && <Sources citations={turn.citations} numbers={numbers} pageTitles={pageTitles} fragments={fragments} />}
         {turn.finished && !turn.error && (turn.checkResult?.passed === true || turn.turnId) && (
           <div className="ask-answer-foot">
             {turn.checkResult?.passed === true
@@ -481,7 +550,7 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
                 {matchState.result.unchecked} {matchState.result.unchecked === 1 ? 'requirement' : 'requirements'} couldn't be checked
               </p>
             )}
-            {matchState.result.top8 && <p className="match-note">Top 12 requirements of the job ad shown.</p>}
+            <p className="match-note">Showing up to 12 requirements from the ad.</p>
           </>
         )}
         {matchState.error && <p className="ask-error">{matchState.error}</p>}

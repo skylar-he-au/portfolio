@@ -85,6 +85,24 @@ export interface QaRun extends Run {
   private_repeat?: PrivateRepeat;
   cost_usd?: number;
   cost_pools_usd?: CostPools;
+  // Step 10 on: metrics the grader no longer judges (shown as "Not judged", never as gaps),
+  // the subscription grader, and the share of quoted sentences code found on the page.
+  not_judged?: MetricName[];
+  grader?: string;
+  grading_status?: 'complete' | 'incomplete';
+  quote_match?: QuoteMatch;
+}
+
+// api/evals/summary.py `quote_match`: sentences the answer quoted behind its sources, and how
+// many code found word for word in the cited section. A rate, recorded only (no pass line).
+export interface QuoteMatch {
+  samples: number;
+  given: number;
+  kept: number;
+  citations?: number;
+  citations_quoted?: number;
+  rate: number | null;
+  passes: number[];
 }
 
 export interface CotArm {
@@ -208,6 +226,33 @@ function parsePrivateRepeat(value: unknown): PrivateRepeat | undefined {
     ? { runs, fixed, answered, failed } : undefined;
 }
 
+function parseNotJudged(value: unknown): MetricName[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return (Object.keys(METRIC_LABELS) as MetricName[]).filter((key) => value.includes(key));
+}
+
+function parseQuoteMatch(value: unknown): QuoteMatch | undefined {
+  const raw = object(value);
+  const samples = count(raw?.samples);
+  const given = count(raw?.given);
+  const kept = count(raw?.kept);
+  if (!raw || samples === undefined || given === undefined || kept === undefined || kept > given) return undefined;
+  const rate = number(raw.rate);
+  const passes = Object.entries(object(raw.passes) ?? {})
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([, pass]) => number(pass))
+    .filter((pass): pass is number => pass !== undefined && pass <= 1);
+  return {
+    samples,
+    given,
+    kept,
+    citations: count(raw.citations),
+    citations_quoted: count(raw.citations_quoted),
+    rate: rate !== undefined && rate <= 1 ? rate : null,
+    passes,
+  };
+}
+
 function parseQa(raw: Record<string, unknown>): QaRun {
   const models: QaRun['models'] = {};
   const rawModels = object(raw.models);
@@ -244,6 +289,10 @@ function parseQa(raw: Record<string, unknown>): QaRun {
     private_repeat: parsePrivateRepeat(raw.private_repeat),
     cost_usd: number(raw.cost_usd),
     cost_pools_usd: parseCostPools(raw.cost_pools_usd),
+    not_judged: parseNotJudged(raw.not_judged),
+    grader: text(raw.grader),
+    grading_status: gradingStatus(object(raw.grading)?.status),
+    quote_match: parseQuoteMatch(raw.quote_match),
   };
 }
 
@@ -415,6 +464,8 @@ export function pickHeadlineCards(files: unknown[]): HeadlineCard[] {
   return cards.filter((card) => card.value !== '–');
 }
 
+export const NOT_JUDGED_LABEL = 'Not judged';
+
 export function buildRagasRows(run: QaRun): { label: string; cells: string[] }[] {
   const splits = [
     ['Tuning questions', run.ragas.tune],
@@ -423,11 +474,52 @@ export function buildRagasRows(run: QaRun): { label: string; cells: string[] }[]
   ] as const;
   return splits.flatMap(([label, metrics]) => metrics ? [{
     label,
-    cells: (Object.keys(METRIC_LABELS) as MetricName[]).map((key) => formatMetric(metrics[key], {
-      repeats: run.repeats,
-      floor: key === 'faithfulness' ? .7 : undefined,
-    })),
+    cells: (Object.keys(METRIC_LABELS) as MetricName[]).map((key) => (run.not_judged?.includes(key)
+      ? NOT_JUDGED_LABEL
+      : formatMetric(metrics[key], {
+        repeats: run.repeats,
+        floor: key === 'faithfulness' ? .7 : undefined,
+      }))),
   }] : []);
+}
+
+// The caption over a Q&A run's score table: who scored it, and which metrics were not judged.
+export function qaScoresCaption(run: QaRun): string {
+  const subscription = run.grader === SUBSCRIPTION_GRADER || run.models.judge === SUBSCRIPTION_GRADER;
+  const source = subscription ? `Scores graded by ${SUBSCRIPTION_GRADER_LABEL}` : 'RAGAS scores';
+  let caption = `${source}: mean and, for repeated passes, lowest–highest pass average.`;
+  const skipped = (Object.keys(METRIC_LABELS) as MetricName[]).filter((key) => run.not_judged?.includes(key));
+  if (skipped.length > 0) caption += ` ${skipped.map((key) => METRIC_LABELS[key]).join(' and ')} not judged.`;
+  if (run.grading_status === 'incomplete') caption += ' Grading incomplete.';
+  return caption;
+}
+
+// "Grading gaps" for subscription-graded runs, "RAGAS gaps" for older ones; metrics that were
+// not judged are never counted here (api/evals/summary.py `ragas_nulls`).
+export function qaGapsLabel(run: QaRun): string {
+  return run.grader ? 'Grading gaps' : 'RAGAS gaps';
+}
+
+/**
+ * "0.92 (123 of 133 quoted sentences found; 45 of 46 sources with at least one)", plus the
+ * lowest–highest pass for repeated passes. Undefined when the run has no quoted sentences
+ * (older summaries, or no answer from prompt v10 on).
+ */
+export function formatQuoteMatch(run: QaRun): string | undefined {
+  const match = run.quote_match;
+  if (!match || match.given === 0) return undefined;
+  const rate = match.rate ?? match.kept / match.given;
+  let result = `${formatScore(rate)} (${match.kept} of ${match.given} quoted sentences found`;
+  if (match.citations !== undefined && match.citations_quoted !== undefined) {
+    result += `; ${match.citations_quoted} of ${match.citations} sources with at least one`;
+  }
+  result += ')';
+  if (match.passes.length > 1) {
+    const low = Math.min(...match.passes);
+    const high = Math.max(...match.passes);
+    if (low !== high) result += `, passes ${formatScore(low)}–${formatScore(high)}`;
+  }
+  return result;
 }
 
 export function buildMatchRows(run: MatchRun): { label: string; cells: string[] }[] {

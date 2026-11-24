@@ -41,7 +41,10 @@ function storedTurn(value: unknown): StoredTurn | null {
     || (value.turnId !== undefined && typeof value.turnId !== 'string')
     || (value.private !== undefined && typeof value.private !== 'boolean')
     || !Array.isArray(value.citations) || !value.citations.every((citation: unknown) => record(citation)
-      && finite(citation.n) && typeof citation.url === 'string' && typeof citation.heading === 'string')
+      && finite(citation.n) && typeof citation.url === 'string' && typeof citation.heading === 'string'
+      // Quotes arrived in step 10: turns stored before that have none and stay valid.
+      && (citation.quotes === undefined
+        || (Array.isArray(citation.quotes) && citation.quotes.every((quote: unknown) => typeof quote === 'string'))))
     || !Array.isArray(value.unsupported) || !value.unsupported.every((span: unknown) => typeof span === 'string')
     || (value.checkResult !== undefined && (!record(value.checkResult)
       || typeof value.checkResult.passed !== 'boolean'

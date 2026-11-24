@@ -70,7 +70,7 @@ describe('answerSegments', () => {
   it('links matching safe citations and leaves unmatched or unsafe markers as text', () => {
     expect(answerSegments('See [1], [2], [9].', citations, [])).toEqual([
       { type: 'text', text: 'See ' },
-      { type: 'link', text: '[1]', href: '/projects/roleradar#x', title: 'RoleRadar' },
+      { type: 'link', text: '[1]', href: '/projects/roleradar#x', title: 'RoleRadar', quotes: [] },
       { type: 'text', text: ', [2], [9].' },
     ]);
   });
@@ -80,7 +80,7 @@ describe('answerSegments', () => {
       .toEqual([
         { type: 'unsupported', children: [
           { type: 'text', text: 'Claim ' },
-          { type: 'link', text: '[1]', href: '/projects/roleradar#x', title: 'RoleRadar' },
+          { type: 'link', text: '[1]', href: '/projects/roleradar#x', title: 'RoleRadar', quotes: [] },
           { type: 'text', text: ' here' },
         ] },
         { type: 'text', text: '. ' },

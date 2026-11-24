@@ -5,6 +5,7 @@ import older from '../fixtures/evals/qa-older.json';
 import cot from '../fixtures/evals/cot.json';
 import match from '../fixtures/evals/match.json';
 import compare from '../fixtures/evals/compare.json';
+import step10 from '../fixtures/evals/qa-step10.json';
 import {
   buildMatchRows,
   buildRagasRows,
@@ -21,7 +22,11 @@ import {
   formatCost,
   formatRunCost,
   formatMetric,
+  formatQuoteMatch,
   formatScore,
+  NOT_JUDGED_LABEL,
+  qaGapsLabel,
+  qaScoresCaption,
   MATCH_SCORE_LABELS,
   matchPassLines,
   METRIC_LABELS,
@@ -212,6 +217,45 @@ describe('eval summaries', () => {
     expect(result.cot[0]!.arms).toHaveLength(1);
     expect(result.cot[0]!.arms[0]!.accuracy).toBeUndefined();
     expect(result.cot[1]!.arms).toEqual([]);
+  });
+});
+
+describe('Q&A summaries from step 10', () => {
+  it('shows the two metrics the grader no longer judges as "Not judged", not as scores or gaps', () => {
+    const run = parseEvalFiles([step10]).qa[0]!;
+    expect(run.not_judged).toEqual(['response_relevancy', 'factual_correctness']);
+    expect(buildRagasRows(run)).toEqual([
+      { label: 'Tuning questions', cells: ['0.99 (0.99–1.00), 0 below 0.7', NOT_JUDGED_LABEL, '0.99 (0.98–1.00)', NOT_JUDGED_LABEL] },
+      { label: 'Held-out questions', cells: ['1.00, 0 below 0.7', NOT_JUDGED_LABEL, '1.00', NOT_JUDGED_LABEL] },
+    ]);
+    expect(qaScoresCaption(run)).toBe(`Scores graded by ${SUBSCRIPTION_GRADER_LABEL}: mean and, for repeated passes, lowest–highest pass average. Response relevancy and Factual correctness not judged.`);
+    expect(qaGapsLabel(run)).toBe('Grading gaps');
+  });
+
+  it('keeps the RAGAS caption and four scored columns for older runs', () => {
+    const run = parseEvalFiles([threePasses]).qa[0]!;
+    expect(run.not_judged).toBeUndefined();
+    expect(buildRagasRows(run)[0]!.cells).not.toContain(NOT_JUDGED_LABEL);
+    expect(qaScoresCaption(run)).toBe('RAGAS scores: mean and, for repeated passes, lowest–highest pass average.');
+    expect(qaGapsLabel(run)).toBe('RAGAS gaps');
+  });
+
+  it('formats the share of quoted sentences found, with the lowest–highest pass', () => {
+    const run = parseEvalFiles([step10]).qa[0]!;
+    expect(formatQuoteMatch(run)).toBe('0.86 (335 of 389 quoted sentences found; 132 of 135 sources with at least one), passes 0.80–0.95');
+    const onePassRun = parseEvalFiles([{ ...step10, quote_match: { ...step10.quote_match, passes: { 1: 0.86 } } }]).qa[0]!;
+    expect(formatQuoteMatch(onePassRun)).toBe('0.86 (335 of 389 quoted sentences found; 132 of 135 sources with at least one)');
+  });
+
+  it('shows no quote line for older summaries, runs without quoted sentences, or malformed ones', () => {
+    for (const raw of [
+      threePasses,
+      { ...step10, quote_match: { samples: 0, given: 0, kept: 0, citations: 0, citations_quoted: 0, rate: null, passes: {} } },
+      { ...step10, quote_match: { samples: 3, given: 2, kept: 5, rate: 2.5, passes: {} } },
+      { ...step10, quote_match: 'oops' },
+    ]) {
+      expect(formatQuoteMatch(parseEvalFiles([raw]).qa[0]!)).toBeUndefined();
+    }
   });
 });
 
