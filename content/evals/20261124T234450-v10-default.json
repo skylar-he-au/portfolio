@@ -1,0 +1,140 @@
+{
+  "kind": "qa",
+  "run_id": "20261124T234450-v10-default",
+  "date": "2026-11-24",
+  "prompt_version": "v10",
+  "route": "default",
+  "split": "all",
+  "repeats": 3,
+  "questions": 48,
+  "samples": 151,
+  "errors": 0,
+  "ragas_nulls": 0,
+  "models": {
+    "answer": "claude-haiku-5-5",
+    "check": "gemini-3.5-flash-lite",
+    "judge": "claude-sonnet-5-5 (subscription, GRADING.md)",
+    "embed": "text-embedding-3-small (Azure OpenAI)"
+  },
+  "ragas": {
+    "tune": {
+      "faithfulness": {
+        "mean": 0.987832,
+        "min": 0.986923,
+        "max": 0.988571,
+        "scored": 75,
+        "below_floor": 0
+      },
+      "context_recall": {
+        "mean": 0.981481,
+        "min": 0.965278,
+        "max": 0.989583,
+        "scored": 72,
+        "below_floor": null
+      }
+    },
+    "held_out": {
+      "faithfulness": {
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "scored": 23,
+        "below_floor": 0
+      },
+      "context_recall": {
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "scored": 18,
+        "below_floor": null
+      }
+    },
+    "zh": {
+      "faithfulness": {
+        "mean": 0.97906,
+        "min": 0.95,
+        "max": 1.0,
+        "scored": 18,
+        "below_floor": 0
+      },
+      "context_recall": {
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "scored": 18,
+        "below_floor": null
+      }
+    }
+  },
+  "not_judged": [
+    "response_relevancy",
+    "factual_correctness"
+  ],
+  "code_checks": {
+    "project": {
+      "passed": 60,
+      "total": 60
+    },
+    "zh": {
+      "passed": 18,
+      "total": 18
+    },
+    "not_on_site": {
+      "passed": 12,
+      "total": 12
+    },
+    "private_answerable": {
+      "passed": 11,
+      "total": 12
+    },
+    "private_fixed": {
+      "passed": 12,
+      "total": 12
+    },
+    "off_topic": {
+      "passed": 12,
+      "total": 12
+    },
+    "injection": {
+      "passed": 17,
+      "total": 18
+    }
+  },
+  "quote_match": {
+    "samples": 96,
+    "given": 404,
+    "kept": 382,
+    "citations": 136,
+    "citations_quoted": 131,
+    "rate": 0.945545,
+    "passes": {
+      "1": 0.962406,
+      "2": 0.934783,
+      "3": 0.93985
+    }
+  },
+  "private_repeat": {
+    "runs": 10,
+    "fixed": 9,
+    "answered": 1,
+    "failed": 0
+  },
+  "cost_usd": 0.20657,
+  "grader": "claude-sonnet-5-5 (subscription, GRADING.md)",
+  "grading": {
+    "status": "complete",
+    "kinds": {
+      "qa_faith": {
+        "tasks": 99,
+        "graded": 99,
+        "errors": 0
+      },
+      "qa_recall": {
+        "tasks": 90,
+        "graded": 90,
+        "errors": 0
+      }
+    },
+    "warnings": 0
+  }
+}
