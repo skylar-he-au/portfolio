@@ -1,23 +1,23 @@
 ---
 title: Privacy
 summary: What happens to the questions you type and the job ads you paste, who else sees them, and how long each party keeps them.
-updated: 2026-11-23
+updated: 2026-11-25
 rag: true
 ---
 
 ## Who sees your question
 
-This Privacy page of Skylar's portfolio explains where a question typed into the site goes. Your question is processed by up to five services: Anthropic (Claude rewrites your question and writes the answer), Google (Gemini checks the answer, takes over the other's job if one of the two fails, and Google Cloud Run also hosts this site's backend), OpenAI (embeddings), Cloudflare (bot check and request routing) and Neon (the database that stores the data described below).
+This Privacy page of Skylar's portfolio explains where a question typed into the site goes. Your question is processed by up to five services: Anthropic (Claude rewrites your question and writes the answer), Google (Gemini checks the answer, takes over the other's job if one of the two fails, and Google Cloud Run also hosts this site's backend), Microsoft (Azure OpenAI embeddings, processed in Australia), Cloudflare (bot check and request routing) and Neon (the database that stores the data described below).
 
-A job ad you paste into the job match goes to Anthropic and Google: Claude reads the ad and compares each requirement with the project pages, and Gemini checks the links in the guide (each takes over the other's job if one of the two fails). Only a short English search phrase for each requirement is sent to OpenAI, for embeddings. If you paste a Greenhouse or Lever job link instead of the text, the site fetches that one job ad from Greenhouse's or Lever's public job-board API; the request comes from the site's server, not from your browser.
+A job ad you paste into the job match goes to Anthropic and Google: Claude reads the ad and compares each requirement with the project pages, and Gemini checks the links in the guide (each takes over the other's job if one of the two fails). Only a short English search phrase for each requirement is sent to Microsoft's Azure OpenAI, for embeddings. If you paste a Greenhouse or Lever job link instead of the text, the site fetches that one job ad from Greenhouse's or Lever's public job-board API; the request comes from the site's server, not from your browser.
 
 ## How long the AI providers keep it
 
-This site (Skylar's portfolio) sends your text to outside services, and each one may keep what it receives for a while to detect abuse; I can't turn that off on a personal account. Here is what each one says, as of 2026-11-17:
+This site (Skylar's portfolio) sends your text to outside services, and each one may keep what it receives for a while to detect abuse; I can't turn that off on a personal account. Here is what each one says, as of 2026-11-17 (Microsoft: 2026-11-24):
 
 - **Anthropic** deletes API inputs and outputs within 30 days. Content its automated systems flag as breaking its usage policy may be kept for up to 2 years. It does not use API data to train its models by default.
 - **Google** (paid Gemini tier) keeps prompts and responses for a limited period only to detect abuse; Google does not say how long. On the paid tier your text is not used to improve Google's products.
-- **OpenAI** keeps embedding requests for up to 30 days. It does not use API data for training.
+- **Microsoft** (Azure OpenAI, embeddings) processes your text in Australia. It does not use it to train models or make it available to other customers. Automated systems check requests for abuse; text flagged as possibly breaking Microsoft's policy may be stored and reviewed, including by authorised Microsoft staff. Microsoft does not say how long it keeps flagged text.
 - **Cloudflare** checks for bots with Turnstile, which runs in invisible mode and only when you click into the question box to start asking, not when a page loads. It looks at signals such as your IP address and browser; Cloudflare does not say how long it keeps them. Cloudflare's own description is in its [Turnstile Privacy Addendum](https://www.cloudflare.com/turnstile-privacy-policy/). I turn off Cloudflare's Worker logs.
 - **Neon** hosts the database in Sydney. After this site deletes a record, Neon can still restore it for up to 6 hours, and Neon keeps encrypted backups for 30 days.
 
