@@ -3,6 +3,7 @@ import '@fontsource-variable/instrument-sans';
 import '@fontsource-variable/jetbrains-mono';
 import '../styles/tokens.css';
 import '../styles/global.css';
+import { AUTHOR_NAME, OG_HEIGHT, OG_WIDTH, canonicalUrl, jsonLd, ogImagePath } from '../lib/og';
 
 interface Props {
   title: string;
@@ -11,9 +12,22 @@ interface Props {
   layout?: 'default' | 'wide';
   /** Faint teal and indigo glow at the top of the page (home and project pages only). */
   glow?: boolean;
+  /** Open Graph type: "article" for blog posts. */
+  ogType?: 'website' | 'article';
+  /** A schema.org object, written as a JSON-LD block in <head>. */
+  structuredData?: Record<string, unknown>;
+  /** The 404 page: no canonical URL, and search engines should not index it. */
+  noindex?: boolean;
 }
 
-const { title, description, layout = 'default', glow = false } = Astro.props;
+const {
+  title, description, layout = 'default', glow = false, ogType = 'website', structuredData, noindex = false,
+} = Astro.props;
+if (!Astro.site) throw new Error('astro.config.mjs must set site');
+const fullTitle = title === AUTHOR_NAME ? title : `${title} · ${AUTHOR_NAME}`;
+const canonical = canonicalUrl(Astro.url.pathname, Astro.site);
+const ogImage = new URL(ogImagePath(Astro.url.pathname), Astro.site).href;
+const rss = new URL('/rss.xml', Astro.site).href;
 // The source highlight goes on every page a source can point to; /evals is not ingested,
 // so it is never a source, and it keeps shipping no <script> (step 4).
 const sectionHighlight = !/^\/evals\/?$/.test(Astro.url.pathname);
@@ -24,9 +38,23 @@ const sectionHighlight = !/^\/evals\/?$/.test(Astro.url.pathname);
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title === 'Skylar He' ? title : `${title} · Skylar He`}</title>
+    <title>{fullTitle}</title>
     <meta name="description" content={description} />
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" type="application/rss+xml" title={`Blog · ${AUTHOR_NAME}`} href={rss} />
+    <meta property="og:site_name" content={AUTHOR_NAME} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    {!noindex && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content={String(OG_WIDTH)} />
+    <meta property="og:image:height" content={String(OG_HEIGHT)} />
+    <meta property="og:image:alt" content={fullTitle} />
+    <meta name="twitter:card" content="summary_large_image" />
+    {structuredData && <script type="application/ld+json" set:html={jsonLd(structuredData)} />}
   </head>
   <body class:list={{ 'has-glow': glow }}>
     <a class="skip-link" href="#main">Skip to content</a>

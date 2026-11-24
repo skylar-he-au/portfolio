@@ -86,6 +86,9 @@ function srcsetUrls(value: string): string[] {
   return urls;
 }
 
+// The placeholder until step 8 (docs/blog.md "网站部件"); canonical, sitemap, RSS and cards use it.
+const site = new URL(/^\s*site:\s*'([^']+)'/m.exec(readFileSync(join(root, 'astro.config.mjs'), 'utf8'))![1]!);
+
 const content = join(root, '../content');
 const blogDir = join(content, 'blog');
 const blog = (existsSync(blogDir) ? filesWithin(blogDir) : [])
@@ -107,7 +110,7 @@ it('builds the public HTML pages derived from content and excludes examples and 
     .map((file) => `${relative(content, file).replace(/\.md$/, '')}/index.html`);
   expect(filesWithin(dist).filter((path) => path.endsWith('.html'))
     .map((path) => relative(dist, path)).sort()).toEqual([
-    'about/index.html', 'evals/index.html', 'index.html', 'privacy/index.html', 'blog/index.html',
+    'about/index.html', 'evals/index.html', 'index.html', 'privacy/index.html', 'blog/index.html', '404.html',
     ...projects, ...articles.map((post) => `${post.path.slice(1)}/index.html`),
   ].sort());
   expect(existsSync(join(dist, 'examples/index.html'))).toBe(false);
@@ -683,6 +686,11 @@ it('loads no third-party resources from any generated HTML or CSS file', () => {
     for (const element of document.querySelectorAll(
       'script[src], link[href], img[src], source[src], iframe[src]',
     )) {
+      // Canonical and the RSS link are absolute by design, and only ever this site's address.
+      if (element.matches('link[rel="canonical"], link[rel="alternate"]')) {
+        expect(new URL(element.getAttribute('href')!).origin, `${path}: ${element.outerHTML}`).toBe(site.origin);
+        continue;
+      }
       const attribute = element.tagName === 'LINK' ? 'href' : 'src';
       expectLocalResource(element.getAttribute(attribute)!, `${path}: ${element.outerHTML}`, element.tagName !== 'SCRIPT');
     }
@@ -694,4 +702,124 @@ it('loads no third-party resources from any generated HTML or CSS file', () => {
     for (const style of document.querySelectorAll('style')) checkCss(style.textContent ?? '', path);
     for (const element of document.querySelectorAll('[style]')) checkCss(element.getAttribute('style')!, path);
   }
+});
+
+// 10b2: canonical, sitemap, robots.txt, share cards, JSON-LD and the 404 page (docs/blog.md "网站部件").
+describe('head tags, sitemap, share cards and the 404 page', () => {
+  const html = filesWithin(dist).filter((path) => path.endsWith('.html')).map((path) => relative(dist, path));
+  const toPath = (name: string) => (name === 'index.html' ? '/' : `/${name.replace(/\/index\.html$/, '')}`);
+  const publicPages = html.filter((name) => name !== '404.html').map(toPath);
+  const parse = (name: string) => new DOMParser().parseFromString(readFileSync(join(dist, name), 'utf8'), 'text/html');
+  const meta = (document: Document, key: string) =>
+    document.querySelector(`meta[property="${key}"], meta[name="${key}"]`)?.getAttribute('content');
+  const cardPages = new Map([
+    ...articles.map((post) => [post.path, frontMatter(post.markdown, 'title')] as const),
+    ...filesWithin(join(content, 'projects')).filter((file) => file.endsWith('.md')).map((file) =>
+      [`/${relative(content, file).replace(/\.md$/, '')}`, frontMatter(readFileSync(file, 'utf8'), 'title')] as const),
+  ]);
+
+  function pngSize(path: string): [number, number] {
+    const png = readFileSync(path);
+    expect(png.subarray(1, 4).toString('ascii'), path).toBe('PNG');
+    return [png.readUInt32BE(16), png.readUInt32BE(20)];
+  }
+
+  it('gives every public page one absolute canonical URL without a trailing slash', () => {
+    expect(publicPages.length).toBeGreaterThan(0);
+    for (const path of publicPages) {
+      const links = parse(path === '/' ? 'index.html' : `${path.slice(1)}/index.html`)
+        .querySelectorAll('link[rel="canonical"]');
+      expect(links, path).toHaveLength(1);
+      const href = links[0]!.getAttribute('href')!;
+      expect(href, path).toBe(path === '/' ? `${site.origin}/` : `${site.origin}${path}`);
+      if (path !== '/') expect(href.endsWith('/'), path).toBe(false);
+    }
+  });
+
+  it('lists exactly the public pages in the sitemap, at their canonical URLs and without drafts', () => {
+    const locs = (xml: string) => Array.from(xml.matchAll(/<loc>([^<]+)<\/loc>/g), (match) => match[1]!);
+    const index = readFileSync(join(dist, 'sitemap-index.xml'), 'utf8');
+    const urls = locs(index).flatMap((url) => {
+      expect(new URL(url).origin).toBe(site.origin);
+      return locs(readFileSync(join(dist, new URL(url).pathname.slice(1)), 'utf8'));
+    });
+    expect(urls.sort()).toEqual(publicPages.map((path) => (path === '/' ? `${site.origin}/` : `${site.origin}${path}`)).sort());
+    for (const post of blog.filter((item) => item.draft)) expect(urls).not.toContain(`${site.origin}${post.path}`);
+  });
+
+  it('points robots.txt at the sitemap on the same site address as astro.config.mjs', () => {
+    const robots = readFileSync(join(dist, 'robots.txt'), 'utf8');
+    expect(robots).toMatch(/^User-agent: \*$/m);
+    expect(robots.match(/^Sitemap: (.+)$/gm)).toEqual([`Sitemap: ${site.origin}/sitemap-index.xml`]);
+  });
+
+  it('links the RSS feed and gives Open Graph and Twitter tags with a built 1200x630 card on every page', () => {
+    for (const name of html) {
+      const path = toPath(name);
+      const document = parse(name);
+      const alternate = document.querySelectorAll('link[rel="alternate"][type="application/rss+xml"]');
+      expect(alternate, name).toHaveLength(1);
+      expect(alternate[0]!.getAttribute('href'), name).toBe(`${site.origin}/rss.xml`);
+      expect(meta(document, 'og:title'), name).toBe(document.title);
+      expect(meta(document, 'og:description'), name).toBe(meta(document, 'description'));
+      expect(meta(document, 'og:type'), name).toBe(articles.some((post) => post.path === path) ? 'article' : 'website');
+      expect(meta(document, 'twitter:card'), name).toBe('summary_large_image');
+      expect(meta(document, 'og:image:alt'), name).toBe(document.title);
+      if (name === '404.html') {
+        expect(meta(document, 'og:url'), name).toBeUndefined();
+      } else {
+        expect(meta(document, 'og:url'), name)
+          .toBe(document.querySelector('link[rel="canonical"]')?.getAttribute('href'));
+      }
+      const image = new URL(meta(document, 'og:image')!);
+      expect(image.origin, name).toBe(site.origin);
+      expect(image.pathname, name).toBe(cardPages.has(path) ? `/og${path}.png` : '/og/default.png');
+      expect(pngSize(join(dist, image.pathname.slice(1))), name).toEqual([1200, 630]);
+    }
+    for (const path of cardPages.keys()) expect(existsSync(join(dist, `og${path}.png`)), path).toBe(true);
+    for (const post of blog.filter((item) => item.draft)) expect(existsSync(join(dist, `og${post.path}.png`))).toBe(false);
+  });
+
+  it('describes articles as BlogPosting and the About page as Person, with "<" escaped', () => {
+    for (const name of html) {
+      const path = toPath(name);
+      const blocks = Array.from(parse(name).querySelectorAll('script[type="application/ld+json"]'));
+      const expected = path === '/about' || articles.some((post) => post.path === path) ? 1 : 0;
+      expect(blocks, name).toHaveLength(expected);
+      for (const block of blocks) {
+        const raw = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(readFileSync(join(dist, name), 'utf8'))![1]!;
+        expect(raw, name).not.toContain('<');
+        expect(JSON.parse(raw), name).toEqual(JSON.parse(block.textContent ?? ''));
+      }
+    }
+    for (const post of articles) {
+      const document = readPage(post.path);
+      const data = JSON.parse(document.querySelector('script[type="application/ld+json"]')!.textContent!);
+      expect(data).toMatchObject({
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: frontMatter(post.markdown, 'title'),
+        description: frontMatter(post.markdown, 'summary'),
+        datePublished: frontMatter(post.markdown, 'date'),
+        url: `${site.origin}${post.path}`,
+        image: `${site.origin}/og${post.path}.png`,
+        author: { '@type': 'Person', name: 'Skylar He', url: `${site.origin}/` },
+      });
+    }
+    const about = readPage('/about');
+    const person = JSON.parse(about.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(person).toMatchObject({ '@context': 'https://schema.org', '@type': 'Person', name: 'Skylar He', url: `${site.origin}/` });
+    expect(person.sameAs).toEqual([about.querySelector('.contact-profile')!.getAttribute('href')]);
+  });
+
+  it('builds a 404 page in the site layout that links home and to the assistant and is not indexed', () => {
+    const document = parse('404.html');
+    expect(document.querySelector('h1')?.textContent).toBe("This page doesn't exist");
+    expect(meta(document, 'robots')).toBe('noindex');
+    expect(document.querySelector('link[rel="canonical"]')).toBeNull();
+    expect(document.querySelector('header nav')).not.toBeNull();
+    expect(document.querySelectorAll('link[rel="stylesheet"]').length).toBeGreaterThan(0);
+    const links = Array.from(document.querySelectorAll('main a'), (link) => link.getAttribute('href'));
+    expect(links).toEqual(['/', '/#ask']);
+  });
 });

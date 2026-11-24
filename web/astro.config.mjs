@@ -3,12 +3,49 @@ import { defineConfig } from 'astro/config';
 import { loadEnv } from 'vite';
 
 import react from '@astrojs/react';
+import sitemap from '@astrojs/sitemap';
+import { bundledThemes } from 'shiki/themes';
+
+import { withoutTrailingSlash } from './src/lib/og.ts';
+
+// Code blocks sit on the site's --color-code-background (#edf1f4 light, #1e252e dark), so the
+// themes are checked against those (tests/unit/code-theme.test.ts, WCAG AA 4.5:1). GitHub's
+// light theme has two colours under 4.5:1 there (comments 4.00, purple 4.44); they are
+// darkened to 5.38 and 6.47. GitHub's dark theme passes as it is (lowest 5.02).
+const githubLight = (await bundledThemes['github-light-default']()).default;
+/** @type {{ light: import('shiki').ThemeRegistrationRaw, dark: import('shiki').BundledTheme }} */
+export const codeThemes = {
+  light: {
+    ...JSON.parse(JSON.stringify(githubLight).replace(/#6e7781/gi, '#59636e').replace(/#8250df/gi, '#6639ba')),
+    name: 'github-light-site',
+  },
+  dark: 'github-dark-default',
+};
 
 // https://astro.build/config
 export default defineConfig({
   // Placeholder: step 8 changes this together with EMAIL_DOMAIN_PARTS in web/src/lib/email.ts
+  // and the Sitemap line in web/public/robots.txt (tests/dist/site.test.ts checks robots.txt).
   site: 'https://example.com',
-  integrations: [react()],
+  integrations: [react(), sitemap({
+    // 404 is left out by the integration; endpoints (rss.xml, og/*.png) are not pages.
+    serialize: (item) => ({ ...item, url: withoutTrailingSlash(item.url) }),
+  })],
+  markdown: {
+    shikiConfig: {
+      themes: codeThemes,
+      // Each token gets color: light-dark(light, dark); tokens.css sets color-scheme per mode.
+      defaultColor: 'light-dark()',
+      transformers: [{
+        name: 'site-code-background',
+        // Drop the theme's background so global.css gives <pre> --color-code-background.
+        pre(node) {
+          const style = String(node.properties.style ?? '');
+          node.properties.style = style.split(';').filter((rule) => !/^\s*background(?:-color)?\s*:/i.test(rule)).join(';');
+        },
+      }],
+    },
+  },
   security: {
     csp: {
       directives: [

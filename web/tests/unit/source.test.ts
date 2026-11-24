@@ -35,7 +35,7 @@ describe('source constraints', () => {
 
   it('configures the API proxy and preserves the React integration', () => {
     const config = readFileSync(join(root, 'astro.config.mjs'), 'utf8');
-    expect(config).toMatch(/integrations:\s*\[react\(\)\]/);
+    expect(config).toMatch(/integrations:\s*\[react\(\),\s*sitemap\(/);
     expect(config).toMatch(/vite:\s*\{\s*server:\s*\{\s*proxy:\s*\{\s*['"]\/api['"]:\s*\{/);
     expect(config).toMatch(/target:\s*process\.env\.API_ORIGIN\s*\?\?\s*['"]http:\/\/localhost:8000['"]/);
     expect(config).toMatch(/changeOrigin:\s*true/);

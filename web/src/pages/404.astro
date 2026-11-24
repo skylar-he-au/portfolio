@@ -1,0 +1,48 @@
+---
+// Served by Cloudflare for any missing path with status 404 (wrangler.jsonc not_found_handling).
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Page not found" description="This page doesn't exist." noindex>
+  <h1>This page doesn't exist</h1>
+  <p class="lede">The address may be mistyped, or the page has moved.</p>
+  <ul class="ways-back">
+    <li><a class="way-back" href="/">Go to the home page<span aria-hidden="true">→</span></a></li>
+    <li><a class="way-back" href="/#ask">Ask about my projects<span aria-hidden="true">→</span></a></li>
+  </ul>
+</Base>
+
+<style>
+  .lede {
+    color: var(--color-muted);
+    margin-block-end: var(--space-6);
+  }
+
+  .ways-back {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--space-3);
+    list-style: none;
+    margin: var(--space-0);
+    padding: var(--space-0);
+  }
+
+  .ways-back li {
+    margin: var(--space-0);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+
+  .way-back {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-block-size: var(--target-min);
+    padding: var(--space-4);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    border-radius: var(--radius-card);
+  }
+</style>

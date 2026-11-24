@@ -51,7 +51,8 @@ describe.each(pages.map((path) => [relative(dist, path), path]))('CSP in %s', (_
     }
     const styles = directives.get('style-src')!;
     expect(styles).toContain("'self'");
-    for (const script of document.querySelectorAll('script:not([src])')) {
+    // JSON-LD is a data block, not run as script, so script-src does not apply to it (docs/blog.md).
+    for (const script of document.querySelectorAll('script:not([src]):not([type="application/ld+json"])')) {
       const hash = createHash('sha256').update(script.textContent ?? '').digest('base64');
       expect(scripts).toContain(`'sha256-${hash}'`);
     }
