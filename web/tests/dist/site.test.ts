@@ -38,7 +38,7 @@ function readPage(path: string): Document {
   );
 }
 
-function frontMatter(markdown: string, field: 'title' | 'summary' | 'kicker'): string {
+function frontMatter(markdown: string, field: 'title' | 'summary' | 'kicker' | 'date'): string {
   const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1];
   // These content files use single-line plain scalars for title and summary.
   const value = front?.match(new RegExp(`^${field}: (.+)$`, 'm'))?.[1]?.trim();
@@ -86,17 +86,149 @@ function srcsetUrls(value: string): string[] {
   return urls;
 }
 
-it('builds exactly the six public HTML pages and excludes examples', () => {
+const content = join(root, '../content');
+const blogDir = join(content, 'blog');
+const blog = (existsSync(blogDir) ? filesWithin(blogDir) : [])
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => {
+    const markdown = readFileSync(file, 'utf8');
+    const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1] ?? '';
+    return {
+      path: `/blog/${relative(blogDir, file).replace(/\.md$/, '')}`,
+      markdown,
+      draft: /^draft:\s*true\s*$/m.test(front),
+    };
+  });
+const articles = blog.filter((post) => !post.draft)
+  .sort((a, b) => Date.parse(frontMatter(b.markdown, 'date')) - Date.parse(frontMatter(a.markdown, 'date')));
+
+it('builds the public HTML pages derived from content and excludes examples and drafts', () => {
+  const projects = filesWithin(join(content, 'projects')).filter((file) => file.endsWith('.md'))
+    .map((file) => `${relative(content, file).replace(/\.md$/, '')}/index.html`);
   expect(filesWithin(dist).filter((path) => path.endsWith('.html'))
     .map((path) => relative(dist, path)).sort()).toEqual([
-    'about/index.html',
-    'evals/index.html',
-    'index.html',
-    'privacy/index.html',
-    'projects/oncallops/index.html',
-    'projects/roleradar/index.html',
-  ]);
+    'about/index.html', 'evals/index.html', 'index.html', 'privacy/index.html', 'blog/index.html',
+    ...projects, ...articles.map((post) => `${post.path.slice(1)}/index.html`),
+  ].sort());
   expect(existsSync(join(dist, 'examples/index.html'))).toBe(false);
+  for (const post of blog.filter((post) => post.draft)) {
+    expect(existsSync(join(dist, post.path.slice(1), 'index.html'))).toBe(false);
+  }
+});
+
+it('lists published articles newest first with dates, summaries and reading time, or an empty state', () => {
+  const document = readPage('/blog');
+  expect(document.title).toBe('Blog · Skylar He');
+  expect(document.querySelector('main h1')?.textContent).toBe('Blog');
+  expect(document.querySelector('main a[href="/rss.xml"]')?.textContent).toBe('RSS');
+  const posts = [...document.querySelectorAll('main article')];
+  expect(posts).toHaveLength(articles.length);
+  expect(document.querySelector('main')?.textContent?.includes('No posts yet.')).toBe(articles.length === 0);
+  for (const [index, post] of posts.entries()) {
+    const source = articles[index]!;
+    expect(post.querySelector('h2 a')?.getAttribute('href')).toBe(source.path);
+    expect(post.querySelector('h2 a')?.textContent).toBe(frontMatter(source.markdown, 'title'));
+    expect(post.textContent).toContain(frontMatter(source.markdown, 'summary'));
+    expect(post.querySelector('p:has(time)')?.textContent).toMatch(/\b\d+ min read\b/);
+    const date = frontMatter(source.markdown, 'date');
+    expect(post.querySelector('time')?.getAttribute('datetime')).toBe(date);
+    expect(post.querySelector('time')?.textContent).toBe(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric',
+    }).format(new Date(date)));
+  }
+});
+
+it('gives articles the project layout, contents, anchors, contact link and one assistant', () => {
+  for (const post of articles) {
+    const document = readPage(post.path);
+    expect(document.title).toBe(`${frontMatter(post.markdown, 'title')} · Skylar He`);
+    expect(document.querySelector('meta[name="description"]')?.getAttribute('content'))
+      .toBe(frontMatter(post.markdown, 'summary'));
+    const page = document.querySelector('main > .project-page')!;
+    expect(page).not.toBeNull();
+    expect([...page.children].filter((child) => child.tagName !== 'SCRIPT').map((child) => child.className))
+      .toEqual(['project-head', 'toc toc-side', 'toc toc-collapse', 'markdown project-body', 'project-ask']);
+    const head = page.querySelector('.project-head')!;
+    expect([...head.children].map((child) => child.tagName)).toEqual(['H1', 'P']);
+    expect(head.querySelector('h1')?.textContent).toBe(frontMatter(post.markdown, 'title'));
+    expect(head.querySelector('time')?.getAttribute('datetime')).toBe(frontMatter(post.markdown, 'date'));
+    expect(head.textContent).toMatch(/\b\d+ min read\b/);
+    expect(page.querySelector('.project-page-kicker, .project-page-proof')).toBeNull();
+    const headings = [...page.querySelectorAll('.project-body h2')];
+    const sections = headings.map((heading) => {
+      const anchor = heading.querySelector(':scope > a.anchor')!;
+      expect(anchor?.getAttribute('href')).toBe(`#${heading.id}`);
+      expect(anchor?.getAttribute('aria-label')).toBe('Link to this section');
+      expect(heading.querySelectorAll('a.anchor')).toHaveLength(1);
+      const copy = heading.cloneNode(true) as HTMLElement;
+      copy.querySelector('a.anchor')!.remove();
+      return [`#${heading.id}`, copy.textContent!.trim()];
+    });
+    for (const selector of ['.toc-side', '.toc-collapse']) {
+      expect([...page.querySelectorAll(`${selector} ol > li > a`)].map((link) => [link.getAttribute('href'), link.textContent]))
+        .toEqual(sections);
+    }
+    const footer = page.querySelector('.project-body')!.lastElementChild!;
+    expect(footer.textContent).toBe('Questions? Ask my projects above or email me');
+    expect(footer.querySelector('a')?.getAttribute('href')).toBe(readPage('/about').querySelector('#contact') ? '/about#contact' : '/about');
+    expect(footer.innerHTML).not.toContain('mailto:');
+    expect(page.querySelectorAll('.project-ask')).toHaveLength(1);
+    expect(page.querySelectorAll('dialog#ask-dialog section#ask')).toHaveLength(1);
+    expect(page.querySelectorAll('textarea')).toHaveLength(1);
+    expect(page.querySelector('.ask-bar')?.getAttribute('aria-controls')).toBe('ask-dialog');
+    expect(page.querySelector('dialog form[method="dialog"] button')?.textContent).toBe('Close');
+    expect([...page.querySelectorAll('[aria-label="Example questions"] button')].map((button) => button.textContent))
+      .toEqual([...readPage('/').querySelectorAll('[aria-label="Example questions"] button')].map((button) => button.textContent));
+  }
+});
+
+it('passes published blog titles to every assistant and omits drafts', () => {
+  for (const file of filesWithin(dist).filter((file) => file.endsWith('.html'))) {
+    const document = new DOMParser().parseFromString(readFileSync(file, 'utf8'), 'text/html');
+    const assistants = document.querySelectorAll('astro-island:has(section#ask)');
+    expect(assistants).toHaveLength(document.querySelectorAll('section#ask').length);
+    for (const island of assistants) {
+      const props = JSON.parse(island.getAttribute('props')!);
+      expect(props.pageTitles).toBeDefined();
+      const titles = props.pageTitles[1];
+      for (const post of articles) expect(titles[post.path]).toEqual([0, frontMatter(post.markdown, 'title')]);
+      for (const post of blog.filter((post) => post.draft)) expect(titles).not.toHaveProperty(post.path);
+    }
+  }
+});
+
+it('publishes valid RSS 2.0 with full article HTML and absolute links', () => {
+  const document = new DOMParser().parseFromString(readFileSync(join(dist, 'rss.xml'), 'utf8'), 'application/xml');
+  expect(document.querySelector('parsererror')).toBeNull();
+  expect(document.querySelector('rss')?.getAttribute('version')).toBe('2.0');
+  expect(document.querySelector('channel > title')?.textContent).toBe('Skylar He — Blog');
+  const items = [...document.querySelectorAll('channel > item')];
+  expect(items).toHaveLength(articles.length);
+  for (const [index, item] of items.entries()) {
+    const post = articles[index]!;
+    expect(item.querySelector('title')?.textContent).toBe(frontMatter(post.markdown, 'title'));
+    expect(item.querySelector('description')?.textContent).toBe(frontMatter(post.markdown, 'summary'));
+    expect(item.querySelector('link')?.textContent).toBe(`https://example.com${post.path}`);
+    expect(new Date(item.querySelector('pubDate')!.textContent!).toISOString().slice(0, 10)).toBe(frontMatter(post.markdown, 'date'));
+    const html = item.getElementsByTagNameNS('http://purl.org/rss/1.0/modules/content/', 'encoded')[0]?.textContent;
+    expect(html?.trim().length).toBeGreaterThan(0);
+    const body = new DOMParser().parseFromString(html!, 'text/html');
+    expect(body.querySelector('a.anchor')).toBeNull();
+    const articleBody = readPage(post.path).querySelector('.project-body')!.cloneNode(true) as HTMLElement;
+    articleBody.lastElementChild!.remove();
+    for (const anchor of articleBody.querySelectorAll('a.anchor')) anchor.remove();
+    expect(body.body.textContent?.replace(/\s+/g, ' ').trim())
+      .toBe(articleBody.textContent?.replace(/\s+/g, ' ').trim());
+    const resources = [...articleBody.querySelectorAll('[href], [src]')];
+    const rssResources = [...body.querySelectorAll('[href], [src]')];
+    expect(rssResources).toHaveLength(resources.length);
+    for (const [resourceIndex, resource] of resources.entries()) {
+      const attribute = resource.hasAttribute('href') ? 'href' : 'src';
+      const value = resource.getAttribute(attribute)!;
+      expect(rssResources[resourceIndex]!.getAttribute(attribute))
+        .toBe(value.startsWith('/') && !value.startsWith('//') ? `https://example.com${value}` : value);
+    }
+  }
 });
 
 it('renders the Evals heading, and run tables when summaries exist or the empty state when none do', () => {
@@ -394,6 +526,7 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
       [link.getAttribute('href'), link.textContent])).toEqual([
       ['/#projects', 'Projects'],
       ['/evals', 'Evals'],
+      ['/blog', 'Blog'],
       ['/about', 'About'],
     ]);
     expect(document.querySelector('footer a[href="/privacy"]')?.textContent).toBe('Privacy');

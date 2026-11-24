@@ -17,6 +17,8 @@ const pages = defineCollection({
     title: z.string(),
     summary: z.string(),
     updated: z.coerce.date(),
+    date: z.coerce.date().optional(),
+    draft: z.boolean().optional(),
     rag: z.boolean(),
     /** Small label: above the home headline, on a project card and above a project page title. */
     kicker: z.string().min(1).optional(),

@@ -124,6 +124,8 @@ def read_page(path: Path, content_dir: Path) -> ContentPage | None:
         return None
     if metadata.get("rag", "").lower() != "true":
         return None
+    if metadata.get("draft", "").lower() == "true":
+        return None
     if not metadata.get("title"):
         raise IngestError("rag content must have a title")
     page = "/" + path.relative_to(content_dir).with_suffix("").as_posix()

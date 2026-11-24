@@ -21,9 +21,10 @@ const projects = (await getCollection('pages', ({ id }) => projectIds.includes(i
 for (const project of projects) {
   if (!project.data.proof?.length) throw new Error(`Missing front matter: ${project.id} proof`);
 }
-// Every project page's title, so answers and the job match can say which page a section is on.
+// Published source titles, so answers and the job match can name each section's page.
 const pageTitles = Object.fromEntries(
-  (await getCollection('pages', ({ id }) => id.startsWith('projects/')))
+  (await getCollection('pages', ({ id, data }) =>
+    id.startsWith('projects/') || (id.startsWith('blog/') && !data.draft)))
     .map((page) => [`/${page.id}`, page.data.title]),
 );
 

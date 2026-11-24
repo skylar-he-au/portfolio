@@ -13,21 +13,21 @@ from psycopg_pool import PoolTimeout
 import app.ingest as ingest_module
 from app.config import Settings
 from app.db import POOL_WAIT_S, Database, make_pool
-from app.ingest import IngestError, ingest, read_page, slugify, split_sections
+from app.ingest import IngestError, ingest, load_content, read_page, slugify, split_sections
 from app.migrate import migrate
 from app.rag.embed import OpenAIEmbedder
 from app.rag.retrieve import retrieve
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTENT = ROOT / "content"
-PAGES = ["/about", "/privacy", "/projects/roleradar", "/projects/oncallops"]
+FIXTURE_PAGES = ["/about", "/privacy", "/projects/roleradar", "/projects/oncallops"]
 
 
 def section_ids() -> dict[str, list[dict[str, str]]]:
     return json.loads((ROOT / "web/tests/fixtures/section-ids.json").read_text(encoding="utf-8"))
 
 
-@pytest.mark.parametrize("page", PAGES)
+@pytest.mark.parametrize("page", FIXTURE_PAGES)
 def test_real_sections_match_web_ids(page: str) -> None:
     parsed = read_page(CONTENT / f"{page.lstrip('/')}.md", CONTENT)
     assert parsed is not None
@@ -117,6 +117,20 @@ def test_real_pages_index_no_email_address(page: str) -> None:
 @pytest.mark.parametrize("filename", ["home.md", "examples.md", "LICENSE"])
 def test_ineligible_real_files_are_skipped(filename: str) -> None:
     assert read_page(CONTENT / filename, CONTENT) is None
+
+
+@pytest.mark.parametrize("draft", ["true", '"TRUE"'])
+def test_load_content_skips_draft_articles(tmp_path: Path, draft: str) -> None:
+    blog = tmp_path / "blog"
+    blog.mkdir()
+    for slug, extra in [("draft", f"draft: {draft}\n"), ("published", "")]:
+        (blog / f"{slug}.md").write_text(
+            f"---\ntitle: {slug}\nrag: true\n{extra}---\n## Section\nBody\n",
+            encoding="utf-8",
+        )
+    pages = load_content(tmp_path)
+    assert [page.title for page in pages] == ["published"]
+    assert pages[0].sections[0].page == "/blog/published"
 
 
 def test_quoted_front_matter_and_markdown_heading(tmp_path: Path) -> None:
@@ -324,13 +338,19 @@ def test_ingest_real_content_embedding_format_and_safe_logs(
         try:
             result = await ingest(db, fake, CONTENT)
             current, versions, rows = await stored_state(db)
-            expected = section_ids()
-            assert {row[1] for row in rows} == set(PAGES)
-            assert len(rows) == result.sections == sum(len(items) for items in expected.values())
-            assert result.pages == 4
+            expected_pages = load_content(CONTENT)
+            expected = {
+                section.page: page.sections
+                for page in expected_pages
+                for section in page.sections[:1]
+            }
+            assert {row[1] for row in rows} == set(expected)
+            total = sum(len(page.sections) for page in expected_pages)
+            assert len(rows) == result.sections == total
+            assert result.pages == len(expected_pages)
             assert current == result.version
             assert versions == [result.version]
-            for page in PAGES:
+            for page in expected:
                 positions = [row[5] for row in rows if row[1] == page]
                 assert positions == list(range(len(expected[page])))
             about = read_page(CONTENT / "about.md", CONTENT)
@@ -340,7 +360,8 @@ def test_ingest_real_content_embedding_format_and_safe_logs(
             messages = [
                 record.getMessage() for record in caplog.records if record.name == "app.ingest"
             ]
-            assert messages == [f"ingested version {result.version}: 4 pages, {len(rows)} sections"]
+            summary = f"{len(expected_pages)} pages, {len(rows)} sections"
+            assert messages == [f"ingested version {result.version}: {summary}"]
             for row in rows:
                 assert row[4] not in caplog.text
         finally:

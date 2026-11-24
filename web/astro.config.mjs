@@ -6,6 +6,8 @@ import react from '@astrojs/react';
 
 // https://astro.build/config
 export default defineConfig({
+  // Placeholder: step 8 changes this together with EMAIL_DOMAIN_PARTS in web/src/lib/email.ts
+  site: 'https://example.com',
   integrations: [react()],
   security: {
     csp: {

@@ -1,0 +1,37 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { readingMinutes } from '../../lib/reading-time';
+import '../../styles/blog.css';
+
+const articles = (await getCollection('pages', ({ id, data }) => id.startsWith('blog/') && !data.draft))
+  .map((entry) => {
+    if (!entry.data.date) throw new Error(`Missing front matter: ${entry.id} date`);
+    return { entry, date: entry.data.date };
+  })
+  .sort((a, b) => b.date.getTime() - a.date.getTime());
+const dateFormat = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric',
+});
+---
+
+<Base title="Blog" description="Notes on building projects and the decisions behind them.">
+  <div class="blog-head">
+    <h1>Blog</h1>
+    <a href="/rss.xml">RSS</a>
+  </div>
+  {articles.length === 0 ? <p>No posts yet.</p> : (
+    <div class="blog-list">
+      {articles.map(({ entry, date }) => (
+        <article>
+          <h2><a href={`/${entry.id}`}>{entry.data.title}</a></h2>
+          <p class="blog-meta">
+            <time datetime={date.toISOString().slice(0, 10)}>{dateFormat.format(date)}</time>
+            {' · '}{readingMinutes(entry.body ?? '')} min read
+          </p>
+          <p>{entry.data.summary}</p>
+        </article>
+      ))}
+    </div>
+  )}
+</Base>

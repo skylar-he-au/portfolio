@@ -32,9 +32,10 @@ const examplesEntry = await getEntry('pages', 'examples');
 if (!examplesEntry?.body) throw new Error('Missing content: examples');
 const examples = parseExamples(examplesEntry.body, slug);
 
-// Every project page's title, so answers and the job match can say which page a section is on.
+// Published source titles, so answers and the job match can name each section's page.
 const pageTitles = Object.fromEntries(
-  (await getCollection('pages', ({ id }) => id.startsWith('projects/')))
+  (await getCollection('pages', ({ id, data }) =>
+    id.startsWith('projects/') || (id.startsWith('blog/') && !data.draft)))
     .map((page) => [`/${page.id}`, page.data.title]),
 );
 ---
