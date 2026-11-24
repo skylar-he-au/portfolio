@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.rag.types import RecalledTurn, Section
 
-PROMPT_VERSION = "v9"
+PROMPT_VERSION = "v10"
 
 # The one fixed sentence for a private question the About page can't answer. Defined here
 # because the private prompt quotes it; `graph` imports it (prompts must not import graph).
@@ -152,7 +152,20 @@ only facts the sections state that bear directly on the question, each cited. Do
 explain why it is missing, guess, or comment on the site or what it claims. Only say \
 something isn't on the site if the visitor asked about it.
 - No closing remarks or caveats of your own (such as "these numbers will change").
-- Plain text only: no Markdown, no links, no URLs, no headings, no lists."""
+- Plain text only: no Markdown, no links, no URLs, no headings, no lists.
+
+After the answer, add a quotes block that the visitor never sees. For each section you \
+cited, copy the one sentence from that section that states your claim, word for word: \
+the same words in the same order, nothing shortened, joined, translated or reworded, and \
+no Markdown marks. Copy it in the section's own language, even if you answer in another \
+language. One line per sentence, starting with the section number in brackets; a section \
+you cited twice may have two lines. If no single sentence of a section states your claim, \
+leave that section out of the block. Write it exactly like this, with nothing after it:
+<quotes>
+[1] The sentence copied from section 1.
+[2] The sentence copied from section 2.
+</quotes>
+Never put these quotes in the answer itself."""
 
 _HISTORY_NOTE = """
 
@@ -198,7 +211,8 @@ def answer_messages(
 # Repeated after the data, where a small model weighs it most: the rules it broke most often.
 _ANSWER_REMINDER = (
     "Reply in 3 to 5 short sentences, about 4, each fact cited as [n]. No closing remarks, "
-    "and no sentence about what the site doesn't say unless the question asked for it."
+    "and no sentence about what the site doesn't say unless the question asked for it. "
+    "Then the <quotes> block: for each cited section, one sentence copied word for word."
 )
 
 

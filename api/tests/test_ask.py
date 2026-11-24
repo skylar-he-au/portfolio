@@ -311,7 +311,7 @@ async def test_turns_in_one_conversation_keep_their_own_results_and_memory():
     }
     assert one(fourth, "answer") == {
         "text": "Every prompt has a version [1].",
-        "citations": [{"n": 1, "url": TESTS.url, "heading": TESTS.heading}],
+        "citations": [{"n": 1, "url": TESTS.url, "heading": TESTS.heading, "quotes": []}],
     }
     assert [s["url"] for s in one(fourth, "trace")["sections"]] == [TESTS.url]
     assert [m["turn_id"] for m in one(fourth, "trace")["memory"]] == ids[:2]

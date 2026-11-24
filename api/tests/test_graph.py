@@ -552,7 +552,7 @@ async def test_private_question_flagged_by_rewrite_shown_only_after_check():
     assert run.data("answer") == [
         {
             "text": draft,
-            "citations": [{"n": 1, "url": WORK_RIGHTS.url, "heading": "Work rights"}],
+            "citations": [{"n": 1, "url": WORK_RIGHTS.url, "heading": "Work rights", "quotes": []}],
         }
     ]
     assert run.data("check") == [
@@ -589,7 +589,7 @@ async def test_private_salary_not_on_about_page_gets_fixed_sentence():
     assert run.data("answer") == [
         {
             "text": PRIVATE_FALLBACK,
-            "citations": [{"n": 1, "url": "/about", "heading": "About Skylar"}],
+            "citations": [{"n": 1, "url": "/about", "heading": "About Skylar", "quotes": []}],
         }
     ]
     assert run.data("check") == [
@@ -657,7 +657,7 @@ async def test_private_refusal_draft_becomes_fixed_sentence_without_check(draft:
     assert run.data("answer") == [
         {
             "text": PRIVATE_FALLBACK,
-            "citations": [{"n": 1, "url": "/about", "heading": "About Skylar"}],
+            "citations": [{"n": 1, "url": "/about", "heading": "About Skylar", "quotes": []}],
         }
     ]
     assert run.data("check") == [
@@ -699,7 +699,10 @@ async def test_private_draft_drops_the_fixed_sentence_and_checks_the_rest(draft:
     checked = "\n".join(str(m.content) for m in run.gemini.calls[0])
     assert kept in checked and PRIVATE_FALLBACK not in checked
     assert run.data("answer") == [
-        {"text": kept, "citations": [{"n": 1, "url": WORK_RIGHTS.url, "heading": "Work rights"}]}
+        {
+            "text": kept,
+            "citations": [{"n": 1, "url": WORK_RIGHTS.url, "heading": "Work rights", "quotes": []}],
+        }
     ]
     assert run.state["check"]["passed"] is True
 
@@ -760,6 +763,51 @@ async def test_answer_claude_dies_mid_stream_resets_and_gemini_answers():
     )
     assert tokens_after_reset == GOOD_ANSWER
     assert run.state["answer_text"] == GOOD_ANSWER
+
+
+QUOTED_ANSWER = (
+    f"{GOOD_ANSWER}\n<quotes>\n"
+    "[1] RoleRadar embeds each job and the user’s profile and ranks jobs by similarity.\n"
+    "[2] Every prompt has a version.\n"
+    "[2] Evals run on many questions.\n"
+    "</quotes>"
+)
+
+
+async def test_quotes_block_is_checked_and_never_streamed():
+    run = await ask(
+        EXAMPLE_Q,
+        claude=[rewrite_reply(), QUOTED_ANSWER],
+        gemini=[check_reply()],
+        retriever=FakeRetriever([MATCH, TESTS]),
+    )
+    assert run.tokens == f"{GOOD_ANSWER}\n"
+    [answer] = run.data("answer")
+    assert answer["text"] == GOOD_ANSWER
+    assert [(c["n"], c["quotes"]) for c in answer["citations"]] == [
+        (1, ["RoleRadar embeds each job and the user's profile and ranks jobs by similarity."]),
+        (2, ["Every prompt has a version"]),  # the made-up second quote is dropped
+    ]
+    assert run.state["citations"] == answer["citations"]
+    [answer_node] = [n for n in run.state["nodes"] if n["name"] == "answer"]
+    assert answer_node["quotes_given"] == 3
+    # The check sees the answer without its quotes.
+    check_call = run.gemini.calls[-1]
+    assert "<quotes" not in check_call[-1].text and GOOD_ANSWER in check_call[-1].text
+
+
+async def test_fallback_while_a_quotes_tag_is_half_written_leaks_nothing():
+    run = await ask(
+        EXAMPLE_Q,
+        claude=[rewrite_reply(), Partial(f"{GOOD_ANSWER}\n<quo", RuntimeError("stream cut"))],
+        gemini=[QUOTED_ANSWER, check_reply()],
+        retriever=FakeRetriever([MATCH, TESTS]),
+    )
+    assert run.data("reset") == [{"reason": "fallback"}]
+    tokens = [d["text"] for name, d in run.events if name == "token"]
+    assert all("<" not in t and "quotes" not in t for t in tokens)
+    assert run.tokens == f"{GOOD_ANSWER}\n{GOOD_ANSWER}\n"
+    assert run.data("answer")[0]["text"] == GOOD_ANSWER
 
 
 async def test_answer_claude_error_uses_gemini_for_answer_and_check():

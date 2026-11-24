@@ -35,7 +35,7 @@ from langgraph.types import StreamWriter
 from app.config import Settings
 from app.qa import memory, prompts
 from app.qa.models import CALL_TIMEOUT_S, ChatProvider, build_providers, stream_text, structured
-from app.qa.output import ANSWER_NODE, resolve_citations, verify_unsupported
+from app.qa.output import ANSWER_NODE, resolve_answer, resolve_citations, verify_unsupported
 from app.qa.private import looks_private
 from app.qa.prompts import PRIVATE_FALLBACK
 from app.qa.state import QAInput, QAState, turn_defaults
@@ -46,7 +46,7 @@ NOT_FOUND = "I couldn't find that in the project pages — please email me."
 # refusals (the fixed sentence, or the line the v2-v6 prompt asked for) is sent as the
 # fixed sentence without the private check.
 _REFUSALS = {"i don't have that on my about page", PRIVATE_FALLBACK}
-ABOUT_CITATION = {"n": 1, "url": "/about", "heading": "About Skylar"}
+ABOUT_CITATION = {"n": 1, "url": "/about", "heading": "About Skylar", "quotes": []}
 ABOUT_PAGES = ["/about"]
 MAX_SECTIONS = 6
 MAX_QUERY_CHARS = 1000
@@ -103,7 +103,9 @@ class _Node:
 
 
 def _emit_answer(writer: StreamWriter, text: str, citations: list[dict[str, Any]]) -> None:
-    writer({"event": "answer", "data": {"text": text, "citations": citations}})
+    # Every citation carries `quotes` (step 10 contract), even where none were checked.
+    sent = [{**c, "quotes": list(c.get("quotes") or [])} for c in citations]
+    writer({"event": "answer", "data": {"text": text, "citations": sent}})
 
 
 def _emit_check(writer: StreamWriter, check: dict[str, Any]) -> None:
@@ -236,8 +238,10 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         raw, provider = await stream_text(
             "answer", answer_order, messages, deadline_s=timeout, on_switch=reset_fallback
         )
-        text, citations = resolve_citations(raw, [] if state["off_topic"] else sections)
+        text, citations, quotes_given = resolve_answer(raw, [] if state["off_topic"] else sections)
         trace = node.end(provider.name, provider.model)
+        if not state["off_topic"]:
+            trace["quotes_given"] = quotes_given  # for the eval's quote match rate
         _emit_answer(writer, text, citations)
         return {"answer_text": text, "citations": citations, "nodes": [*state["nodes"], trace]}
 

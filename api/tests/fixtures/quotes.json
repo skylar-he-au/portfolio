@@ -1,0 +1,233 @@
+{
+  "about": "Step 10 quotes contract (docs/briefs/step10.md, 出处的格式). Shared by api (output.plain_text, find_quote) and web (10c2: the same sections rendered as HTML, searched with the same rules). `markdown` is the section body as ingested (Section.text, no `##` line), copied from `source` on 2026-11-24. `plain` lists the section's blocks (paragraph, list item, heading, table cell, code line) after the plain-text rules; a quote must sit inside one block. `match[].quote` is what the model might write; `expect` is what goes into the citation's `quotes`. Every `no_match` quote is dropped.",
+  "sections": [
+    {
+      "page": "/projects/roleradar",
+      "section_id": "how-roleradar-matches-jobs",
+      "heading": "How RoleRadar matches jobs",
+      "source": "content/projects/roleradar.md",
+      "markdown": "RoleRadar matches jobs with two layers: an AI model reads each full ad once, and plain code decides the fit tier. I split it this way after weighing three options: let the model score fit, use rules only, or combine a model that reads with rules that decide.\n\nIn the first layer, gpt-6-luna turns each ad into structured fields such as required skills, level and work-rights requirements. Every extracted fact has to include a verbatim quote from the ad, and code drops or downgrades any quote it cannot find there. Each ad is read once and the result is shared by all users, so reading ads costs the same however many users there are.\n\nThe second layer runs per user, in code. Hard gates come first: for example a work-rights mismatch, or a senior role when the user did not choose senior, rates a job Weak with the reason stated. Then four scored checks (skills, level, work rights and hours, location) set the tier, with several caps that stop a job rating Strong when the ad leaves out important information. Because tiers come from code, every reason traces back to a line in the ad.\n\nOn real data the rules alone over-rated matches. When I walked six of my own live Strong matches (from 44 matches, 2026-11-10) through a resume check, five dropped to Weak and one to Fair. So I added a per-user resume check of the ad's must-have requirements, again with quotes that code verifies.\n\nThe result on 2026-11-16, prompt version 12: 154 of 164 tier checks matched the labels, and 0 of 462 quoted pieces of evidence were missing from their source. Caveats: that run also had 1 error and 5 cases whose tier changed between runs. Of the labels, 39 were drafted by Claude for me to change, 13 I confirmed myself, and 5 are demo cases, so it measures agreement with labels that are mostly AI-drafted and partly confirmed by me, not with hiring outcomes. I picked low reasoning effort after comparing it with none and medium; medium scored 152 of 164 at 1.9 times the cost.",
+      "plain": [
+        "RoleRadar matches jobs with two layers: an AI model reads each full ad once, and plain code decides the fit tier. I split it this way after weighing three options: let the model score fit, use rules only, or combine a model that reads with rules that decide.",
+        "In the first layer, gpt-6-luna turns each ad into structured fields such as required skills, level and work-rights requirements. Every extracted fact has to include a verbatim quote from the ad, and code drops or downgrades any quote it cannot find there. Each ad is read once and the result is shared by all users, so reading ads costs the same however many users there are.",
+        "The second layer runs per user, in code. Hard gates come first: for example a work-rights mismatch, or a senior role when the user did not choose senior, rates a job Weak with the reason stated. Then four scored checks (skills, level, work rights and hours, location) set the tier, with several caps that stop a job rating Strong when the ad leaves out important information. Because tiers come from code, every reason traces back to a line in the ad.",
+        "On real data the rules alone over-rated matches. When I walked six of my own live Strong matches (from 44 matches, 2026-11-10) through a resume check, five dropped to Weak and one to Fair. So I added a per-user resume check of the ad's must-have requirements, again with quotes that code verifies.",
+        "The result on 2026-11-16, prompt version 12: 154 of 164 tier checks matched the labels, and 0 of 462 quoted pieces of evidence were missing from their source. Caveats: that run also had 1 error and 5 cases whose tier changed between runs. Of the labels, 39 were drafted by Claude for me to change, 13 I confirmed myself, and 5 are demo cases, so it measures agreement with labels that are mostly AI-drafted and partly confirmed by me, not with hiring outcomes. I picked low reasoning effort after comparing it with none and medium; medium scored 152 of 164 at 1.9 times the cost."
+      ],
+      "match": [
+        {
+          "quote": "Every extracted fact has to include a verbatim quote from the ad, and code drops or downgrades any quote it cannot find there.",
+          "expect": "Every extracted fact has to include a verbatim quote from the ad, and code drops or downgrades any quote it cannot find there.",
+          "why": "word for word"
+        },
+        {
+          "quote": "Because tiers come from code, every reason traces back to a line in the ad",
+          "expect": "Because tiers come from code, every reason traces back to a line in the ad",
+          "why": "full stop left off"
+        },
+        {
+          "quote": "\"Each ad is read once and the result is shared by all users.\"",
+          "expect": "Each ad is read once and the result is shared by all users",
+          "why": "quotation marks and a full stop where the page has a comma"
+        },
+        {
+          "quote": "So I added a per-user resume check of the ad’s must-have requirements, again with quotes that code verifies.",
+          "expect": "So I added a per-user resume check of the ad's must-have requirements, again with quotes that code verifies.",
+          "why": "curly apostrophe, as on the page"
+        }
+      ],
+      "no_match": [
+        {
+          "quote": "Every extracted fact must include a verbatim quote from the ad, and code drops or downgrades any quote it cannot find there.",
+          "why": "one word changed"
+        },
+        {
+          "quote": "Because tiers come from code, every reason traces back to a line in the ad. On real data the rules alone over-rated matches.",
+          "why": "runs across two paragraphs"
+        },
+        {
+          "quote": "RoleRadar matches jobs with three layers.",
+          "why": "invented"
+        },
+        {
+          "quote": "the ad",
+          "why": "too short"
+        }
+      ]
+    },
+    {
+      "page": "/projects/roleradar",
+      "section_id": "how-roleradar-tailors-a-resume-without-inventing-experience",
+      "heading": "How RoleRadar tailors a resume without inventing experience",
+      "source": "content/projects/roleradar.md",
+      "markdown": "RoleRadar's resume tailoring writes a version of the user's resume for a specific job and is built to stop it adding experience the user does not have. The original resume is never changed. The user reviews the new version and saves it as a separate one.\n\nThe rule is that the AI may use the ad's wording to describe things the user really did, and may reorder and emphasise, but may not add technologies, years or results that are not in the original.\n\nI treated this as a checking problem with three options: trust one model, have a second model check it, or check with code first. I chose code first, then a model:\n\n1. gpt-5.6-luna rewrites resume lines and must cite the source lines it used.\n2. Code rejects anything it can verify is new: numbers, source line references, skill lists, and claims of \"production\" use that the source never makes.\n3. A narrow term-check call must quote the resume to justify a term.\n4. gpt-5.6-terra checks everything else.\n\nIf lines are still flagged after three attempts, they revert to the user's own wording. I use gpt-5.6-terra for the checks because, in a 2026-10-04 comparison, both models caught 12 of 12 planted fabrications but gpt-5.6-luna raised a false alarm in every run and needed more rewrites (1.26 drafts on average against 1.07).\n\nIn the committed eval run of 2026-11-16 (prompt version 2), 17 of 17 runs kept every fact, 34 of 34 pieces of evidence were kept, and no lines had to be reverted. The run cost under ten cents. An earlier test on 2026-10-17, before this prompt version, caught 13 of 13 planted fabrications with no false alarms on 11 clean cases. I have not committed a result that measures fabrication detection on the current prompt, so I do not quote one.",
+      "plain": [
+        "RoleRadar's resume tailoring writes a version of the user's resume for a specific job and is built to stop it adding experience the user does not have. The original resume is never changed. The user reviews the new version and saves it as a separate one.",
+        "The rule is that the AI may use the ad's wording to describe things the user really did, and may reorder and emphasise, but may not add technologies, years or results that are not in the original.",
+        "I treated this as a checking problem with three options: trust one model, have a second model check it, or check with code first. I chose code first, then a model:",
+        "gpt-5.6-luna rewrites resume lines and must cite the source lines it used.",
+        "Code rejects anything it can verify is new: numbers, source line references, skill lists, and claims of \"production\" use that the source never makes.",
+        "A narrow term-check call must quote the resume to justify a term.",
+        "gpt-5.6-terra checks everything else.",
+        "If lines are still flagged after three attempts, they revert to the user's own wording. I use gpt-5.6-terra for the checks because, in a 2026-10-04 comparison, both models caught 12 of 12 planted fabrications but gpt-5.6-luna raised a false alarm in every run and needed more rewrites (1.26 drafts on average against 1.07).",
+        "In the committed eval run of 2026-11-16 (prompt version 2), 17 of 17 runs kept every fact, 34 of 34 pieces of evidence were kept, and no lines had to be reverted. The run cost under ten cents. An earlier test on 2026-10-17, before this prompt version, caught 13 of 13 planted fabrications with no false alarms on 11 clean cases. I have not committed a result that measures fabrication detection on the current prompt, so I do not quote one."
+      ],
+      "match": [
+        {
+          "quote": "Code rejects anything it can verify is new: numbers, source line references, skill lists, and claims of “production” use that the source never makes.",
+          "expect": "Code rejects anything it can verify is new: numbers, source line references, skill lists, and claims of \"production\" use that the source never makes.",
+          "why": "numbered list item, curly double quotes"
+        },
+        {
+          "quote": "RoleRadar's resume tailoring writes a version of the user's resume for a specific job",
+          "expect": "RoleRadar's resume tailoring writes a version of the user's resume for a specific job",
+          "why": "part of a sentence, straight apostrophes"
+        }
+      ],
+      "no_match": [
+        {
+          "quote": "A narrow term-check call must quote the resume to justify a term. gpt-5.6-terra checks everything else.",
+          "why": "runs across two list items"
+        },
+        {
+          "quote": "The original resume is sometimes changed.",
+          "why": "one word changed"
+        }
+      ]
+    },
+    {
+      "page": "/projects/oncallops",
+      "section_id": "access-control-by-role",
+      "heading": "Access control by role",
+      "source": "content/projects/oncallops.md",
+      "markdown": "OnCallOps has a fixed platform matrix of four roles, and it decides who may do what. The matrix is another team member's design, and I did not change it. My part was making every Operations route follow it.\n\nThe earlier pattern in the codebase was a permission call on the first line of each handler. That works until someone writes a new endpoint and forgets the line. For the Operations routes I chose a route-level FastAPI dependency named `requires()` instead. The role check sits on the route itself, not inside the handler body. That policy produces an access grid, one table of who can do what, and a test walks that grid for each role.\n\nOlder per-handler checks in other owners' modules are untouched; the guard covers the Operations routes only.\n\nA related fix came out of code review. The Dashboard sign-in page accepted a `next` parameter for where to go after login, and a check meant to block external addresses let a path with a tab character between its two slashes through (`/%09/evil.example`), because the check looked for `//` and URL parsing drops the tab, so the path resolved to another host. A reviewer flagged this as a blocker. Instead of patching the check, I removed the parameter. The same change adjusted the cookie lifetime and added five-second timeouts to session calls.\n\nWhat I would change: test redirect checks with encoded characters such as `%09` from the start.",
+      "plain": [
+        "OnCallOps has a fixed platform matrix of four roles, and it decides who may do what. The matrix is another team member's design, and I did not change it. My part was making every Operations route follow it.",
+        "The earlier pattern in the codebase was a permission call on the first line of each handler. That works until someone writes a new endpoint and forgets the line. For the Operations routes I chose a route-level FastAPI dependency named requires() instead. The role check sits on the route itself, not inside the handler body. That policy produces an access grid, one table of who can do what, and a test walks that grid for each role.",
+        "Older per-handler checks in other owners' modules are untouched; the guard covers the Operations routes only.",
+        "A related fix came out of code review. The Dashboard sign-in page accepted a next parameter for where to go after login, and a check meant to block external addresses let a path with a tab character between its two slashes through (/%09/evil.example), because the check looked for // and URL parsing drops the tab, so the path resolved to another host. A reviewer flagged this as a blocker. Instead of patching the check, I removed the parameter. The same change adjusted the cookie lifetime and added five-second timeouts to session calls.",
+        "What I would change: test redirect checks with encoded characters such as %09 from the start."
+      ],
+      "match": [
+        {
+          "quote": "For the Operations routes I chose a route-level FastAPI dependency named `requires()` instead.",
+          "expect": "For the Operations routes I chose a route-level FastAPI dependency named requires() instead.",
+          "why": "inline code copied with its backticks"
+        },
+        {
+          "quote": "a path with a tab character between its two slashes through (/%09/evil.example)",
+          "expect": "a path with a tab character between its two slashes through (/%09/evil.example)",
+          "why": "inline code copied without backticks"
+        }
+      ],
+      "no_match": [
+        {
+          "quote": "For the Operations routes I chose a route-level Django dependency named requires() instead.",
+          "why": "one word changed"
+        }
+      ]
+    },
+    {
+      "page": "/projects/oncallops",
+      "section_id": "writes-that-may-or-may-not-have-happened",
+      "heading": "Writes that may or may not have happened",
+      "source": "content/projects/oncallops.md",
+      "markdown": "OnCallOps staff can assign a technician, reschedule or cancel a booking, correct a field, and raise a job. These are writes, and a write can end in a way the page cannot know. A server error can arrive after the database has already committed. An early version of a page said \"nothing changed, retrying is safe\", and that could be false.\n\nInstead of a yes-or-no result, I defined four outcomes: `not_sent`, `rejected`, `committed` and `unknown`. Only a short list of status codes (400, 401, 403, 409, 422 and 429) count as \"no write happened\". A timeout or a 5xx is `unknown`.\n\nWhat each outcome does:\n\n- Refused and unknown results keep the person's draft in the form.\n- A 401 clears the session.\n- After `unknown`, the page links to the record and does not claim anything.\n- The reschedule and cancel actions re-read the current booking before they write.\n\nThe classification started with the Jobs pages and was extended to the Settings, staff, acknowledgement and call-correction pages in a second pass. Doing that in two steps was a cost: I did not put the result type in a shared helper in the first write change, so the Jobs change later had to retrofit five flows.\n\nOne limit I state openly: duplicate prevention is not finished. The reschedule API generates a fresh idempotency key for every request, so it does not stop a second click from the same person.",
+      "plain": [
+        "OnCallOps staff can assign a technician, reschedule or cancel a booking, correct a field, and raise a job. These are writes, and a write can end in a way the page cannot know. A server error can arrive after the database has already committed. An early version of a page said \"nothing changed, retrying is safe\", and that could be false.",
+        "Instead of a yes-or-no result, I defined four outcomes: not_sent, rejected, committed and unknown. Only a short list of status codes (400, 401, 403, 409, 422 and 429) count as \"no write happened\". A timeout or a 5xx is unknown.",
+        "What each outcome does:",
+        "Refused and unknown results keep the person's draft in the form.",
+        "A 401 clears the session.",
+        "After unknown, the page links to the record and does not claim anything.",
+        "The reschedule and cancel actions re-read the current booking before they write.",
+        "The classification started with the Jobs pages and was extended to the Settings, staff, acknowledgement and call-correction pages in a second pass. Doing that in two steps was a cost: I did not put the result type in a shared helper in the first write change, so the Jobs change later had to retrofit five flows.",
+        "One limit I state openly: duplicate prevention is not finished. The reschedule API generates a fresh idempotency key for every request, so it does not stop a second click from the same person."
+      ],
+      "match": [
+        {
+          "quote": "Instead of a yes-or-no result, I defined four outcomes: `not_sent`, `rejected`, `committed` and `unknown`.",
+          "expect": "Instead of a yes-or-no result, I defined four outcomes: not_sent, rejected, committed and unknown.",
+          "why": "underscores inside inline code stay"
+        },
+        {
+          "quote": "Refused and unknown results keep the person's draft in the form.",
+          "expect": "Refused and unknown results keep the person's draft in the form.",
+          "why": "bulleted list item"
+        }
+      ],
+      "no_match": [
+        {
+          "quote": "A 401 clears the session. After unknown, the page links to the record",
+          "why": "runs across two list items"
+        }
+      ]
+    },
+    {
+      "page": "/privacy",
+      "section_id": "how-long-the-ai-providers-keep-it",
+      "heading": "How long the AI providers keep it",
+      "source": "content/privacy.md",
+      "markdown": "This site (Skylar's portfolio) sends your text to outside services, and each one may keep what it receives for a while to detect abuse; I can't turn that off on a personal account. Here is what each one says, as of 2026-11-17:\n\n- **Anthropic** deletes API inputs and outputs within 30 days. Content its automated systems flag as breaking its usage policy may be kept for up to 2 years. It does not use API data to train its models by default.\n- **Google** (paid Gemini tier) keeps prompts and responses for a limited period only to detect abuse; Google does not say how long. On the paid tier your text is not used to improve Google's products.\n- **OpenAI** keeps embedding requests for up to 30 days. It does not use API data for training.\n- **Cloudflare** checks for bots with Turnstile, which runs in invisible mode and only when you click into the question box to start asking, not when a page loads. It looks at signals such as your IP address and browser; Cloudflare does not say how long it keeps them. Cloudflare's own description is in its [Turnstile Privacy Addendum](https://www.cloudflare.com/turnstile-privacy-policy/). I turn off Cloudflare's Worker logs.\n- **Neon** hosts the database in Sydney. After this site deletes a record, Neon can still restore it for up to 6 hours, and Neon keeps encrypted backups for 30 days.",
+      "plain": [
+        "This site (Skylar's portfolio) sends your text to outside services, and each one may keep what it receives for a while to detect abuse; I can't turn that off on a personal account. Here is what each one says, as of 2026-11-17:",
+        "Anthropic deletes API inputs and outputs within 30 days. Content its automated systems flag as breaking its usage policy may be kept for up to 2 years. It does not use API data to train its models by default.",
+        "Google (paid Gemini tier) keeps prompts and responses for a limited period only to detect abuse; Google does not say how long. On the paid tier your text is not used to improve Google's products.",
+        "OpenAI keeps embedding requests for up to 30 days. It does not use API data for training.",
+        "Cloudflare checks for bots with Turnstile, which runs in invisible mode and only when you click into the question box to start asking, not when a page loads. It looks at signals such as your IP address and browser; Cloudflare does not say how long it keeps them. Cloudflare's own description is in its Turnstile Privacy Addendum. I turn off Cloudflare's Worker logs.",
+        "Neon hosts the database in Sydney. After this site deletes a record, Neon can still restore it for up to 6 hours, and Neon keeps encrypted backups for 30 days."
+      ],
+      "match": [
+        {
+          "quote": "**Anthropic** deletes API inputs and outputs within 30 days.",
+          "expect": "Anthropic deletes API inputs and outputs within 30 days.",
+          "why": "bold copied with its asterisks"
+        },
+        {
+          "quote": "Cloudflare’s own description is in its [Turnstile Privacy Addendum](https://www.cloudflare.com/turnstile-privacy-policy/).",
+          "expect": "Cloudflare's own description is in its Turnstile Privacy Addendum.",
+          "why": "link copied as Markdown"
+        },
+        {
+          "quote": "I can’t turn that off on a personal account",
+          "expect": "I can't turn that off on a personal account",
+          "why": "curly apostrophe"
+        }
+      ],
+      "no_match": [
+        {
+          "quote": "OpenAI keeps embedding requests for up to 90 days.",
+          "why": "one number changed"
+        }
+      ]
+    },
+    {
+      "page": "/about",
+      "section_id": "work-rights",
+      "heading": "Work rights",
+      "source": "content/about.md",
+      "markdown": "About Skylar's work rights: I'm studying in Sydney and can work in Australia; happy to discuss details — email me.",
+      "plain": [
+        "About Skylar's work rights: I'm studying in Sydney and can work in Australia; happy to discuss details -- email me."
+      ],
+      "match": [
+        {
+          "quote": "I’m studying in Sydney and can work in Australia",
+          "expect": "I'm studying in Sydney and can work in Australia",
+          "why": "curly apostrophe"
+        },
+        {
+          "quote": "happy to discuss details — email me.",
+          "expect": "happy to discuss details -- email me.",
+          "why": "em dash, as smartypants writes it"
+        }
+      ],
+      "no_match": [
+        {
+          "quote": "I'm studying in Melbourne and can work in Australia",
+          "why": "one word changed"
+        }
+      ]
+    }
+  ]
+}

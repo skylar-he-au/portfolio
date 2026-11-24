@@ -7,7 +7,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from evals.checks import CATEGORIES
+from evals.checks import CATEGORIES, quote_counts
 from evals.pricing import POOLS
 from evals.types import METRICS
 
@@ -35,6 +35,36 @@ def _metric(rows: list[dict[str, Any]], metric: str) -> dict[str, Any]:
         "max": round(max(pass_means), 6) if pass_means else None,
         "scored": len(values),
         "below_floor": sum(value < 0.7 for value in values) if metric == "faithfulness" else None,
+    }
+
+
+def _quote_match(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """引句核上的比例: quotes code found in the cited section / quotes the model gave.
+
+    Over the general answers of v10 and later (`checks.quote_counts`); `rate` is None when
+    no quote was given. `citations_quoted` / `citations` is how many citations can mark a
+    sentence instead of the whole section. `passes` has the same rate for each pass.
+    """
+    totals = dict.fromkeys(("samples", "given", "kept", "citations", "citations_quoted"), 0)
+    by_pass: dict[int, list[int]] = {}
+    for row in rows:
+        counts = quote_counts(row["citations"], row["nodes"]) if row["status"] == "ok" else None
+        if counts is None:
+            continue
+        totals["samples"] += 1
+        for key, value in counts.items():
+            totals[key] += value
+        given_kept = by_pass.setdefault(row["repeat"], [0, 0])
+        given_kept[0] += counts["given"]
+        given_kept[1] += counts["kept"]
+
+    def rate(given: int, kept: int) -> float | None:
+        return round(kept / given, 6) if given else None
+
+    return {
+        **totals,
+        "rate": rate(totals["given"], totals["kept"]),
+        "passes": {str(repeat): rate(*by_pass[repeat]) for repeat in sorted(by_pass)},
     }
 
 
@@ -111,6 +141,7 @@ def build_summary(
             }
             for category in CATEGORIES
         },
+        "quote_match": _quote_match(averaged),
         "private_repeat": (
             {
                 "runs": len(private),

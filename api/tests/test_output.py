@@ -20,6 +20,7 @@ def test_out_of_range_citation_is_dropped():
             "n": 1,
             "url": "/projects/roleradar#how-roleradar-matches-jobs",
             "heading": "How RoleRadar matches jobs",
+            "quotes": [],
         }
     ]
 

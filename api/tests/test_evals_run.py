@@ -24,6 +24,7 @@ from evals.checks import (
     count_sentences,
     failed_checks,
     metrics_for,
+    quote_counts,
     run_code_checks,
     sample_passed,
 )
@@ -571,10 +572,13 @@ async def test_summary_whitelist_and_pass_means(tmp_path: Path) -> None:
         "models",
         "ragas",
         "code_checks",
+        "quote_match",
         "private_repeat",
         "cost_usd",
     }
     assert set(result["ragas"]) == {"tune", "held_out", "zh"}
+    # Rows without a v10 answer node count nothing: no rate rather than 0.
+    assert result["quote_match"]["samples"] == 0 and result["quote_match"]["rate"] is None
     assert result["models"]["answer"] == "fake-answer"
     # Unequal scored counts: average pass means, not all sample scores.
     rows = [
@@ -583,6 +587,50 @@ async def test_summary_whitelist_and_pass_means(tmp_path: Path) -> None:
     ]
     metric = summary(rows, repeats=3)["ragas"]["tune"]["faithfulness"]
     assert metric == {"mean": 0.6, "min": 0.3, "max": 0.9, "scored": 3, "below_floor": 2}
+
+
+QUOTED = (
+    f"{ANSWER}\n<quotes>\n"
+    "[1] Kite sorts invented seeds.\n"
+    "[1] Kite sorts real seeds daily.\n"  # not in the section: dropped
+    "</quotes>"
+)
+
+
+async def test_quote_match_counts_given_and_kept_quotes(tmp_path: Path) -> None:
+    claude = FakeChat(script=[rewrite_reply("kite sorting"), QUOTED, rewrite_reply("kite"), ANSWER])
+    gemini = FakeChat(script=[check_reply(), check_reply()])
+    graph = make_graph(deps(claude, gemini, 2))
+    qs = [question(), question(id="kite-plain")]
+    outcome = await run_eval(tmp_path, qs, graph=graph)
+    first, second = outcome.rows
+    assert first["answer"] == ANSWER and first["citations"][0]["quotes"] == [
+        "Kite sorts invented seeds."
+    ]
+    assert second["citations"][0]["quotes"] == []
+    assert summary(outcome.rows, questions=2)["quote_match"] == {
+        "samples": 2,
+        "given": 2,
+        "kept": 1,
+        "citations": 2,
+        "citations_quoted": 1,
+        "rate": 0.5,
+        "passes": {"1": 0.5},
+    }
+
+
+def test_quote_counts_only_for_general_answers() -> None:
+    nodes = [{"name": "answer", "quotes_given": 1}, {"name": "answer", "quotes_given": 3}]
+    cited = [{"n": 1, "quotes": ["a", "b"]}, {"n": 2, "quotes": []}, {"n": 3}]
+    assert quote_counts(cited, nodes) == {
+        "given": 3,  # the last answer: a retry counts its own quotes
+        "kept": 2,
+        "citations": 3,
+        "citations_quoted": 1,
+    }
+    # Private drafts, fixed sentences, off-topic and pre-v10 rows have no quotes_given.
+    assert quote_counts([], [{"name": "answer", "provider": None}]) is None
+    assert quote_counts([], []) is None
 
 
 @pytest.mark.parametrize("split", ["tune", "held_out", "all"])

@@ -1,6 +1,7 @@
 """Pure question checks and the immutable inputs used by the eval runner."""
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -95,6 +96,28 @@ def run_code_checks(question: Question, result: SampleResult) -> dict[str, bool 
             if question.expect_sections and not accept
             else None
         ),
+    }
+
+
+def quote_counts(
+    citations: Sequence[dict[str, Any]], nodes: Sequence[dict[str, Any]]
+) -> dict[str, int] | None:
+    """Quotes behind the citations of a general answer (v10), for the summary only.
+
+    `given` is what the answer model wrote in its quotes block (the last `answer` node's
+    `quotes_given`, so a retry counts its own answer), `kept` what code found in the cited
+    section. None where no general answer was written: private, off-topic, the fixed
+    sentences, errors, and runs before v10. Not a pass/fail check: no line yet (SPEC
+    "第 10 步评测").
+    """
+    answers = [node for node in nodes if node.get("name") == "answer" and "quotes_given" in node]
+    if not answers:
+        return None
+    return {
+        "given": int(answers[-1]["quotes_given"]),
+        "kept": sum(len(citation.get("quotes") or []) for citation in citations),
+        "citations": len(citations),
+        "citations_quoted": sum(bool(citation.get("quotes")) for citation in citations),
     }
 
 
