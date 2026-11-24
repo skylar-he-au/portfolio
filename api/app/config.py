@@ -17,6 +17,9 @@ os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 _API_DIR = Path(__file__).resolve().parent.parent
+# Latest dated GA version of the Azure OpenAI data-plane API (2026-11-24); the
+# versioned route is what `AzureOpenAIEmbeddings` calls.
+AZURE_OPENAI_API_VERSION = "2024-10-21"
 
 
 class Settings(BaseSettings):
@@ -35,7 +38,17 @@ class Settings(BaseSettings):
     # Model keys. Optional so tests run without them (they use fake models).
     anthropic_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
+    # Only the evals still use OpenAI directly (RAGAS embeddings, model comparisons).
     openai_api_key: SecretStr | None = None
+
+    # Embeddings go through Azure OpenAI. Cloud Run and local use the key; the
+    # deploy job's ingest uses a Microsoft Entra token instead. With both, the key wins.
+    azure_openai_endpoint: str | None = None  # https://<resource>.openai.azure.com/
+    azure_openai_deployment: str | None = None  # the deployment name, not the model
+    azure_openai_api_key: SecretStr | None = None
+    azure_openai_ad_token: SecretStr | None = None
+    # The deployment's tokens-per-minute limit; ingest sends half of it per minute.
+    azure_openai_tpm: int = Field(default=5000, ge=1000)
 
     origin_secret: SecretStr | None = None
     session_secret: SecretStr | None = None
@@ -71,6 +84,10 @@ class Settings(BaseSettings):
         "anthropic_api_key",
         "gemini_api_key",
         "openai_api_key",
+        "azure_openai_endpoint",
+        "azure_openai_deployment",
+        "azure_openai_api_key",
+        "azure_openai_ad_token",
         "origin_secret",
         "session_secret",
         "turnstile_secret",

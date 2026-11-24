@@ -34,7 +34,7 @@ def test_reasoning_is_already_in_output_tokens() -> None:
         ("models/gemini-3.5-flash-lite", Decimal("0.0028")),
         ("claude-haiku-5-5-20261001", Decimal("0.0006")),
         ("claude-sonnet-5-5", Decimal("0.012")),
-        ("text-embedding-3-small", Decimal("0.00002")),
+        ("text-embedding-3-small", Decimal("0.000024")),
     ],
 )
 def test_model_names(model: str, expected: Decimal) -> None:

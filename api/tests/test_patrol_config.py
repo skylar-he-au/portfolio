@@ -15,7 +15,9 @@ REQUIRED = (
     "turnstile_hostnames",
     "anthropic_api_key",
     "gemini_api_key",
-    "openai_api_key",
+    "azure_openai_api_key",
+    "azure_openai_endpoint",
+    "azure_openai_deployment",
     "patrol_secret",
     *(
         f"spend_{period}_usd_{provider}"
@@ -31,7 +33,9 @@ def complete_settings(url, **overrides):
         "turnstile_hostnames": ["example.com"],
         "anthropic_api_key": "test-anthropic",
         "gemini_api_key": "test-gemini",
-        "openai_api_key": "test-openai",
+        "azure_openai_api_key": "test-azure",
+        "azure_openai_endpoint": "https://test.openai.azure.com/",
+        "azure_openai_deployment": "text-embedding-3-small",
         "patrol_secret": "test-patrol",
     }
     return guard_settings(url, **(values | overrides))
@@ -71,7 +75,15 @@ def test_patrol_settings_defaults_and_blank_secret(refused_url):
 
 
 @pytest.mark.parametrize(
-    "name", ["anthropic_api_key", "gemini_api_key", "openai_api_key", "patrol_secret"]
+    "name",
+    [
+        "anthropic_api_key",
+        "gemini_api_key",
+        "azure_openai_api_key",
+        "azure_openai_endpoint",
+        "azure_openai_deployment",
+        "patrol_secret",
+    ],
 )
 def test_blank_production_keys_are_missing(refused_url, name):
     settings = complete_settings(refused_url, **{name: ""})

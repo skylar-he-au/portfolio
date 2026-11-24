@@ -6,15 +6,17 @@ import logging
 import re
 import sys
 import unicodedata
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from openai import RateLimitError
 from pgvector import Vector
 from pgvector.psycopg import register_vector_async
 
 from app.config import get_settings
 from app.db import Database, make_pool
-from app.rag.embed import OpenAIEmbedder
+from app.rag.embed import AzureEmbedder, estimate_tokens
 from app.rag.types import Embedder, Section
 
 logger = logging.getLogger("app.ingest")
@@ -34,6 +36,90 @@ class IngestError(ValueError):
 class ContentPage:
     title: str
     sections: list[Section]
+
+
+@dataclass(frozen=True)
+class Pacing:
+    """Keeps ingest under an Azure deployment's tokens-per-minute limit.
+
+    Each request carries at most half the TPM (by the high `estimate_tokens` count),
+    the next one waits for the following window, and a 429 that outlasts the SDK's own
+    retries waits for the server's `retry-after` (or a window) and tries again.
+    """
+
+    tokens_per_minute: int
+    window_s: float = 60.0
+    retries: int = 4
+
+    @property
+    def batch_tokens(self) -> int:
+        return max(1, self.tokens_per_minute // 2)
+
+
+def plan_batches(texts: list[str], pacing: Pacing | None) -> list[list[str]]:
+    """Consecutive batches of at most BATCH_SIZE texts and, with pacing, at most
+    `batch_tokens` estimated tokens; a text over the limit on its own goes alone."""
+    batches: list[list[str]] = []
+    current: list[str] = []
+    current_tokens = 0
+    for text in texts:
+        tokens = estimate_tokens([text])
+        full = len(current) >= BATCH_SIZE or (
+            pacing is not None and current_tokens + tokens > pacing.batch_tokens
+        )
+        if current and full:
+            batches.append(current)
+            current, current_tokens = [], 0
+        current.append(text)
+        current_tokens += tokens
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _retry_after_s(error: RateLimitError) -> float | None:
+    headers = getattr(getattr(error, "response", None), "headers", None) or {}
+    for name, scale in (("retry-after-ms", 1000.0), ("retry-after", 1.0)):
+        try:
+            return float(headers[name]) / scale
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
+
+
+async def _embed_paced(
+    embedder: Embedder,
+    batches: list[list[str]],
+    pacing: Pacing | None,
+    sleep: Callable[[float], Awaitable[None]],
+) -> list[list[float]]:
+    embeddings: list[list[float]] = []
+    for index, batch in enumerate(batches):
+        if pacing is not None and index > 0:
+            await sleep(pacing.window_s)
+        attempt = 0
+        while True:
+            try:
+                vectors = await embedder.embed(batch)
+                break
+            except RateLimitError as error:
+                attempt += 1
+                if pacing is None or attempt > pacing.retries:
+                    raise
+                wait = max(_retry_after_s(error) or 0.0, pacing.window_s)
+                logger.warning(
+                    "embedding batch %d/%d rate limited; retry %d/%d in %.0f s",
+                    index + 1,
+                    len(batches),
+                    attempt,
+                    pacing.retries,
+                    wait,
+                )
+                await sleep(wait)
+        if len(vectors) != len(batch):
+            raise IngestError("embedder returned the wrong number of vectors")
+        embeddings.extend(vectors)
+    return embeddings
 
 
 @dataclass(frozen=True)
@@ -140,7 +226,18 @@ def load_content(content_dir: Path) -> list[ContentPage]:
     ]
 
 
-async def ingest(db: Database, embedder: Embedder, content_dir: Path) -> IngestResult:
+async def ingest(
+    db: Database,
+    embedder: Embedder,
+    content_dir: Path,
+    *,
+    pacing: Pacing | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> IngestResult:
+    """Embed every eligible section, then swap the stored version in one transaction.
+
+    Without `pacing` (tests with a fake embedder) texts go in BATCH_SIZE batches with no
+    waiting; the command line always paces for the configured deployment."""
     pages = await asyncio.to_thread(load_content, content_dir)
     records = [
         (section, position, f"{page.title} — {section.heading}\n\n{section.text}")
@@ -149,13 +246,16 @@ async def ingest(db: Database, embedder: Embedder, content_dir: Path) -> IngestR
     ]
     if not records:
         raise IngestError("content directory contains no eligible sections")
-    embeddings: list[list[float]] = []
-    for start in range(0, len(records), BATCH_SIZE):
-        batch = records[start : start + BATCH_SIZE]
-        vectors = await embedder.embed([text for _, _, text in batch])
-        if len(vectors) != len(batch):
-            raise IngestError("embedder returned the wrong number of vectors")
-        embeddings.extend(vectors)
+    batches = plan_batches([text for _, _, text in records], pacing)
+    if pacing is not None:
+        logger.info(
+            "embedding %d sections in %d batches (about %d tokens, %d per minute)",
+            len(records),
+            len(batches),
+            estimate_tokens([text for _, _, text in records]),
+            pacing.batch_tokens,
+        )
+    embeddings = await _embed_paced(embedder, batches, pacing, sleep)
 
     async with db.connection() as conn, conn.transaction():
         await register_vector_async(conn)
@@ -198,10 +298,15 @@ async def ingest(db: Database, embedder: Embedder, content_dir: Path) -> IngestR
 
 async def _run(content_dir: Path | None) -> None:
     settings = get_settings()
-    embedder = OpenAIEmbedder(settings)
+    embedder = AzureEmbedder(settings)
     db = Database(make_pool(settings.database_url.get_secret_value()))
     try:
-        await ingest(db, embedder, content_dir if content_dir is not None else settings.content_dir)
+        await ingest(
+            db,
+            embedder,
+            content_dir if content_dir is not None else settings.content_dir,
+            pacing=Pacing(settings.azure_openai_tpm),
+        )
     finally:
         await db.close()
 

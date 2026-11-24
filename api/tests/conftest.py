@@ -25,6 +25,9 @@ os.environ.setdefault("TURNSTILE_HOSTNAMES", "example.com")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-anthropic")
 os.environ.setdefault("GEMINI_API_KEY", "test-gemini")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai")
+os.environ.setdefault("AZURE_OPENAI_API_KEY", "test-azure")
+os.environ.setdefault("AZURE_OPENAI_ENDPOINT", "https://test.openai.azure.com/")
+os.environ.setdefault("AZURE_OPENAI_DEPLOYMENT", "text-embedding-3-small")
 os.environ.setdefault("PATROL_SECRET", "test-patrol")
 for period, cap in (("DAILY", "1"), ("MONTHLY", "10")):
     for provider in ("ANTHROPIC", "GOOGLE", "OPENAI"):

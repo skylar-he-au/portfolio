@@ -15,7 +15,9 @@ _PRICES = {
     "gemini-3.5-flash-lite": (Decimal("0.30"), Decimal("2.50")),
     # Reasoning tokens are billed as output (OpenAI pricing page, 2026-11-19).
     "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
-    "text-embedding-3-small": (Decimal("0.02"), Decimal("0")),
+    # Azure OpenAI, Australia East: the Data Zone price (US$0.024 per million). The
+    # Standard price was not confirmed, so the higher figure is kept (2026-11-24).
+    "text-embedding-3-small": (Decimal("0.024"), Decimal("0")),
 }
 _MILLION = Decimal("1000000")
 

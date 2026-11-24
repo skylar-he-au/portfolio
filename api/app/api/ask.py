@@ -106,10 +106,10 @@ _DONE = object()
 def default_deps(settings: Settings, db: Database) -> GraphDeps:
     """Real models, retrieval and embedding (needs the dev or production keys)."""
     # Imported here: building the embedder needs a key, and tests never get this far.
-    from app.rag.embed import OpenAIEmbedder
+    from app.rag.embed import AzureEmbedder
     from app.rag.retrieve import retrieve
 
-    embedder = OpenAIEmbedder(settings)
+    embedder = AzureEmbedder(settings)
     return build_deps(settings, functools.partial(retrieve, db, embedder), embedder)
 
 

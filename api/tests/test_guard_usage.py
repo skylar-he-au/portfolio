@@ -39,7 +39,7 @@ from app.guard.usage import (
 )
 from app.migrate import migrate
 from app.qa.models import MAX_OUTPUT_TOKENS, ChatProvider, stream_text, structured
-from app.rag.embed import OpenAIEmbedder
+from app.rag.embed import AzureEmbedder
 from app.rag.types import ModelsUnavailable
 
 pytestmark = pytest.mark.anyio
@@ -485,13 +485,16 @@ async def test_unknown_model_with_scope_switches_provider(method: str) -> None:
 
 def embedder(monkeypatch, error: Exception | None = None):
     client = SimpleNamespace(aembed_documents=AsyncMock(return_value=[[0.5]], side_effect=error))
-    monkeypatch.setattr("app.rag.embed.OpenAIEmbeddings", lambda **kwargs: client)
+    monkeypatch.setattr("app.rag.embed.AzureOpenAIEmbeddings", lambda **kwargs: client)
     settings = SimpleNamespace(
-        openai_api_key=SecretStr("offline"),
+        azure_openai_endpoint="https://offline.openai.azure.com/",
+        azure_openai_deployment="offline",
+        azure_openai_api_key=SecretStr("offline"),
+        azure_openai_ad_token=None,
         embed_model=MODELS["openai"],
         embed_dims=1,
     )
-    return OpenAIEmbedder(settings), client
+    return AzureEmbedder(settings), client
 
 
 @pytest.mark.parametrize("outcome", ["success", "error", "cancel"])

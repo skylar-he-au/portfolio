@@ -32,7 +32,9 @@ REQUIRED_PRODUCTION = (
     "turnstile_hostnames",
     "anthropic_api_key",
     "gemini_api_key",
-    "openai_api_key",
+    "azure_openai_api_key",
+    "azure_openai_endpoint",
+    "azure_openai_deployment",
     "patrol_secret",
 )
 REQUIRED_CAPS = tuple(

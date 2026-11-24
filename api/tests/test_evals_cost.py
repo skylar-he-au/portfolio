@@ -70,7 +70,7 @@ class FakeEndpoint:
         ("claude-haiku-5-5-20261001", Price("credit", 0.10, 0.50)),
         ("models/claude-sonnet-5-5-20261001", Price("credit", 2.00, 10.00)),
         ("models/gemini-3.5-flash-lite-001", Price("real", 0.30, 2.50)),
-        ("text-embedding-3-small", Price("real", 0.02, 0.00)),
+        ("text-embedding-3-small", Price("real", 0.024, 0.00)),
     ],
 )
 def test_price_prefixes(model: str, expected: Price) -> None:

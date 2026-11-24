@@ -455,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
         from app.config import get_settings
         from app.db import Database, make_pool
         from app.qa.graph import build_deps
-        from app.rag.embed import OpenAIEmbedder
+        from app.rag.embed import AzureEmbedder
         from app.rag.retrieve import retrieve
         from evals.cost import Meter
 
@@ -480,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
         db = Database(make_pool(settings.database_url.get_secret_value()))
         try:
             meter = Meter(caps, args.ledger, run_id)
-            embedder = MeteredEmbedder(OpenAIEmbedder(settings), meter, settings.embed_model)
+            embedder = MeteredEmbedder(AzureEmbedder(settings), meter, settings.embed_model)
             deps = build_deps(settings, functools.partial(retrieve, db, embedder), embedder)
             outcome = await evaluate(
                 questions,

@@ -63,10 +63,15 @@ cd api
 uv run python -m app.ingest
 ```
 
-Set `OPENAI_API_KEY` in the repo-root `.env`; the command reads `DATABASE_URL` from
-the same file (the compose `localhost:5433` address) and loads `content/` pages with
-`rag: true`. Re-running creates a new version and removes the old one. Run this on
-the host because the API container image has no `content/` directory.
+Set `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` and `AZURE_OPENAI_API_KEY` in the
+repo-root `.env`; the command reads `DATABASE_URL` from the same file (the compose
+`localhost:5433` address) and loads `content/` pages with `rag: true`. Re-running creates
+a new version and removes the old one. Run this on the host because the API container
+image has no `content/` directory.
+
+Ingest keeps under the deployment's tokens-per-minute limit (`AZURE_OPENAI_TPM`, default
+5000): each request carries at most half of it, the next waits a minute, and a 429 waits
+and retries. With the 5K dev deployment the site's content takes a few minutes.
 
 If you changed `DB_PORT` (for example to 5434 because 5433 is taken), set `DATABASE_URL` to point at that port when running the ingest.
 
@@ -98,8 +103,9 @@ npm run build && npm run test:dist
 From `api/`, the offline eval runner sends a YAML question set through the real Q&A graph,
 applies code checks, and optionally scores answers with RAGAS. First run
 `docker compose up -d db migrate` from the repo root, ingest the content, and configure
-`.env` with the three dev keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`)
-and `DATABASE_URL`.
+`.env` with the dev keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, the three
+`AZURE_OPENAI_*` embedding settings, and `OPENAI_API_KEY` for the RAGAS embeddings) and
+`DATABASE_URL`.
 
 ```bash
 uv run --no-default-groups --group eval python -m evals.run --set <qa-set.yaml> --out <private-results-dir> \

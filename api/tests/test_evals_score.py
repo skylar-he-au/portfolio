@@ -338,7 +338,7 @@ def test_make_embeddings_reads_secret_and_wraps_client(
     assert constructor_keys == ["test"]
     assert factory_calls == [("openai", "text-embedding-3-small", client)]
     assert asyncio.run(client.embeddings.create()) is response
-    assert meter.run_cost["real"] == pytest.approx(123 / 1e6 * 0.02)
+    assert meter.run_cost["real"] == pytest.approx(123 / 1e6 * 0.024)
 
 
 def test_ragas_analytics_are_off() -> None:

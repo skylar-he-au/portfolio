@@ -246,9 +246,9 @@ def default_deps(
 ) -> MatchDeps:
     """Real models, retrieval and embedding (needs the dev or production keys)."""
     # Imported here: building the embedder needs a key, and tests never get this far.
-    from app.rag.embed import OpenAIEmbedder
+    from app.rag.embed import AzureEmbedder
 
-    return build_match_deps(settings, db, OpenAIEmbedder(settings), stage_timeouts)
+    return build_match_deps(settings, db, AzureEmbedder(settings), stage_timeouts)
 
 
 class MatchService:

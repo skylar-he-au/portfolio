@@ -7,15 +7,22 @@ from pathlib import Path
 
 import psycopg
 import pytest
-from fakes import FakeEmbedder, unit_vector
+from fakes import FakeEmbedder
 from psycopg_pool import PoolTimeout
 
 import app.ingest as ingest_module
 from app.config import Settings
 from app.db import POOL_WAIT_S, Database, make_pool
-from app.ingest import IngestError, ingest, load_content, read_page, slugify, split_sections
+from app.ingest import (
+    IngestError,
+    Pacing,
+    ingest,
+    load_content,
+    read_page,
+    slugify,
+    split_sections,
+)
 from app.migrate import migrate
-from app.rag.embed import OpenAIEmbedder
 from app.rag.retrieve import retrieve
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -144,79 +151,6 @@ def test_quoted_front_matter_and_markdown_heading(tmp_path: Path) -> None:
     assert parsed.title == "A title: with colon"
     assert parsed.sections[0].heading == "**Bold** _text_"
     assert parsed.sections[0].section_id == "bold-text"
-
-
-def test_openai_embedder_uses_configured_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    options: dict[str, object] = {}
-    calls: list[list[str]] = []
-    vectors = [unit_vector(), unit_vector(1)]
-
-    class StubEmbeddings:
-        def __init__(self, **kwargs: object) -> None:
-            options.update(kwargs)
-
-        async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
-            calls.append(texts)
-            return vectors
-
-    monkeypatch.setattr("app.rag.embed.OpenAIEmbeddings", StubEmbeddings)
-    settings = Settings(
-        _env_file=None,
-        database_url="postgresql://unused",
-        openai_api_key="stub-key",
-        embed_model="configured-model",
-        embed_dims=1536,
-    )
-    embedder = OpenAIEmbedder(settings)
-    assert asyncio.run(embedder.embed(["one", "two"])) == vectors
-    assert calls == [["one", "two"]]
-    assert options == {
-        "model": "configured-model",
-        "dimensions": 1536,
-        "api_key": settings.openai_api_key,
-        "timeout": 30,
-        "max_retries": 2,
-        "check_embedding_ctx_length": False,
-    }
-
-
-def test_openai_embedder_sends_text_without_tiktoken(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The real client sends raw strings and never loads a tiktoken encoding."""
-    sent: list[object] = []
-
-    class StubResponse:
-        def model_dump(self) -> dict[str, object]:
-            return {"data": [{"embedding": unit_vector()}]}
-
-    class StubAsyncClient:
-        async def create(self, *, input: object, **_kwargs: object) -> StubResponse:
-            sent.append(input)
-            return StubResponse()
-
-    def no_tiktoken(*_args: object, **_kwargs: object) -> None:
-        pytest.fail("tiktoken must not be loaded")
-
-    monkeypatch.setattr("tiktoken.encoding_for_model", no_tiktoken)
-    monkeypatch.setattr("tiktoken.get_encoding", no_tiktoken)
-    settings = Settings(
-        _env_file=None, database_url="postgresql://unused", openai_api_key="stub-key"
-    )
-    embedder = OpenAIEmbedder(settings)
-    assert embedder._client.check_embedding_ctx_length is False
-    embedder._client.async_client = StubAsyncClient()
-    assert asyncio.run(embedder.embed(["What did Skylar build?"])) == [unit_vector()]
-    assert sent == [["What did Skylar build?"]]
-
-
-@pytest.mark.parametrize("key", [None, ""])
-def test_openai_embedder_requires_key(key: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
-    def unexpected_client(**_kwargs: object) -> None:
-        pytest.fail("client must not be created without a key")
-
-    monkeypatch.setattr("app.rag.embed.OpenAIEmbeddings", unexpected_client)
-    settings = Settings(_env_file=None, database_url="postgresql://unused", openai_api_key=key)
-    with pytest.raises(RuntimeError, match="OPENAI_API_KEY is required"):
-        OpenAIEmbedder(settings)
 
 
 class StubPool:
@@ -494,13 +428,14 @@ def test_run_uses_settings_and_closes_database(
         _env_file=None,
         database_url="postgresql://unused",
         content_dir=Path("configured-content"),
-        openai_api_key=None,
+        azure_openai_tpm=8000,
     )
     fake = FakeEmbedder()
     pool = StubPool()
     db = Database(pool)
     urls: list[str] = []
     received: list[Path] = []
+    pacings: list[Pacing | None] = []
 
     def make_test_pool(url: str) -> StubPool:
         urls.append(url)
@@ -514,10 +449,17 @@ def test_run_uses_settings_and_closes_database(
         assert actual_settings is settings
         return fake
 
-    async def load(actual_db: Database, actual_embedder: FakeEmbedder, directory: Path) -> None:
+    async def load(
+        actual_db: Database,
+        actual_embedder: FakeEmbedder,
+        directory: Path,
+        *,
+        pacing: Pacing | None = None,
+    ) -> None:
         assert actual_db is db
         assert actual_embedder is fake
         received.append(directory)
+        pacings.append(pacing)
         async with actual_db.connection():
             if fail:
                 raise IngestError("content directory contains no eligible sections")
@@ -525,7 +467,7 @@ def test_run_uses_settings_and_closes_database(
     monkeypatch.setattr(ingest_module, "get_settings", lambda: settings)
     monkeypatch.setattr(ingest_module, "make_pool", make_test_pool)
     monkeypatch.setattr(ingest_module, "Database", make_test_db)
-    monkeypatch.setattr(ingest_module, "OpenAIEmbedder", make_test_embedder)
+    monkeypatch.setattr(ingest_module, "AzureEmbedder", make_test_embedder)
     monkeypatch.setattr(ingest_module, "ingest", load)
     if fail:
         with pytest.raises(IngestError):
@@ -534,6 +476,9 @@ def test_run_uses_settings_and_closes_database(
         asyncio.run(ingest_module._run(override))
     assert urls == [settings.database_url.get_secret_value()]
     assert received == [settings.content_dir if override is None else override]
+    # The command line always paces for the configured deployment: half of 8K per minute.
+    assert pacings == [Pacing(8000)]
+    assert pacings[0].batch_tokens == 4000 and pacings[0].window_s == 60
     assert pool.closed
 
 

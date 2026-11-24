@@ -442,7 +442,7 @@ def test_worst_cases_are_in_the_right_pools() -> None:
     )
     # match-v5+check-v2 lengths, 12 requirements (8 until step 6 round 2: 0.012716, 0.009330)
     assert worst["credit"] == pytest.approx(0.018153, abs=1e-6)
-    assert worst["real"] == pytest.approx(0.012599 + 2 * 0.000016, abs=2e-6)
+    assert worst["real"] == pytest.approx(0.012599 + 2 * 0.0000192, abs=2e-6)
     forced = graph_worst(
         "claude-haiku-5-5", "gemini-3.5-flash-lite", "text-embedding-3-small", "gemini-answer"
     )

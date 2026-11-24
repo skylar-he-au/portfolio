@@ -905,7 +905,7 @@ def main(argv: list[str] | None = None) -> int:
 
         from app.db import Database, make_pool
         from app.match.graph import build_match_deps
-        from app.rag.embed import OpenAIEmbedder
+        from app.rag.embed import AzureEmbedder
         from evals.cost import meter_anthropic
         from evals.run import MeteredEmbedder
 
@@ -928,7 +928,7 @@ def main(argv: list[str] | None = None) -> int:
         db = Database(make_pool(settings.database_url.get_secret_value()))
         try:
             meter = MatchMeter(caps, args.ledger, run_id)
-            embedder = MeteredEmbedder(OpenAIEmbedder(settings), meter, settings.embed_model)
+            embedder = MeteredEmbedder(AzureEmbedder(settings), meter, settings.embed_model)
             aligner: Aligner | None = None
             if not args.no_judge:
                 key = settings.anthropic_api_key
