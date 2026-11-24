@@ -18,7 +18,7 @@ describe('Cloudflare deployment configuration', () => {
         directory: './dist',
         run_worker_first: ['/api/*'],
         not_found_handling: '404-page',
-        html_handling: 'auto-trailing-slash',
+        html_handling: 'drop-trailing-slash',
       },
       observability: { enabled: false },
       vars: { ORIGIN_URL: 'http://localhost:8000' },
