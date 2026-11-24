@@ -34,7 +34,7 @@ QUOTES_OPEN = "<quotes"
 QUOTES_CLOSE = "</quotes"
 _QUOTE_LINE = re.compile(r"^\s*((?:\[\d{1,3}(?:\s*,\s*\d{1,3})*\]\s*)+)[:\-]?\s*(.*?)\s*$")
 MIN_QUOTE_CHARS = 12  # shorter "quotes" would mark common words all over the page
-MAX_QUOTES_PER_CITATION = 3
+MAX_QUOTES_PER_CITATION = 5  # an answer has at most 5 sentences, each one claim
 
 # Plain text, the same rules the browser applies to the page's `textContent` (step 10
 # contract "出处的格式"): Markdown marks removed, typography folded to ASCII, whitespace
@@ -68,6 +68,7 @@ _INLINE_RULES = (
     (re.compile(r"(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)"), r"\1"),  # not inside snake_case
 )
 _SPACE = re.compile(r"\s+")
+_QUOTE_LIST_MARKER = re.compile(r"^(?:[-*+]|\d{1,9}[.)])\s+")  # "2. Code rejects ..." copied
 # Characters a quote may differ by at its ends: sentence punctuation and quotation marks.
 _EDGE = " .,;:!?\"'()"
 
@@ -230,7 +231,7 @@ def find_quote(quote: str, plain: str) -> str | None:
     Word for word: only whitespace, the Markdown and typography that `plain_text` removes,
     and punctuation or quotation marks at either end may differ.
     """
-    folded = fold(_inline(quote))
+    folded = fold(_inline(_QUOTE_LIST_MARKER.sub("", quote.strip())))
     blocks = plain.split("\n")
     candidates = (folded, folded.strip("\"'"), folded.strip(_EDGE))
     for candidate in dict.fromkeys(candidates):

@@ -95,6 +95,13 @@ def test_plain_text_rules():
 # --- checking quotes ----------------------------------------------------------------
 
 
+def test_quote_copied_with_its_list_number_still_matches():
+    plain = "\n".join(SECTIONS[1]["plain"])
+    quote = "2. Code rejects anything it can verify is new: numbers, source line references"
+    assert find_quote(quote, plain) == quote[3:]
+    assert find_quote("- " + quote[3:], plain) == quote[3:]
+
+
 @pytest.mark.parametrize("fixture", SECTIONS, ids=lambda f: f["section_id"])
 def test_fixture_quotes(fixture: dict[str, Any]):
     plain = "\n".join(fixture["plain"])
