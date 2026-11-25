@@ -50,11 +50,12 @@ function section(id: string): Element[] {
 }
 
 let markSection: typeof import('../../src/scripts/highlight').markSection;
+let browserMarks: typeof import('../../src/scripts/highlight').browserMarks;
 
 beforeAll(async () => {
   window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia;
   Element.prototype.scrollIntoView = vi.fn();
-  ({ markSection } = await import('../../src/scripts/highlight'));
+  ({ markSection, browserMarks } = await import('../../src/scripts/highlight'));
 });
 
 afterEach(() => {
@@ -206,6 +207,20 @@ describe('a page opened from a source link with a Text Fragment', () => {
     expect(fold(match.block.raw.slice(match.start, match.end))).toBe(long);
     expect(findDirective(blocks, { start: 'THE SECOND LAYER RUNS' })).not.toBeNull();
     expect(findDirective(blocks, { start: 'not on this page at all' })).toBeNull();
+  });
+
+  it('leaves an arrival to the browser when it supports Text Fragments and the text is there', () => {
+    load('/projects/roleradar');
+    const heading = sectionHeadingIn(document, 'how-roleradar-matches-jobs')!;
+    const found = [{ start: 'The second layer runs per user, in code.' }];
+    const supporting = Object.assign(Object.create(document) as Document, { fragmentDirective: {} });
+    expect(browserMarks(heading, found, supporting)).toBe(true);
+    // Without support (jsdom, older browsers), without a directive or with text not in the
+    // section, the page marks it itself.
+    expect(browserMarks(heading, found, document)).toBe(false);
+    expect(browserMarks(heading, [], supporting)).toBe(false);
+    expect(browserMarks(heading, [{ start: 'not on this page at all' }], supporting)).toBe(false);
+    expect(document.querySelectorAll('mark')).toHaveLength(0);
   });
 
   it('marks the directive sentences, not the whole section, when the page is opened with them', () => {

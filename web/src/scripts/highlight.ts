@@ -223,10 +223,26 @@ function arrivalDirectives(id: string): TextDirectivePart[] {
   }
 }
 
+/**
+ * Whether the browser marks this arrival itself: it supports Text Fragments and the page was
+ * opened with one that is in the section. The browser keeps its marks until the visitor
+ * clicks; splitting and joining the text nodes under them for our own marks lost all but its
+ * first range when ours ended (10v), so then the page leaves the marking to the browser.
+ */
+export function browserMarks(heading: HTMLElement, directives: readonly TextDirectivePart[], doc: Document = document): boolean {
+  if (directives.length === 0 || !('fragmentDirective' in doc)) return false;
+  const blocks = textBlocks(sectionElements(heading));
+  return directives.some((part) => findDirective(blocks, part) !== null);
+}
+
 function markFromLocation(arriving: boolean): void {
   const id = sectionId(window.location.hash);
   const heading = sectionHeading(id);
-  if (heading) markSection(heading, pendingQuotes(id), arriving ? arrivalDirectives(id) : []);
+  if (!heading) return;
+  const quotes = pendingQuotes(id);
+  const directives = arriving ? arrivalDirectives(id) : [];
+  if (browserMarks(heading, directives)) return;
+  markSection(heading, quotes, directives);
 }
 
 // Arriving from another page (/projects/x#section-id), and Back or Forward between sources.
