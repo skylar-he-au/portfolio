@@ -585,6 +585,29 @@ describe('Assistant fixes from the 9c1 check', () => {
     expect(urls(fetchMock)).not.toContain('/api/ask');
   });
 
+  it('pings again when Ask is pressed after going offline, and asks once it is back', async () => {
+    const fetchMock = mockEndpoints();
+    const base = fetchMock.getMockImplementation()!;
+    let online = false;
+    fetchMock.mockImplementation((input, init) => input === '/api/ping' && !online
+      ? Promise.reject(new TypeError('Failed to fetch')) : base(input, init));
+    renderAssistant();
+    fireEvent.focus(box());
+    await screen.findByText('The assistant is offline right now — please try again later.', { selector: '.ask-hint' });
+    // Still offline: the second ping fails too and the sentence comes back.
+    await submit('Still there?');
+    await waitFor(() => expect(urls(fetchMock).filter((url) => url === '/api/ping')).toHaveLength(2));
+    await screen.findByText('The assistant is offline right now — please try again later.', { selector: '.ask-hint' });
+    expect(urls(fetchMock)).not.toContain('/api/ask');
+    online = true;
+    await submit('Back online?');
+    await waitFor(() => expect(urls(fetchMock)).toContain('/api/ask'));
+    expect(urls(fetchMock).filter((url) => url === '/api/ping')).toHaveLength(3);
+    expect(JSON.parse(fetchMock.mock.calls.find(([url]) => url === '/api/ask')![1]!.body as string))
+      .toMatchObject({ question: 'Back online?' });
+    expect(screen.queryByText('The assistant is offline right now — please try again later.')).not.toBeInTheDocument();
+  });
+
   it('keeps text typed into the server-rendered box before hydration', async () => {
     mockEndpoints();
     const { renderToString } = await import('react-dom/server');

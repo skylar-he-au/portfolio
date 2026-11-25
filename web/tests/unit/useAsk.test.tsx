@@ -92,6 +92,23 @@ describe('useAsk', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/ping', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
+  it('pings again on the next prepare after a failed ping', async () => {
+    const fetchMock = mockEndpoints();
+    const base = fetchMock.getMockImplementation()!;
+    let online = false;
+    fetchMock.mockImplementation((input, init) => input === '/api/ping' && !online
+      ? Promise.reject(new TypeError('Failed to fetch')) : base(input, init));
+    const { result } = renderHook(() => useAsk());
+    act(() => result.current.prepare());
+    await waitFor(() => expect(result.current.readiness).toBe('offline'));
+    online = true;
+    act(() => result.current.prepare());
+    expect(result.current.readiness).toBe('pending');
+    await waitFor(() => expect(result.current.readiness).toBe('ready'));
+    act(() => result.current.prepare());
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ping')).toHaveLength(2);
+  });
+
   it('maps statuses in first-seen order and ignores recall and unknown nodes', async () => {
     mockEndpoints(async () => eventResponse([
       ['meta', { conversation_id: 'conversation-1', turn_id: 'turn-1' }],

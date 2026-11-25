@@ -122,12 +122,21 @@ export function useAsk(options?: UseAskOptions): {
     pingRef.current = controller;
     const { signal } = controller;
     setReadiness('pending');
+    // A failed ping is not final: the next prepare (focus, Ask) pings again, so the box
+    // works once the connection or a cold backend comes back.
+    function offline() {
+      if (signal.aborted) return;
+      if (pingRef.current === controller) pingRef.current = null;
+      setReadiness('offline');
+    }
     async function checkPing() {
       try {
         const response = await fetch('/api/ping', { signal });
-        if (!signal.aborted) setReadiness(response.status === 200 ? 'ready' : 'offline');
+        if (signal.aborted) return;
+        if (response.status === 200) setReadiness('ready');
+        else offline();
       } catch {
-        if (!signal.aborted) setReadiness('offline');
+        offline();
       }
     }
     void checkPing();

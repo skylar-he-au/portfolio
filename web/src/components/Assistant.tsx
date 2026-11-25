@@ -471,10 +471,6 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
   function send(text: string, chosen: Mode) {
     const value = text.trim();
     if (!value || busy || queued !== null) return;
-    if (chosen === 'ask' && readiness === 'offline') {
-      setAnnouncement(OFFLINE_MESSAGE);
-      return;
-    }
     if (chosen === 'bad-link') {
       setNotice(BAD_LINK_MESSAGE);
       setAnnouncement(BAD_LINK_MESSAGE);
@@ -488,6 +484,8 @@ export default function Assistant({ variant = 'home', examples, pageTitles = {},
       if (matchState.match(value).started) started('match');
       return;
     }
+    // Offline: prepare pings again and the question waits for it, like before the first
+    // ping; if the backend is still unreachable the offline sentence comes back.
     prepare();
     if (readiness === 'ready') {
       if (ask(value).started) started('turn');
