@@ -56,6 +56,8 @@ I did not write those verdicts myself. Faithfulness agreed on 19 of 20, so it ke
 
 ## What the scores say
 
+*These are the v7 results as of 2026-11-24. Later, v11 and then v12 passed every line; see the update at the top and the `/evals` page.*
+
 The final prompt version, v7, ran over all 48 questions 3 times:
 
 | | Tuning questions | Held-out questions |
