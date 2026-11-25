@@ -478,6 +478,73 @@ async def test_general_retry_that_passes():
     assert run.state["answer_text"] == GOOD_ANSWER
 
 
+# --- code backstop for general answers (10u) ---------------------------------------------
+
+# Shaped like the oc-numbers answer of 20261125T031802-v12-default, pass 3.
+SELF_EDITED = (
+    "RoleRadar ranks jobs by similarity [1].\n\nWait, the last sentence needs checking: "
+    "section 1 gives no split. Corrected answer below.\n\nRoleRadar ranks jobs [1]."
+)
+# Like rr-no-api-grader in 20261125T031301-v12-default, run 6.
+META_ANSWER = (
+    "RoleRadar ranks jobs by similarity [1]. The sections don't say why I avoided a model judge."
+)
+
+
+async def test_general_self_edit_fails_the_check_by_code_and_retries():
+    run = await ask(
+        EXAMPLE_Q,
+        claude=[rewrite_reply(), SELF_EDITED, GOOD_ANSWER],
+        gemini=[check_reply()],  # only the retried answer reaches the check model
+        retriever=FakeRetriever([MATCH], [MATCH, TESTS]),
+    )
+    assert run.names == ["route", "token", "answer", "reset", "token", "answer", "check", "trace"]
+    assert run.data("reset") == [{"reason": "retry"}]
+    assert run.data("check") == [
+        {"passed": True, "unsupported": [], "retried": True, "reason": None}
+    ]
+    assert len(run.gemini.calls) == 1
+    # The retry is told what was wrong, as after a failed model check.
+    assert "Wait, the last sentence needs checking" in system_prompt(run.claude, 2)
+    [first_check, _] = [n for n in run.state["trace"]["nodes"] if n["name"] == "check"]
+    assert first_check["provider"] is None and first_check["guard"] == "self_edit"
+    assert run.state["answer_text"] == GOOD_ANSWER
+    assert_statuses_paired(run)
+
+
+async def test_general_meta_answer_twice_stays_with_the_sentence_marked():
+    run = await ask(
+        EXAMPLE_Q,
+        claude=[rewrite_reply(), META_ANSWER, META_ANSWER],
+        gemini=[check_reply()],  # the model passes it; code still marks the sentence
+        retriever=FakeRetriever([MATCH], [MATCH]),
+    )
+    assert run.data("check") == [
+        {
+            "passed": False,
+            "unsupported": ["The sections don't say why I avoided a model judge."],
+            "retried": True,
+            "reason": "unsupported",
+        }
+    ]
+    assert run.state["answer_text"] == META_ANSWER
+    checks = [n for n in run.state["trace"]["nodes"] if n["name"] == "check"]
+    assert [(n["provider"], n["guard"]) for n in checks] == [(None, "meta"), ("google", "meta")]
+
+
+async def test_general_retried_meta_answer_keeps_the_models_marks_too():
+    second = "RoleRadar uses GPT-9 [1]. The sections don't say more."
+    run = await ask(
+        EXAMPLE_Q,
+        claude=[rewrite_reply(), META_ANSWER, second],
+        gemini=[check_reply(["RoleRadar uses GPT-9 [1]."])],
+        retriever=FakeRetriever([MATCH], [MATCH]),
+    )
+    [check] = run.data("check")
+    assert check["unsupported"] == ["RoleRadar uses GPT-9 [1].", "The sections don't say more."]
+    assert check["passed"] is False and check["reason"] == "unsupported"
+
+
 # --- blog sections next to a named project (10s) ----------------------------------------
 
 POST = Section(

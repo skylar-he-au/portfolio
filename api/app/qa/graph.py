@@ -10,7 +10,9 @@
 - General questions stream as they are written (`answer` is the only node whose tokens
   reach the visitor, see `output.answer_token`); the check then marks unsupported
   sentences. A failed check sends `reset retry` and answers once more; if that fails too
-  the answer stays, marked.
+  the answer stays, marked. Code (`general.answer_problem`, 10u) fails the check without
+  the model for an answer that rewrites itself or talks about "the sections"; on the
+  retried answer it adds those sentences to the model's marks.
 - Private questions (rewrite flag or `private.looks_private`) use /about only, are never
   streamed, and are shown only if the check passes; otherwise a fixed sentence. Before the
   check, code (`private.unstated_conclusion`) sends the fixed sentence for a draft that
@@ -38,6 +40,7 @@ from langgraph.types import StreamWriter
 
 from app.config import Settings
 from app.qa import memory, prompts
+from app.qa.general import answer_problem
 from app.qa.models import CALL_TIMEOUT_S, ChatProvider, build_providers, stream_text, structured
 from app.qa.output import ANSWER_NODE, resolve_answer, resolve_citations, verify_unsupported
 from app.qa.private import looks_private, unstated_conclusion
@@ -332,11 +335,25 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         writer = get_stream_writer()
         node = _Node(writer, "check")
         text = state["answer_text"]
+        problem = answer_problem(text, [s.text for s in state["sections"]])
+        marked = verify_unsupported(problem[1], text) if problem else []
+        if problem and not state["retried"]:
+            # Code settles it (10u): a failed check without the model call, so it retries.
+            result = {
+                "passed": False,
+                "unsupported": marked,
+                "retried": False,
+                "reason": "unsupported",
+            }
+            trace = node.end()
+            trace["guard"] = problem[0]
+            return {"check": result, "nodes": [*state["nodes"], trace]}
         messages = prompts.check_messages(state["question"], text, state["sections"])
         out, provider = await structured(
             "check", check_order, prompts.CheckOut, messages, deadline_s=timeout
         )
-        unsupported = verify_unsupported(out.unsupported, text)
+        # The retried answer still has a hit: it stays, with those sentences marked too.
+        unsupported = verify_unsupported([*out.unsupported, *marked], text)
         passed = out.passed and not unsupported
         result = {
             "passed": passed,
@@ -345,6 +362,8 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
             "reason": None if passed else "unsupported",
         }
         trace = node.end(provider.name, provider.model)
+        if problem:
+            trace["guard"] = problem[0]
         if passed or state["retried"]:
             _emit_check(writer, result)  # final; a check that leads to a retry is not shown
         return {"check": result, "nodes": [*state["nodes"], trace]}
