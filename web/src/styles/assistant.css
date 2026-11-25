@@ -315,6 +315,11 @@
   vertical-align: baseline;
 }
 
+/* A source box and the full stop after it stay on one line (Assistant.tsx renderInlines). */
+.ask-cite-run {
+  white-space: nowrap;
+}
+
 .ask-cite:hover {
   text-decoration: underline;
 }

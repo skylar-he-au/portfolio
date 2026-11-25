@@ -1,7 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode, SubmitEvent } from 'react';
 import { answerSegments, citationHref, safeSiteUrl } from '../lib/answer';
-import type { Citation, InlineSegment, QuoteFragments } from '../lib/answer';
+import type { AnswerSegment, Citation, InlineSegment, QuoteFragments } from '../lib/answer';
 import { fragmentDirective, sectionElements, sectionHeadingIn, textBlocks, usableQuotes } from '../lib/quote-text';
 import { ASK_MAX_CHARS, BAD_LINK_MESSAGE, detectInput } from '../lib/detect';
 import type { MatchItem, MatchNotes, MatchSection, PageTitles } from '../lib/match';
@@ -159,6 +159,59 @@ function renderInline(segment: InlineSegment, key: number, numbers: Map<number, 
   );
 }
 
+// Punctuation that belongs to the sentence a source box ends: kept on the box's line.
+const AFTER_CITE = /^[.,;:!?)\]…。，、；：！？）」』”’]+/u;
+
+/**
+ * Inline segments with each run of source boxes and the punctuation right after it in one
+ * nowrap span: a box is an atomic inline, so the browser would otherwise put a line break
+ * between it and the full stop (10v).
+ */
+function renderInlines(segments: InlineSegment[], numbers: Map<number, number>): ReactNode[] {
+  const out: ReactNode[] = [];
+  let index = 0;
+  while (index < segments.length) {
+    const segment = segments[index]!;
+    if (segment.type !== 'link') {
+      out.push(segment.text);
+      index += 1;
+      continue;
+    }
+    const start = index;
+    const links: ReactNode[] = [];
+    while (segments[index]?.type === 'link') {
+      links.push(renderInline(segments[index]!, index, numbers));
+      index += 1;
+    }
+    const next = segments[index];
+    const punctuation = next?.type === 'text' ? AFTER_CITE.exec(next.text)?.[0] : undefined;
+    if (!punctuation) {
+      out.push(...links);
+      continue;
+    }
+    out.push(<span key={`run-${start}`} className="ask-cite-run">{links}{punctuation}</span>);
+    const rest = (next as { text: string }).text.slice(punctuation.length);
+    if (rest) out.push(rest);
+    index += 1;
+  }
+  return out;
+}
+
+/** Consecutive inline segments as one array, so a source box and the full stop after it
+ * are seen together; marked (unsupported) spans stay as they are. */
+function groupSegments(segments: AnswerSegment[]): (InlineSegment[] | { type: 'unsupported'; children: InlineSegment[] })[] {
+  const groups: (InlineSegment[] | { type: 'unsupported'; children: InlineSegment[] })[] = [];
+  for (const segment of segments) {
+    if (segment.type === 'unsupported') groups.push(segment);
+    else {
+      const last = groups[groups.length - 1];
+      if (Array.isArray(last)) last.push(segment);
+      else groups.push([segment]);
+    }
+  }
+  return groups;
+}
+
 function Steps({ steps }: { steps: { name: string; state: 'active' | 'done' }[] }) {
   if (steps.length === 0) return null;
   return (
@@ -229,7 +282,6 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
   const fragments = useQuoteFragments(turn.citations, turn.finished && !turn.error);
   const segments = showText ? answerSegments(turn.text, turn.citations, turn.unsupported, fragments) : [];
   const numbers = sourceNumbers(turn.text, turn.citations);
-  const inline = (segment: InlineSegment, key: number) => renderInline(segment, key, numbers);
   return (
     <li className="ask-turn" data-restored={turn.restored ? '' : undefined}>
       <p className="ask-question"><span className="assistant-sr">You asked: </span>{turn.question}</p>
@@ -237,12 +289,12 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
         <AiLabel>AI answer</AiLabel>
         {segments.length > 0 && (
           <p className="ask-answer-text">
-            {segments.map((segment, index) => (
-              segment.type === 'unsupported'
-                ? <mark key={index} className="ask-unsupported" title="Not found in the project pages">
-                  {segment.children.map(inline)}
+            {groupSegments(segments).map((group, index) => (
+              Array.isArray(group)
+                ? <Fragment key={index}>{renderInlines(group, numbers)}</Fragment>
+                : <mark key={index} className="ask-unsupported" title="Not found in the project pages">
+                  {renderInlines(group.children, numbers)}
                 </mark>
-                : inline(segment, index)
             ))}
             {turn.incomplete && turn.text && <span className="ask-incomplete"> (incomplete)</span>}
           </p>

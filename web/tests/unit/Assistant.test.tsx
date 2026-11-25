@@ -293,6 +293,32 @@ describe('Assistant answers', () => {
     expect(fetchMock.mock.calls.find(([url]) => url === '/api/feedback')?.[1]).toMatchObject({ body: JSON.stringify({ turn_id: 'turn-1' }) });
   });
 
+  it('keeps source boxes and the punctuation right after them on one line', async () => {
+    const citations = [
+      { n: 1, url: '/projects/roleradar#a', heading: 'A', quotes: [] },
+      { n: 2, url: '/projects/roleradar#b', heading: 'B', quotes: [] },
+    ];
+    const text = 'Code decides the tier [1][2]. It reads ads [2], then stops [1] here. Wrong [1].';
+    mockEndpoints({ ask: async () => eventResponse([
+      ['meta', { conversation_id: 'c', turn_id: 't' }],
+      ['answer', { text, citations }],
+      ['check', { passed: false, unsupported: ['Wrong [1].'], reason: 'unsupported' }],
+      ['done', {}],
+    ]) });
+    renderAssistant();
+    await submit('Question?');
+    await screen.findByRole('button', { name: 'This answer is wrong' });
+    const paragraph = document.querySelector('.ask-answer-text')!;
+    expect(paragraph.textContent).toBe('Code decides the tier 12. It reads ads 2, then stops 1 here. Wrong 1.');
+    const runs = [...paragraph.querySelectorAll('.ask-cite-run')];
+    expect(runs.map((run) => run.textContent)).toEqual(['12.', '2,', '1.']);
+    expect(runs[0]!.querySelectorAll('a.ask-cite')).toHaveLength(2);
+    expect(runs[2]!.closest('mark.ask-unsupported')).not.toBeNull();
+    // A box followed by a word, not punctuation, is not wrapped.
+    const loose = [...paragraph.querySelectorAll('a.ask-cite')].filter((link) => !link.closest('.ask-cite-run'));
+    expect(loose.map((link) => link.textContent)).toEqual(['1']);
+  });
+
   it('marks unsupported sentences and shows no Checked line after a failed check', async () => {
     mockEndpoints({ ask: async () => eventResponse([
       ['meta', { conversation_id: 'c', turn_id: 't' }],
