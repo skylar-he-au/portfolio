@@ -132,7 +132,7 @@ const cotNotes: Record<string, string> = {
 
   {qa.length === 0 && cot.length === 0 && match.length === 0 && <p>No eval runs published yet.</p>}
 
-  {qa.map((run) => (
+  {qa.map((run, runIndex) => (
     <section>
       <h2>{run.date || '–'} · prompt {run.prompt_version ?? '–'}</h2>
       <p class="meta">
@@ -141,9 +141,9 @@ const cotNotes: Record<string, string> = {
         Answer model: {run.models.answer ?? '–'} / Check model: {run.models.check ?? '–'}
         {run.models.embed && <> / Embedding model: {run.models.embed}</>}
       </p>
+      <p class="table-caption" id={`caption-qa-${runIndex}`}>{qaScoresCaption(run)}</p>
       <div class="table-scroll" tabindex="0" role="region" aria-label={`RAGAS scores for ${run.date}, prompt ${run.prompt_version ?? '–'}`}>
-        <table>
-          <caption>{qaScoresCaption(run)}</caption>
+        <table aria-labelledby={`caption-qa-${runIndex}`}>
           <thead>
             <tr>
               <th scope="col">Questions</th>
@@ -214,7 +214,7 @@ const cotNotes: Record<string, string> = {
         </div>
       </dl>
       <p class="note">Code checks: every link was retrieved and found for its requirement, the output fits the schema, the guide is in the ad’s language, and no system prompt or planted text leaks into any streamed event.</p>
-      {match.map((run) => (
+      {match.map((run, runIndex) => (
         <article class="match-run">
           <h3>{run.date || '–'} · prompt {run.prompt_version ?? '–'}</h3>
           <p class="meta">
@@ -225,9 +225,9 @@ const cotNotes: Record<string, string> = {
             Judge: {matchJudgeLabel(run)}{run.grading_status === 'incomplete' && <> · grading incomplete, so not declared over the line</>}
           </p>
           <p class="note pass-lines">Pass lines: {matchPassLines()}.</p>
+          <p class="table-caption" id={`caption-match-${runIndex}`}>Mean and, for repeated passes, lowest–highest pass average.</p>
           <div class="table-scroll" tabindex="0" role="region" aria-label={`Job match scores for ${run.date}, prompt ${run.prompt_version ?? '–'}`}>
-            <table>
-              <caption>Mean and, for repeated passes, lowest–highest pass average.</caption>
+            <table aria-labelledby={`caption-match-${runIndex}`}>
               <thead>
                 <tr>
                   <th scope="col">Ads</th>
@@ -267,12 +267,12 @@ const cotNotes: Record<string, string> = {
         Cost per match is this step’s measured cost plus the other three steps’ current models; latency per match counts the slowest of the parallel match calls.
         “v4 prompt” is the stored run itself, regraded the same way. Graded by {SUBSCRIPTION_GRADER_LABEL}.
       </p>
-      {compare.steps.map((table) => (
+      {compare.steps.map((table, tableIndex) => (
         <article class="compare-step">
           <h3>{COMPARE_STEP_LABELS[table.step].step}</h3>
+          <p class="table-caption" id={`caption-compare-${tableIndex}`}>{COMPARE_STEP_LABELS[table.step].metric}, best first; the first row is the one chosen.</p>
           <div class="table-scroll" tabindex="0" role="region" aria-label={`Model comparison: ${COMPARE_STEP_LABELS[table.step].step}`}>
-            <table>
-              <caption>{COMPARE_STEP_LABELS[table.step].metric}, best first; the first row is the one chosen.</caption>
+            <table aria-labelledby={`caption-compare-${tableIndex}`}>
               <thead>
                 <tr>
                   <th scope="col">Option</th>
@@ -311,13 +311,13 @@ const cotNotes: Record<string, string> = {
     <section>
       <h2>Does reasoning first help the checker?</h2>
       <p>This compares whether letting a small model write its reasoning before the verdict helps it check whether each sentence is supported.</p>
-      {cot.map((run) => (
+      {cot.map((run, runIndex) => (
         <article class="cot-run">
           <h3>{run.date || '–'}</h3>
           <p class="meta">{run.model ?? '–'} · {run.sentences ?? '–'} sentences × {run.repeats ?? '–'} {run.repeats === 1 ? 'pass' : 'passes'}</p>
+          <p class="table-caption" id={`caption-cot-${runIndex}`}>Checker comparison: mean and, for repeated passes, lowest–highest pass average.</p>
           <div class="table-scroll" tabindex="0" role="region" aria-label={`Checker comparison for ${run.date}`}>
-            <table>
-              <caption>Checker comparison: mean and, for repeated passes, lowest–highest pass average.</caption>
+            <table aria-labelledby={`caption-cot-${runIndex}`}>
               <thead>
                 <tr>
                   <th scope="col">Approach</th>
@@ -423,7 +423,7 @@ const cotNotes: Record<string, string> = {
 
   .meta,
   .note,
-  caption {
+  .table-caption {
     color: var(--color-muted);
     font-size: var(--font-size-small);
   }
@@ -441,10 +441,21 @@ const cotNotes: Record<string, string> = {
     margin-block: var(--space-5);
   }
 
+  /* The caption sits above the scroll box, not inside the table, so on a narrow screen it wraps
+     to the page width and stays readable while the table scrolls sideways under it. */
+  .table-caption {
+    margin-block: var(--space-5) var(--space-3);
+  }
+
+  .table-caption + .table-scroll {
+    margin-block-start: var(--space-0);
+  }
+
   /* From 64rem the cards and score tables use the wide column, as #projects does on the home page,
      so every column shows without scrolling; narrower screens scroll inside the frame. */
   @media (min-width: 64rem) {
     .headline-cards,
+    .table-caption,
     .table-scroll {
       inline-size: var(--content-width-wide);
       max-inline-size: none;
@@ -460,11 +471,6 @@ const cotNotes: Record<string, string> = {
     overflow-wrap: normal;
     margin: var(--space-0);
     font-size: var(--font-size-small);
-  }
-
-  caption {
-    text-align: start;
-    padding-block-end: var(--space-3);
   }
 
   th,
