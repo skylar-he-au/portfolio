@@ -161,11 +161,16 @@ it('gives articles the project layout, contents, anchors, contact link and one a
     const sections = headings.map((heading) => {
       const anchor = heading.querySelector(':scope > a.anchor')!;
       expect(anchor?.getAttribute('href')).toBe(`#${heading.id}`);
-      expect(anchor?.getAttribute('aria-label')).toBe('Link to this section');
       expect(heading.querySelectorAll('a.anchor')).toHaveLength(1);
       const copy = heading.cloneNode(true) as HTMLElement;
       copy.querySelector('a.anchor')!.remove();
-      return [`#${heading.id}`, copy.textContent!.trim()];
+      const words = copy.textContent!.trim();
+      // Browsing by headings reads only the words; the link is named after its section.
+      const title = document.getElementById(heading.getAttribute('aria-labelledby')!)!;
+      expect(title.parentElement).toBe(heading);
+      expect(title.textContent).toBe(words);
+      expect(anchor?.getAttribute('aria-label')).toBe(`Link to ${words.replace(/\s+/g, ' ')}`);
+      return [`#${heading.id}`, words];
     });
     for (const selector of ['.toc-side', '.toc-collapse']) {
       expect([...page.querySelectorAll(`${selector} ol > li > a`)].map((link) => [link.getAttribute('href'), link.textContent]))
@@ -251,6 +256,22 @@ it('renders the Evals heading, and run tables when summaries exist or the empty 
   }
   expect(document.querySelectorAll('script')).toHaveLength(0);
   expect(document.querySelector('footer a[href="/evals"]')?.textContent).toBe('Evals');
+});
+
+it('keeps each evals table caption above its scroll box, so it wraps instead of scrolling with the table', () => {
+  const document = readPage('/evals');
+  const tables = [...document.querySelectorAll('main table')];
+  expect(document.querySelectorAll('main caption')).toHaveLength(0);
+  const ids = tables.map((table) => table.getAttribute('aria-labelledby'));
+  expect(new Set(ids).size).toBe(tables.length);
+  for (const table of tables) {
+    const box = table.parentElement!;
+    expect(box.className).toBe('table-scroll');
+    const caption = document.getElementById(table.getAttribute('aria-labelledby')!)!;
+    expect(caption.className).toBe('table-caption');
+    expect(caption.nextElementSibling).toBe(box);
+    expect(caption.textContent!.trim().length).toBeGreaterThan(0);
+  }
 });
 
 it('shows headline scores from the greatest qualifying run ids with published versions and dates', () => {
@@ -513,8 +534,9 @@ describe.each(Object.entries(pages))('%s', (path, source) => {
       expect(anchors).toHaveLength(1);
       const anchor = anchors[0]!;
       expect(anchor.getAttribute('href')).toBe(`#${section.id}`);
-      expect(anchor.getAttribute('aria-label')).toBe('Link to this section');
+      expect(anchor.getAttribute('aria-label')).toBe(`Link to ${section.heading}`);
       expect(anchor.textContent).toBe('#');
+      expect(document.getElementById(heading.getAttribute('aria-labelledby')!)?.textContent).toBe(section.heading);
       const text = heading.cloneNode(true) as HTMLElement;
       text.querySelector('a.anchor')!.remove();
       expect(text.textContent?.trim()).toBe(section.heading);
