@@ -269,7 +269,7 @@ describe('Assistant answers', () => {
       });
       stream.emit('status', { node: 'check', state: 'start' });
     });
-    const chip = screen.getByRole('link', { name: 'Source 1: Architecture' });
+    const chip = screen.getByRole('link', { name: 'Source 1: RoleRadar · Architecture' });
     expect(chip).toHaveTextContent(/^1$/);
     expect(chip).toHaveClass('ask-cite');
     expect(chip).toHaveAttribute('href', '/projects/roleradar#x');
@@ -532,9 +532,9 @@ describe('Assistant fixes from the 9c1 check', () => {
     const chips = [...container.querySelectorAll('.ask-answer-text a.ask-cite')]
       .map((chip) => [chip.textContent, chip.getAttribute('href'), chip.getAttribute('aria-label')]);
     expect(chips).toEqual([
-      ['1', '/projects/roleradar#a', 'Source 1: Alpha'],
-      ['2', '/projects/roleradar#b', 'Source 2: Bravo'],
-      ['1', '/projects/roleradar#a', 'Source 1: Alpha'],
+      ['1', '/projects/roleradar#a', 'Source 1: RoleRadar · Alpha'],
+      ['2', '/projects/roleradar#b', 'Source 2: RoleRadar · Bravo'],
+      ['1', '/projects/roleradar#a', 'Source 1: RoleRadar · Alpha'],
     ]);
     const sources = [...container.querySelectorAll('.ask-sources li')].map((item) => [
       item.querySelector('.ask-source-n')!.textContent,
@@ -546,6 +546,29 @@ describe('Assistant fixes from the 9c1 check', () => {
       ['2', 'RoleRadar · Bravo', '/projects/roleradar#b'],
       ['3', 'About Skylar', '/about'],
     ]);
+  });
+
+  it('names each source box like its Sources line, page title included (10i)', async () => {
+    mockEndpoints({ ask: async () => eventResponse([
+      ['meta', { conversation_id: 'c', turn_id: 't' }],
+      ['answer', {
+        text: 'One [1], other [2], about [3].',
+        citations: [
+          { n: 1, url: '/projects/roleradar#in-30-seconds', heading: 'In 30 seconds' },
+          { n: 2, url: '/projects/careermate#in-30-seconds', heading: 'In 30 seconds' },
+          { n: 3, url: '/about', heading: 'About Skylar' },
+        ],
+      }],
+      ['check', { passed: true, unsupported: [], retried: false }],
+      ['done', {}],
+    ]) });
+    const { container } = renderAssistant({ pageTitles: { ...pageTitles, '/projects/careermate': 'CareerMate' } });
+    await submit('Which page?');
+    await screen.findByText('Sources');
+    const chips = [...container.querySelectorAll('.ask-answer-text a.ask-cite')].map((chip) => chip.getAttribute('aria-label'));
+    expect(chips).toEqual(['Source 1: RoleRadar · In 30 seconds', 'Source 2: CareerMate · In 30 seconds', 'Source 3: About Skylar']);
+    const lines = [...container.querySelectorAll('.ask-sources li a')].map((link, index) => `Source ${index + 1}: ${link.textContent}`);
+    expect(chips).toEqual(lines);
   });
 
   it('scrolls a new question or job match into view on the home page, gently unless motion is reduced', async () => {

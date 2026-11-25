@@ -148,12 +148,14 @@ function quotesAttribute(quotes: string[]): string | undefined {
   return quotes.length > 0 ? JSON.stringify(quotes) : undefined;
 }
 
-function renderInline(segment: InlineSegment, key: number, numbers: Map<number, number>) {
+/** A source box is named like its Sources line ("Source 1: RoleRadar · In 30 seconds"), so a
+ * screen reader can tell two pages' same-named sections apart (10i). */
+function renderInline(segment: InlineSegment, key: number, numbers: Map<number, number>, pageTitles: PageTitles) {
   if (segment.type !== 'link') return segment.text;
   const rank = Number(segment.text.replace(/[[\]]/g, ''));
   const n = numbers.get(rank) ?? rank;
   return (
-    <a key={key} className="ask-cite" href={segment.href} data-quotes={quotesAttribute(segment.quotes)} title={segment.title} aria-label={`Source ${n}: ${segment.title}`}>
+    <a key={key} className="ask-cite" href={segment.href} data-quotes={quotesAttribute(segment.quotes)} title={segment.title} aria-label={`Source ${n}: ${sourceLabel(segment.href, segment.title, pageTitles)}`}>
       {n}
     </a>
   );
@@ -167,7 +169,7 @@ const AFTER_CITE = /^[.,;:!?)\]…。，、；：！？）」』”’]+/u;
  * nowrap span: a box is an atomic inline, so the browser would otherwise put a line break
  * between it and the full stop (10v).
  */
-function renderInlines(segments: InlineSegment[], numbers: Map<number, number>): ReactNode[] {
+function renderInlines(segments: InlineSegment[], numbers: Map<number, number>, pageTitles: PageTitles): ReactNode[] {
   const out: ReactNode[] = [];
   let index = 0;
   while (index < segments.length) {
@@ -180,7 +182,7 @@ function renderInlines(segments: InlineSegment[], numbers: Map<number, number>):
     const start = index;
     const links: ReactNode[] = [];
     while (segments[index]?.type === 'link') {
-      links.push(renderInline(segments[index]!, index, numbers));
+      links.push(renderInline(segments[index]!, index, numbers, pageTitles));
       index += 1;
     }
     const next = segments[index];
@@ -291,9 +293,9 @@ function AnswerTurn({ turn, pageTitles, onFeedback }: {
           <p className="ask-answer-text">
             {groupSegments(segments).map((group, index) => (
               Array.isArray(group)
-                ? <Fragment key={index}>{renderInlines(group, numbers)}</Fragment>
+                ? <Fragment key={index}>{renderInlines(group, numbers, pageTitles)}</Fragment>
                 : <mark key={index} className="ask-unsupported" title="Not found in the project pages">
-                  {renderInlines(group.children, numbers)}
+                  {renderInlines(group.children, numbers, pageTitles)}
                 </mark>
             ))}
             {turn.incomplete && turn.text && <span className="ask-incomplete"> (incomplete)</span>}
