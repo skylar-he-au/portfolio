@@ -14,7 +14,7 @@
     "answer": "claude-haiku-5-5",
     "check": "gemini-3.5-flash-lite",
     "judge": "claude-sonnet-5-5 (subscription, GRADING.md)",
-    "embed": "text-embedding-3-small"
+    "embed": "text-embedding-3-small (Azure OpenAI)"
   },
   "ragas": {
     "tune": {
