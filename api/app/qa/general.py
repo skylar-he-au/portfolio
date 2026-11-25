@@ -52,8 +52,12 @@ _TELL = (
     r"|give|gives|show|shows|cover|covers|list|lists|include|includes|tell|tells|explain"
     r"|explains|provide|provides|contain|contains|name|names|break|breaks|specify"
     r"|specifies|detail|details|confirm|confirms|answer|answers|address|addresses"
-    r"|go into|goes into)"
+    r"|go into|goes into|define|defines|spell out|spells out|discuss|discusses|clarify"
+    r"|clarifies|outline|outlines|quantify|quantifies|touch on|touches on|elaborate on"
+    r"|elaborates on)"
 )
+# Not "report", "indicate", "offer" or "reference": OnCallOps pages have sections that do
+# those things themselves ("each section reports its own status", v11 oc-failure pass 3).
 _META_EN = re.compile(
     # "Section 6 says", "section 6 gives", "Section 1 and Section 3 describe"
     r"(?<![-\w])sections? \d+\b"

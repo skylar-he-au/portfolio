@@ -80,6 +80,22 @@ def test_talk_about_the_sections_is_meta():
             "The site's sections cover the number of company boards, not how many people use "
             "the app [6].",
         ),
+        # 10v, a live follow-up on the local site (2026-11-25), shown as checked: "define"
+        # was not one of the verbs. The words around it are made up.
+        (
+            "Plain code decides the tier [2]. It starts with hard gates, and the sections "
+            'don\'t define "hard gates" for me.',
+            'It starts with hard gates, and the sections don\'t define "hard gates" for me.',
+        ),
+        # made up: other "telling" verbs added with "define" (none of them in the runs)
+        (
+            "RoleRadar reads 332 boards [3]. The sections don't spell out the hosting bill.",
+            "The sections don't spell out the hosting bill.",
+        ),
+        (
+            "OnCallOps has role-based access [1]. The sections do not discuss audit logs.",
+            "The sections do not discuss audit logs.",
+        ),
         # made up: the Chinese rule (no Chinese answer in the runs has one)
         ("RoleRadar 用代码定档 [1]。这些段落没有提到用户数。", "这些段落没有提到用户数。"),
     ],
