@@ -79,6 +79,15 @@ function getWidget(): WidgetController {
     throw new VerificationError();
   }
   if (references === 0) throw new VerificationError();
+  // api.js did not load (offline at the first focus): start again with a fresh widget, which
+  // loads the script again, so asking works once the connection is back.
+  if (widget?.failed) {
+    widget.remove();
+    widget = null;
+    widgetExecuted = false;
+    container?.remove();
+    container = null;
+  }
   if (!widget) {
     container = document.createElement('div');
     container.hidden = true;

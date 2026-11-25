@@ -30,15 +30,18 @@ export interface WidgetController {
   execute: () => Promise<string>;
   reset: () => void;
   remove: () => void;
+  /** True once api.js failed to load: this widget can never run; make a new one. */
+  readonly failed: boolean;
 }
 
 let scriptPromise: Promise<Turnstile> | undefined;
 
 // Explicit rendering with an onload callback, as in Cloudflare's client-side rendering docs:
-// api.js calls `window[ONLOAD]` once `turnstile.render` can be used.
+// api.js calls `window[ONLOAD]` once `turnstile.render` can be used. A failed load (offline
+// on the first focus) is forgotten, so the next call adds the script again.
 export function loadTurnstile(): Promise<Turnstile> {
   if (!scriptPromise) {
-    scriptPromise = new Promise((resolve, reject) => {
+    const loading: Promise<Turnstile> = new Promise((resolve, reject) => {
       window[ONLOAD] = () => {
         delete window[ONLOAD];
         if (window.turnstile) resolve(window.turnstile);
@@ -49,9 +52,14 @@ export function loadTurnstile(): Promise<Turnstile> {
       script.async = true;
       script.addEventListener('error', () => {
         delete window[ONLOAD];
+        script.remove();
         reject(new Error('Turnstile failed to load'));
       }, { once: true });
       document.head.appendChild(script);
+    });
+    scriptPromise = loading;
+    loading.catch(() => {
+      if (scriptPromise === loading) scriptPromise = undefined;
     });
   }
   return scriptPromise;
@@ -61,6 +69,7 @@ export function renderWidget(container: HTMLElement, sitekey: string): WidgetCon
   let api: Turnstile | undefined;
   let widgetId: string | undefined;
   let removed = false;
+  let failed = false;
   let resetOnReady = false;
   let pending: { resolve: (token: string) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout> } | undefined;
   let resolveReady!: () => void;
@@ -95,9 +104,15 @@ export function renderWidget(container: HTMLElement, sitekey: string): WidgetCon
     });
     if (resetOnReady) loaded.reset(widgetId);
     resolveReady();
-  }).catch(rejectReady);
+  }).catch((error: unknown) => {
+    failed = true;
+    rejectReady(error);
+  });
 
   return {
+    get failed() {
+      return failed;
+    },
     execute() {
       if (removed) return Promise.reject(new Error('Turnstile was removed'));
       if (pending) return Promise.reject(new Error('Turnstile is already executing'));

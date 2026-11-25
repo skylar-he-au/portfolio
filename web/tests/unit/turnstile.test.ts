@@ -118,13 +118,28 @@ describe('Turnstile controller', () => {
     controller.remove();
   });
 
-  it('rejects script failure without adding another script', async () => {
+  it('rejects a script failure, then adds the script again on the next call (back online)', async () => {
     const loaded = turnstile.loadTurnstile();
     const rejected = expect(loaded).rejects.toThrow();
     turnstileScripts()[0].dispatchEvent(new Event('error'));
     await rejected;
-    await expect(turnstile.loadTurnstile()).rejects.toThrow();
+    expect(turnstileScripts()).toHaveLength(0);
+    const again = turnstile.loadTurnstile();
+    expect(turnstile.loadTurnstile()).toBe(again);
     expect(turnstileScripts()).toHaveLength(1);
+    widget.load();
+    await expect(again).resolves.toBe(widget.api);
+  });
+
+  it('marks a widget whose script failed as failed, and a loaded one as not', async () => {
+    const broken = startWidget();
+    turnstileScripts()[0].dispatchEvent(new Event('error'));
+    await expect(broken.execute()).rejects.toThrow();
+    expect(broken.failed).toBe(true);
+    const working = startWidget();
+    await loadScript();
+    expect(working.failed).toBe(false);
+    expect(await working.execute()).toBe('turnstile-token');
   });
 
   it('cancels a pending execution on remove and ignores a late script load', async () => {

@@ -104,6 +104,23 @@ describe('shared session creation', () => {
     expect(session.getToken()).toBeNull();
   });
 
+  it('replaces a widget whose script failed to load, so a session works once back online', async () => {
+    widget.holdLoad();
+    session.prepareWidget();
+    turnstileScripts()[0]!.dispatchEvent(new Event('error'));
+    const signal = new AbortController().signal;
+    await expect(session.createSession(signal)).rejects.toBeInstanceOf(session.VerificationError);
+    expect(widget.api.render).not.toHaveBeenCalled();
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(valid()), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const created = session.createSession(signal);
+    await vi.waitFor(() => expect(turnstileScripts()).toHaveLength(1));
+    widget.load();
+    await expect(created).resolves.toBe('stored-token');
+    expect(widget.api.render).toHaveBeenCalledOnce();
+    expect(document.querySelectorAll('body > div[hidden]')).toHaveLength(1);
+  });
+
   it('releases idempotently and creates a fresh hidden widget after the last release', async () => {
     session.prepareWidget();
     await vi.waitFor(() => expect(widget.api.render).toHaveBeenCalledOnce());
