@@ -120,6 +120,10 @@
     "failed": 0
   },
   "cost_usd": 0.20657,
+  "cost_pools_usd": {
+    "real": 0.110908,
+    "credit": 0.095662
+  },
   "grader": "claude-sonnet-5-5 (subscription, GRADING.md)",
   "grading": {
     "status": "complete",
