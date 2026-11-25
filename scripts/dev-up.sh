@@ -31,6 +31,24 @@ case "${1:-}" in
     ;;
   *)
     DOCKER_CONFIG="$docker_config" docker compose up --build -d "$@"
+    # web installs its packages (npm ci) only when its container starts, and `up` leaves a
+    # running container alone when its compose config did not change; so a pull that changed
+    # web's dependencies left the old packages in place (a page 500 on a missing package).
+    # Restart web when web/package.json or package-lock.json is newer than its start.
+    web_id=$(DOCKER_CONFIG="$docker_config" docker compose ps -q web)
+    if [[ -n "$web_id" ]]; then
+      started=$(docker inspect -f '{{.State.StartedAt}}' "$web_id")
+      started_s=$(date -u -d "$started" +%s 2>/dev/null \
+        || date -j -u -f '%Y-%m-%dT%H:%M:%S' "${started%%.*}" +%s)
+      for file in web/package.json web/package-lock.json; do
+        changed_s=$(stat -c %Y "$file" 2>/dev/null || stat -f %m "$file")
+        if (( changed_s > started_s )); then
+          printf '%s\n' "$file changed after web started: restarting web (it runs npm ci, about a minute)"
+          DOCKER_CONFIG="$docker_config" docker compose restart web
+          break
+        fi
+      done
+    fi
     printf 'Web: http://localhost:%s | API: http://localhost:%s/api/ping\n' "${WEB_PORT:-4321}" "${API_PORT:-8000}"
     printf '%s\n' 'Stop the app with: ./scripts/dev-up.sh --down (db keeps running); everything: --down-all'
     ;;
