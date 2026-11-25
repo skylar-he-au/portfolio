@@ -18,12 +18,19 @@ from typing import Literal
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables import RunnableConfig, ensure_config
+from langchain_core.runnables.config import merge_configs
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.constants import TAG_NOSTREAM
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.guard.usage import estimate_input_tokens, metered, raise_if_budget_exhausted
+from app.guard.usage import (
+    Metered,
+    estimate_input_tokens,
+    metered,
+    raise_if_budget_exhausted,
+)
 from app.qa.output import message_text
 from app.rag.types import ModelsUnavailable
 
@@ -125,7 +132,7 @@ async def structured[T: BaseModel](
                 async with asyncio.timeout(deadline_s):
                     chat = provider.chat.with_structured_output(schema)
                     if meter.callbacks:
-                        raw = await chat.ainvoke(messages, config={"callbacks": meter.callbacks})
+                        raw = await chat.ainvoke(messages, config=_call_config(meter))
                     else:
                         raw = await chat.ainvoke(messages)
             if raw is None:
@@ -137,6 +144,14 @@ async def structured[T: BaseModel](
             _log_failure(node, provider, error)
             last = error
     raise ModelsUnavailable(f"{node}: every provider failed") from last
+
+
+def _call_config(meter: Metered) -> RunnableConfig:
+    """The call's config: the meter's usage callback added to the callbacks the call would
+    inherit anyway, not in their place. Inside the graph those include LangGraph's handler
+    for the `messages` stream; a bare `{"callbacks": [...]}` replaced it, so with a spending
+    scope (production) the answer reached the page in one piece after the check."""
+    return merge_configs(ensure_config(), {"callbacks": meter.callbacks})
 
 
 async def stream_text(
@@ -168,7 +183,7 @@ async def stream_text(
             ) as meter:
                 async with asyncio.timeout(deadline_s):
                     stream = (
-                        chat.astream(messages, config={"callbacks": meter.callbacks})
+                        chat.astream(messages, config=_call_config(meter))
                         if meter.callbacks
                         else chat.astream(messages)
                     )

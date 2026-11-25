@@ -31,6 +31,7 @@ from test_retention import rows
 from app.api.ask import AskService
 from app.db import Database, make_pool
 from app.guard.ledger import AIPaused, Ledger, ProviderBudgetExhausted, current_scope
+from app.guard.usage import UsageRecorder
 from app.guard.limits import SYDNEY, Admission
 from app.guard.session import REJECTIONS, Rejected
 from app.main import create_app
@@ -236,6 +237,58 @@ async def test_question_records_and_settlement_after_every_outcome(db_url, outco
         await Conversations(db).release(meta["conversation_id"], next_owner)
     finally:
         finish_settle.set()
+        await service.wait_idle()
+        await service.close()
+        await db.close()
+
+
+async def test_metered_answer_still_streams_tokens(db_url, monkeypatch):
+    """With a spending scope (production) the answer still streams token by token and every
+    model call still reaches the usage recorder (the meter used to replace LangGraph's
+    stream handler, so the page got the whole answer at once after the check)."""
+    migrate(db_url)
+    recorded: list[object] = []
+    original = UsageRecorder.on_llm_end
+
+    def spy(self, response, **kwargs):
+        recorded.append(response)
+        return original(self, response, **kwargs)
+
+    monkeypatch.setattr(UsageRecorder, "on_llm_end", spy)
+    db = Database(make_pool(db_url))
+    ledger = Ledger(db, limits(), MAX_OUTPUT_TOKENS)
+    checkpoints = Checkpoints(make_checkpoint_pool(db_url))
+    models = Models(*general_turn())
+    deps = make_deps(models, FakeRetriever([MATCH]))
+    deps = replace(deps, gemini=ChatProvider("google", "gemini-3.5-flash-lite", models.gemini))
+    service = AskService(
+        Conversations(db),
+        checkpoints,
+        lambda: deps,
+        records=Records(db, checkpoints),
+        ledger=ledger,
+    )
+    turn_id = uuid.uuid4()
+    admission = Admission("ask", b"secret-token", b"daily-ip-hash", datetime.now(UTC).date())
+    scope = await service.reserve(turn_id)
+    assert scope is not None
+    try:
+        events = [
+            event
+            async for event in service.stream(
+                EXAMPLE_Q, None, admission, scope=scope, turn_id=turn_id
+            )
+        ]
+        tokens = [data["text"] for name, data in events if name == "token"]
+        assert len(tokens) > 1
+        assert "".join(tokens) == GOOD_ANSWER
+        assert events[-1] == ("done", {})
+        calls = len(models.claude.calls) + len(models.gemini.calls)
+        assert calls >= 3  # rewrite, answer, check
+        assert len(recorded) == calls
+        await service.wait_idle()
+        assert scope.settled
+    finally:
         await service.wait_idle()
         await service.close()
         await db.close()
