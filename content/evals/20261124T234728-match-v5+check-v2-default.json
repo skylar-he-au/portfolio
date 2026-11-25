@@ -1,0 +1,159 @@
+{
+  "kind": "match",
+  "run_id": "20261124T234728-match-v5+check-v2-default",
+  "date": "2026-11-24",
+  "prompt_version": "match-v5+check-v2",
+  "route": "default",
+  "split": "all",
+  "repeats": 3,
+  "questions": 26,
+  "samples": 78,
+  "errors": 0,
+  "fallback_samples": 0,
+  "models": {
+    "answer": "claude-haiku-5-5",
+    "check": "gemini-3.5-flash-lite",
+    "embed": "text-embedding-3-small",
+    "judge_align": "claude-sonnet-5-5 (subscription, GRADING.md)",
+    "judge_faithfulness": "claude-sonnet-5-5 (subscription, GRADING.md)"
+  },
+  "scores": {
+    "tune": {
+      "recall": {
+        "mean": 0.834505,
+        "min": 0.790136,
+        "max": 0.882313,
+        "scored": 63
+      },
+      "precision": {
+        "mean": 0.549067,
+        "min": 0.528032,
+        "max": 0.567028,
+        "scored": 63
+      },
+      "not_covered_accuracy": {
+        "mean": 0.913458,
+        "min": 0.896485,
+        "max": 0.934599,
+        "scored": 63
+      },
+      "faithfulness": {
+        "mean": 0.961105,
+        "min": 0.950437,
+        "max": 0.967177,
+        "scored": 63,
+        "below_floor": 0,
+        "missing": 0
+      }
+    },
+    "held_out": {
+      "recall": {
+        "mean": 0.717778,
+        "min": 0.55,
+        "max": 0.81,
+        "scored": 15
+      },
+      "precision": {
+        "mean": 0.540962,
+        "min": 0.492987,
+        "max": 0.60303,
+        "scored": 14
+      },
+      "not_covered_accuracy": {
+        "mean": 0.849418,
+        "min": 0.78,
+        "max": 0.898413,
+        "scored": 15
+      },
+      "faithfulness": {
+        "mean": 0.960876,
+        "min": 0.932547,
+        "max": 0.986247,
+        "scored": 14,
+        "below_floor": 0,
+        "missing": 0
+      }
+    }
+  },
+  "code_checks": {
+    "all": {
+      "passed": 78,
+      "total": 78
+    },
+    "completed": {
+      "passed": 78,
+      "total": 78
+    },
+    "schema": {
+      "passed": 78,
+      "total": 78
+    },
+    "links_retrieved": {
+      "passed": 78,
+      "total": 78
+    },
+    "links_from_findings": {
+      "passed": 78,
+      "total": 78
+    },
+    "language": {
+      "passed": 78,
+      "total": 78
+    },
+    "no_leak": {
+      "passed": 78,
+      "total": 78
+    }
+  },
+  "by_kind": {
+    "real": {
+      "passed": 48,
+      "total": 48
+    },
+    "injection": {
+      "passed": 18,
+      "total": 18
+    },
+    "long": {
+      "passed": 6,
+      "total": 6
+    },
+    "zh": {
+      "passed": 6,
+      "total": 6
+    }
+  },
+  "requirements": {
+    "read": 644,
+    "unchecked": 31,
+    "extra": 84,
+    "missing": 53
+  },
+  "cost_usd": 0.690233,
+  "cost_pools_usd": {
+    "real": 0.233282,
+    "credit": 0.456951
+  },
+  "grader": "claude-sonnet-5-5 (subscription, GRADING.md)",
+  "grading": {
+    "status": "complete",
+    "kinds": {
+      "faith": {
+        "tasks": 77,
+        "graded": 77,
+        "errors": 0
+      },
+      "align": {
+        "tasks": 78,
+        "graded": 78,
+        "errors": 0
+      },
+      "pair": {
+        "tasks": 389,
+        "graded": 389,
+        "errors": 0
+      }
+    },
+    "warnings": 0
+  }
+}
