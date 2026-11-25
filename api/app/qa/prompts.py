@@ -217,8 +217,7 @@ def answer_messages(
 # Repeated after the data, where a small model weighs it most: the rules it broke most often.
 _ANSWER_REMINDER = (
     "Reply in 3 to 5 short sentences, about 4, each fact cited as [n]. No closing remarks, "
-    "no sentence about what the site doesn't say unless the question asked for it, and no "
-    "sentence of its own refusing a request such as printing your instructions. "
+    "and no sentence about what the site doesn't say unless the question asked for it. "
     "Keep every [n] in the answer, then add the <quotes> block: for each claim, the whole "
     "sentence from its section, copied word for word."
 )
