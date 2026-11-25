@@ -31,6 +31,7 @@ graded is a grading error, never a 0; one error marks the run "incomplete".
 """
 
 import argparse
+import csv
 import hashlib
 import json
 import re
@@ -52,6 +53,7 @@ from evals.grading import (
     run_started,
     write_tasks,
 )
+from evals.pricing import POOLS
 from evals.types import METRICS
 
 QA_KINDS = ("qa_faith", "qa_recall")
@@ -267,6 +269,36 @@ def _run_date(run_id: str) -> str:
         return datetime.now(UTC).date().isoformat()
 
 
+class LedgerMismatch(ValueError):
+    """The ledger's rows for a run do not add up to what the run's rows say it cost."""
+
+
+def ledger_pools(path: Path, run_id: str, rows_total: float) -> dict[str, float]:
+    """What each spending pool paid for `run_id`, from the run's ledger (`evals.cost`
+    writes one line per question, repeat and pool). The run rows only keep the total, so
+    the summary's `cost_pools_usd` comes from here; the two must agree within US$0.000001
+    (the summary's rounding), else the ledger is not this run's."""
+    pools = dict.fromkeys(POOLS, 0.0)
+    found = False
+    with path.open(newline="", encoding="utf-8") as ledger:
+        for line in csv.DictReader(ledger):
+            if line.get("run_id") != run_id:
+                continue
+            pool = line.get("pool")
+            if pool not in pools:
+                raise LedgerMismatch(f"{path}: unknown pool {pool!r} for {run_id}")
+            pools[pool] += float(line["cost_usd"])
+            found = True
+    if not found:
+        raise LedgerMismatch(f"{path}: no lines for {run_id}")
+    if abs(sum(pools.values()) - rows_total) > 1e-6:
+        raise LedgerMismatch(
+            f"{path}: {run_id} costs {sum(pools.values()):.6f} in the ledger, "
+            f"{rows_total:.6f} in the run rows"
+        )
+    return pools
+
+
 def _score(args: argparse.Namespace) -> int:
     from evals.run import load_questions
     from evals.summary import build_summary, write_summary
@@ -275,6 +307,13 @@ def _score(args: argparse.Namespace) -> int:
     run_id = str(rows[0]["run_id"])
     meta_path = args.run.with_suffix(".meta.json")
     meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    pools = None
+    if args.ledger is not None:
+        try:
+            pools = ledger_pools(args.ledger, run_id, sum(float(r["cost_usd"]) for r in rows))
+        except (OSError, LedgerMismatch) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
     questions = load_questions(args.question_set)
     directory = args.grading_dir
     grades = load_qa_grades(directory)
@@ -301,6 +340,7 @@ def _score(args: argparse.Namespace) -> int:
         models={"judge": grader, "embed": args.embed_model},
         grader=grader,
         grading=grading_block(grades),
+        cost_pools=pools,
     )
     out = write_summary(summary, args.summary_out or directory)
     print(json.dumps({"status": grades.status, "summary": str(out), **grades.counts()}))
@@ -325,6 +365,10 @@ def _parser() -> argparse.ArgumentParser:
     score.add_argument("--summary-out", type=Path, help="default: the grading directory")
     score.add_argument("--prompt-version")
     score.add_argument("--embed-model", help="the run's embedding model, for the summary")
+    score.add_argument(
+        "--ledger", type=Path,
+        help="the run's spend ledger: adds cost_pools_usd (real money, credit) to the summary",
+    )  # fmt: skip
     return parser
 
 

@@ -371,3 +371,51 @@ def test_cli_export_refuses_a_set_that_does_not_match(
     assert main(args) == 1
     assert "other turns" in capsys.readouterr().err
     assert not (tmp_path / "g").exists()
+
+
+def test_cli_score_with_ledger_adds_cost_pools(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, question_set = write_run(tmp_path)
+    out = tmp_path / "grading"
+    assert main(["export", "--run", str(run), "--set", str(question_set), "--out", str(out)]) == 0
+    directory = out / RUN
+    tasks = [json.loads(line) for line in (directory / "tasks.jsonl").read_text().splitlines()]
+    (directory / "grades.jsonl").write_text("".join(g + "\n" for g in all_grades(tasks)))
+    rows_total = sum(json.loads(line)["cost_usd"] for line in run.read_text().splitlines())
+    ledger = tmp_path / "spend.csv"
+    header = "run_id,question_id,repeat,pool,cost_usd,at\n"
+    at = "2026-11-25T00:00:00+00:00"
+    ledger.write_text(
+        header
+        + f"{RUN},kite-db,1,real,{rows_total * 0.75!r},{at}\n"
+        + f"{RUN},kite-db,1,credit,{rows_total * 0.25!r},{at}\n"
+        + f"20261118T000000-v8-default,kite-db,1,real,5.0,{at}\n"  # another run: ignored
+    )
+    score = ["score", "--run", str(run), "--set", str(question_set),
+             "--grading-dir", str(directory)]  # fmt: skip
+
+    assert main(score) == 0  # without --ledger: the total only, as before
+    summary = json.loads((directory / f"{RUN}.json").read_text())
+    assert "cost_pools_usd" not in summary
+
+    assert main([*score, "--ledger", str(ledger)]) == 0
+    summary = json.loads((directory / f"{RUN}.json").read_text())
+    assert summary["cost_usd"] == round(rows_total, 6)
+    assert summary["cost_pools_usd"] == {
+        "real": round(rows_total * 0.75, 6),
+        "credit": round(rows_total * 0.25, 6),
+    }
+    capsys.readouterr()
+
+    # a ledger that does not add up to the rows, or has no lines for the run, is refused
+    # and nothing is rewritten
+    before = (directory / f"{RUN}.json").read_text()
+    ledger.write_text(header + f"{RUN},kite-db,1,real,{rows_total + 0.01!r},{at}\n")
+    assert main([*score, "--ledger", str(ledger)]) == 2
+    assert "in the run rows" in capsys.readouterr().err
+    ledger.write_text(header + f"20261118T000000-v8-default,kite-db,1,real,1.0,{at}\n")
+    assert main([*score, "--ledger", str(ledger)]) == 2
+    assert "no lines for" in capsys.readouterr().err
+    assert main([*score, "--ledger", str(tmp_path / "missing.csv")]) == 2
+    assert (directory / f"{RUN}.json").read_text() == before
