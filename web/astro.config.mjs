@@ -7,6 +7,8 @@ import sitemap from '@astrojs/sitemap';
 import { bundledThemes } from 'shiki/themes';
 
 import { withoutTrailingSlash } from './src/lib/og.ts';
+import { satteri } from '@astrojs/markdown-satteri';
+import { tableScroll } from './src/lib/table-scroll.ts';
 
 // Code blocks sit on the site's --color-code-background (#edf1f4 light, #1e252e dark), so the
 // themes are checked against those (tests/unit/code-theme.test.ts, WCAG AA 4.5:1). GitHub's
@@ -32,6 +34,9 @@ export default defineConfig({
     serialize: (item) => ({ ...item, url: withoutTrailingSlash(item.url) }),
   })],
   markdown: {
+    // Astro's default processor (Sätteri) plus one hast plugin: each table in a focusable,
+    // named box that scrolls sideways when the table is wide.
+    processor: satteri({ hastPlugins: [tableScroll] }),
     shikiConfig: {
       themes: codeThemes,
       // Each token gets color: light-dark(light, dark); tokens.css sets color-scheme per mode.
