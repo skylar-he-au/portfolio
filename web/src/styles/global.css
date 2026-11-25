@@ -262,10 +262,14 @@ pre code {
   background: var(--color-clear);
 }
 
+/* A wide table scrolls sideways instead of breaking words: `main` lets long links break
+   anywhere, which inside a cell turned "final" into "fina / l" and "US$0.226" into two
+   lines (10v). Cells break only between words. */
 table {
   display: block;
   max-inline-size: var(--size-full);
   overflow-x: auto;
+  overflow-wrap: normal;
   border-collapse: collapse;
   margin-block: var(--space-5);
   font-size: var(--font-size-small);
