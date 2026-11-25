@@ -23,6 +23,7 @@ import {
   MATCH_SCORE_LABELS,
   matchPassLines,
   METRIC_LABELS,
+  newestFullQaRun,
   parseEvalFiles,
   pickHeadlineCards,
   type CheckName,
@@ -32,6 +33,7 @@ import compareStep6R2 from '../../../content/evals/compare/step6-r2.json';
 const files = import.meta.glob('../../../content/evals/*.json', { eager: true, import: 'default' });
 const { qa, cot, match } = parseEvalFiles(Object.values(files));
 const headlineCards = pickHeadlineCards(Object.values(files));
+const newestFull = newestFullQaRun(qa);
 const compare = parseCompare(compareStep6R2);
 const judges = [...new Set(qa.map((run) => run.models.judge)
   .filter((judge): judge is string => !!judge && judge !== SUBSCRIPTION_GRADER))];
@@ -42,6 +44,8 @@ const checkNames = Object.keys(CHECK_LABELS) as CheckName[];
 // Notes that explain one published CoT run's numbers, keyed by run_id.
 // Notes that explain one published job-match run's numbers, keyed by run_id.
 const matchNotes: Record<string, string> = {
+  '20261124T234728-match-v5+check-v2-default':
+    'Embeddings moved from OpenAI to Azure OpenAI (same model); prompts and step models are unchanged. Every line passed on the tuning ads, averaged over three passes; one pass alone fell under on section recall and not-covered accuracy. Held-out ads are reported only: section recall 0.72, not-covered accuracy 0.85 (0.91 in the previous run), Faithfulness 0.96.',
   '20261119T104825-match-v5+check-v2-final':
     'Every line passed on the tuning ads, which are the ones the pass lines apply to: section recall 0.83, not-covered accuracy 0.91, Faithfulness 0.97 with no row below 0.7, and all code checks. The held-out ads are reported only: section recall 0.73 (0.52–0.87 across passes) stays under 0.8, not-covered accuracy 0.91, Faithfulness 0.96. Each step now has its own model, chosen in the comparison below: Claude Haiku 5.5 with thinking off reads up to 12 requirements (8 before), matches and writes; Gemini 3.5 Flash-Lite with minimal thinking checks. No backup model was used. Faithfulness here comes from the subscription grader, which scores higher than RAGAS on the same guides, so it is not comparable with the runs below. The three passes ran as three runs and are averaged here.',
   '20261119T030433-match-v4-default':
@@ -102,13 +106,18 @@ const cotNotes: Record<string, string> = {
     </p>
     <p class="note">
       Prompt v8 only changed the code fallback for private answers; general answers are the same as in v7.
-      It was checked on the 8 private questions × 3 passes and the full-time question 10 times, not with a full final run, so the newest full results below are v7.
+      It was checked on the 8 private questions × 3 passes and the full-time question 10 times, not with a full final run.
     </p>
     <p class="note">
       Prompt v9 only changed the output of the general answer check: it now gives its verdict without writing reasoning first, the approach that did best in the checker comparison below.
-      It was checked with one pass of the general tuning questions (code checks only) and one call to the backup checker, not with a full final run, so the newest full results are still v7.
+      It was checked with one pass of the general tuning questions (code checks only) and one call to the backup checker, not with a full final run.
       The next change to the prompts, chunking or content gets a full final run.
     </p>
+    {newestFull && (
+      <p class="note newest-full">
+        The newest full final run (every question, three passes) is prompt {newestFull.prompt_version ?? '–'}, {newestFull.date || '–'}.
+      </p>
+    )}
   </div>
 
   {qa.length === 0 && cot.length === 0 && match.length === 0 && <p>No eval runs published yet.</p>}
@@ -120,6 +129,7 @@ const cotNotes: Record<string, string> = {
         Route: {run.route ?? '–'} · Split: {run.split ?? '–'} · {run.questions ?? '–'} questions × {run.repeats ?? '–'} {run.repeats === 1 ? 'pass' : 'passes'} · {run.samples ?? '–'} samples
         <br />
         Answer model: {run.models.answer ?? '–'} / Check model: {run.models.check ?? '–'}
+        {run.models.embed && <> / Embedding model: {run.models.embed}</>}
       </p>
       <div class="table-scroll" tabindex="0" role="region" aria-label={`RAGAS scores for ${run.date}, prompt ${run.prompt_version ?? '–'}`}>
         <table>
@@ -199,7 +209,7 @@ const cotNotes: Record<string, string> = {
           <p class="meta">
             {run.questions ?? '–'} job ads × {run.repeats ?? '–'} {run.repeats === 1 ? 'pass' : 'passes'} · {run.samples ?? '–'} samples
             <br />
-            Models: {run.models.answer ?? '–'} (read, match, write) / {run.models.check ?? '–'} (check)
+            Models: {run.models.answer ?? '–'} (read, match, write) / {run.models.check ?? '–'} (check){run.models.embed && <> / {run.models.embed} (embeddings)</>}
             <br />
             Judge: {matchJudgeLabel(run)}{run.grading_status === 'incomplete' && <> · grading incomplete, so not declared over the line</>}
           </p>

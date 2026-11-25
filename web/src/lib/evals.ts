@@ -438,6 +438,15 @@ export interface HeadlineCard {
   note: string;
 }
 
+// A full final run: every question, the default route, at least three passes. The newest
+// is the one with the greatest run_id, so the intro never names a version by hand.
+export function newestFullQaRun(qa: QaRun[]): QaRun | undefined {
+  return qa
+    .filter((run) => run.route === 'default' && run.split === 'all' && (run.repeats ?? 0) >= 3)
+    .reduce<QaRun | undefined>((latest, run) =>
+      !latest || run.run_id > latest.run_id ? run : latest, undefined);
+}
+
 // Headline selection uses run_id alone, independently of the tables' date ordering.
 export function pickHeadlineCards(files: unknown[]): HeadlineCard[] {
   const { qa, match } = parseEvalFiles(files);

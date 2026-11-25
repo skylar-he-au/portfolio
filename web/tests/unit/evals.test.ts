@@ -30,6 +30,7 @@ import {
   MATCH_SCORE_LABELS,
   matchPassLines,
   METRIC_LABELS,
+  newestFullQaRun,
   parseEvalFiles,
   pickHeadlineCards,
 } from '../../src/lib/evals';
@@ -342,5 +343,27 @@ describe('model comparison table', () => {
     expect(formatMatchCost(0.00823)).toBe('$0.0082');
     expect(formatMatchCost(undefined)).toBe('–');
     expect(formatSeconds(9862)).toBe('9.9 s');
+  });
+});
+
+describe('newest full final run', () => {
+  const full = (run_id: string, extra: Record<string, unknown> = {}) =>
+    ({ ...threePasses, run_id, route: 'default', split: 'all', repeats: 3, ...extra });
+
+  it('picks the greatest run_id among default-route, all-question runs with three or more passes', () => {
+    const { qa } = parseEvalFiles([
+      full('20261118T031419-v7-default', { prompt_version: 'v7' }),
+      full('20261125T010000-v11-default', { prompt_version: 'v11' }),
+      full('20261126T010000-v12-gemini-answer', { route: 'gemini-answer' }),
+      full('20261126T020000-v12-default', { repeats: 1 }),
+      full('20261126T030000-v12-default', { split: 'tune' }),
+    ]);
+    expect(newestFullQaRun(qa)?.prompt_version).toBe('v11');
+  });
+
+  it('returns nothing when no run is a full final run', () => {
+    const { qa } = parseEvalFiles([full('20261126T020000-v12-default', { repeats: 1 })]);
+    expect(newestFullQaRun(qa)).toBeUndefined();
+    expect(newestFullQaRun([])).toBeUndefined();
   });
 });
