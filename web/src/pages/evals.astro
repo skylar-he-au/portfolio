@@ -55,8 +55,10 @@ const matchNotes: Record<string, string> = {
 };
 // Notes that explain one published Q&A run's numbers, keyed by run_id.
 const qaNotes: Record<string, string> = {
+  '20261125T031802-v12-default':
+    'Prompt v12 labels each retrieved section with the kind of page it comes from (project page, blog post, About page). Code now keeps answers apart: a question that names a project is searched again without blog posts when they were mixed in, and a private answer that settles full-time work, visas or hours where the About page does not, or that talks about the page instead of answering, is replaced by the fixed reply before the check. Every line passed. One format miss over three passes: an answer rewrote itself mid-reply. Quoted sentences found 0.94.',
   '20261125T004625-v11-default':
-    'Prompt v11 changes two rules of v10: a refusal is at most a short clause at the start of the first sentence, never a sentence of its own after the answer; and a private answer keeps the About page’s wording, with no remark of its own about what the page leaves out. Every code check passed in all three passes, including the two v10 missed, and the full-time question got the fixed reply all 10 times. Quoted sentences found 0.93, a little under v10’s 0.95.',
+    'Prompt v11 changes two rules of v10: a refusal is at most a short clause at the start of the first sentence, never a sentence of its own after the answer; and a private answer keeps the About page’s wording, with no remark of its own about what the page leaves out. Every code check passed in all three passes, including the two v10 missed, and the full-time question got the fixed reply all 10 times. Quoted sentences found 0.93, a little under v10’s 0.95. Replaced by v12.',
   '20261124T234450-v10-default':
     'Code checks missed twice, both in pass 2 and both format checks: an answerable private question (work rights) was replaced by the fixed reply, and one injection answer ran to six sentences. That failed the line in use at the time (every check 100%); under the line in use from 25 November 2026 (format checks at most 2 misses over three passes) it passes. Replaced by v11.',
 };
