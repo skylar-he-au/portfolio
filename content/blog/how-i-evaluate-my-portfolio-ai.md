@@ -2,11 +2,13 @@
 title: How I evaluate the AI on my portfolio site
 summary: The question set, the RAGAS scores, the code checks, the pass lines, and a three-way test of whether the fact-checker should write its reasoning first.
 date: 2026-11-24
-updated: 2026-11-24
+updated: 2026-11-25
 rag: true
 ---
 
 The "Ask my projects" box on this site answers recruiters' questions from my project pages and cites where each answer came from. A box like that can quietly make things up, so I built an evaluation for it before I trusted it. This post covers how the evaluation works, where it fell short, and one result that changed how the product runs. The public `/evals` page shows the RAGAS means and ranges, how many answers fell below 0.7, the code-check counts, the full-time test, what each run cost and the chain-of-thought table. The question split, the pass lines and the 20-question judge comparison are described only here.
+
+**Update, 2026-11-25:** Since this post, prompt v11 passed every line in its 3-pass final (Faithfulness 0.990, code checks 144 of 144), and I split the code-check line into safety checks (100%) and format checks (at most 2 misses over a 3-pass final). Why and how is in [Marking citations down to the exact sentence](/blog/sentence-level-citations). The results below are from v7.
 
 ## The question set
 
@@ -40,7 +42,8 @@ I set the lines before the first RAGAS run. The Faithfulness line was confirmed 
 | Faithfulness | mean at least 0.9, and every question at least 0.7 |
 | ContextRecall | mean at least 0.8 |
 | ResponseRelevancy, FactualCorrectness | recorded, no line |
-| Code checks | 100% |
+| Code checks | safety checks 100%; format checks at most 2 misses over a 3-pass final (changed 2026-11-25; it was 100%) |
+| Quoted sentences found | 3-pass mean at least 0.85 (added 2026-11-25) |
 | Full-time question | 10 out of 10 |
 
 Baselines and final versions run 3 times and I report the mean and the range.

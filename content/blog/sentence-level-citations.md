@@ -85,5 +85,3 @@ The first v11 attempts brought a new problem: 3 of 30 follow-up answers had only
 - Format checks (3 to 5 sentences, 1 to 3 for private answers, and a private question the About page can answer getting the fixed sentence instead) may miss at most 2 times over the 3-pass final, each written into the report.
 
 By that line v10 would also have passed, since both its misses were format ones. I changed the line after seeing the misses, so I am saying so here. It is also explained on the `/evals` page.
-
-Questions? Ask my projects above or email me
