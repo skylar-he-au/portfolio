@@ -8,20 +8,17 @@
  * heading above the table ("Table: How RoleRadar matches jobs"), numbered when one section has
  * several. The table itself keeps its own role.
  *
- * No import from `satteri`: the plugin is a plain object of the shape its docs give
- * (`before` hook, filtered `element` visitor), typed here by the few fields it uses.
+ * Only a type import from `satteri` (Astro's own dependency); at runtime the plugin is a plain
+ * object: a `before` hook and a filtered `element` visitor.
  */
+
+import type { HastPluginDefinition } from 'satteri';
 
 interface HastNodeLike {
   type: string;
   tagName?: string;
   value?: string;
   children?: readonly HastNodeLike[];
-}
-
-interface VisitorContext {
-  readonly data: Record<string, unknown>;
-  wrapNode(node: Readonly<HastNodeLike>, parentNode: HastNodeLike & { properties: Record<string, unknown> }): void;
 }
 
 const HEADING = /^h[1-6]$/;
@@ -61,15 +58,15 @@ export function tableLabels(headings: string[]): string[] {
   });
 }
 
-export const tableScroll = {
+export const tableScroll: HastPluginDefinition = {
   name: 'table-scroll',
-  before(root: Readonly<HastNodeLike>, ctx: VisitorContext) {
-    ctx.data[DATA_KEY] = tableLabels(tableHeadings(root));
+  before(root, ctx) {
+    (ctx.data as Record<string, unknown>)[DATA_KEY] = tableLabels(tableHeadings(root as HastNodeLike));
   },
   element: {
     filter: ['table'],
-    visit(node: Readonly<HastNodeLike>, ctx: VisitorContext) {
-      const labels = (ctx.data[DATA_KEY] ?? []) as string[];
+    visit(node, ctx) {
+      const labels = ((ctx.data as Record<string, unknown>)[DATA_KEY] ?? []) as string[];
       ctx.wrapNode(node, {
         type: 'element',
         tagName: 'div',

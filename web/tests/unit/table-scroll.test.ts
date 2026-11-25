@@ -4,7 +4,7 @@ import { tableLabels, tableScroll } from '../../src/lib/table-scroll';
 
 // The real Markdown processor Astro uses, with the plugin as astro.config.mjs registers it.
 function render(markdown: string): Document {
-  const { html } = markdownToHtml(markdown, { hastPlugins: [tableScroll as never], features: { gfm: true } } as never);
+  const { html } = markdownToHtml(markdown, { hastPlugins: [tableScroll], features: { gfm: true } } as never);
   return new DOMParser().parseFromString(`<main>${html}</main>`, 'text/html');
 }
 
@@ -34,7 +34,7 @@ describe('table-scroll (Sätteri hast plugin)', () => {
 
   it('leaves a page without tables as it was', () => {
     const markdown = '## A\n\nB and `c`.\n';
-    expect(markdownToHtml(markdown, { hastPlugins: [tableScroll as never] } as never).html).toBe(markdownToHtml(markdown).html);
+    expect(markdownToHtml(markdown, { hastPlugins: [tableScroll] } as never).html).toBe(markdownToHtml(markdown).html);
   });
 
   it('labels from heading texts', () => {
