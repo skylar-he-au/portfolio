@@ -94,7 +94,8 @@ export interface QaRun extends Run {
 }
 
 // api/evals/summary.py `quote_match`: sentences the answer quoted behind its sources, and how
-// many code found word for word in the cited section. A rate, recorded only (no pass line).
+// many code found word for word in the cited section. Pass line: a 3-pass final averages at
+// least 0.85 (SPEC "通过线"); one pass under it is only noted. The page states the line in text.
 export interface QuoteMatch {
   samples: number;
   given: number;
