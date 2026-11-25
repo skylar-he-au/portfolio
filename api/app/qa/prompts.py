@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.rag.types import RecalledTurn, Section
 
-PROMPT_VERSION = "v11"
+PROMPT_VERSION = "v12"
 
 # The one fixed sentence for a private question the About page can't answer. Defined here
 # because the private prompt quotes it; `graph` imports it (prompts must not import graph).
@@ -60,9 +60,29 @@ def _wrap(tag: str, marker: str, body: str, **attrs: str) -> str:
     return f"<{tag}-{marker}{attr_text}>\n{body}\n</{tag}-{marker}>"
 
 
+def page_kind(page: str) -> str:
+    """What kind of page a section is from, for the `kind` attribute (v12, 10s): with only a
+    path, the model once took a blog post's point about this site as a RoleRadar finding."""
+    if page.startswith("/projects/"):
+        return "project page"
+    if page.startswith("/blog/"):
+        return "blog post"
+    if page == "/about":
+        return "About page"
+    return "site page"
+
+
 def _sections_block(sections: Sequence[Section], marker: str) -> str:
     return "\n\n".join(
-        _wrap("section", marker, s.text.strip(), n=str(i), page=s.page, heading=s.heading)
+        _wrap(
+            "section",
+            marker,
+            s.text.strip(),
+            n=str(i),
+            page=s.page,
+            kind=page_kind(s.page),
+            heading=s.heading,
+        )
         for i, s in enumerate(sections, start=1)
     )
 
@@ -130,10 +150,17 @@ _ANSWER_SYSTEM = """\
 You answer a visitor's question about Skylar He's projects on Skylar's portfolio site. \
 Write as Skylar, in the first person.
 
-Use only the numbered sections below, taken from the site's project pages. {data_rule}
+Use only the numbered sections below, taken from the site's pages. {data_rule}
 
 Rules:
 - {language}
+- Each section's page and kind attributes say which page it comes from. A project page \
+is about that project only. A blog post is about what it says, usually how this portfolio \
+site and its assistant were built, not about a project unless the section names it. Keep \
+every fact with its own page: never present what one page says as true of a different \
+project, for example a blog post's point about this site as a RoleRadar finding. If a \
+sentence uses a section from a page other than the project asked about, name that page in \
+the sentence, for example "My blog post on evaluating this site says ...", or leave it out.
 - 3 to 5 sentences, about 4 is best, also for a short follow-up question. If the direct \
 answer is shorter, add closely related facts from the sections. If you have more than 5 \
 points, keep the 5 that answer the question most directly and leave the rest out.

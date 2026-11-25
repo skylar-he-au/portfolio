@@ -38,7 +38,9 @@ class QAState(TypedDict, total=False):
     answer_text: str  # final text; every [n] in it matches `citations`
     citations: list[dict[str, Any]]  # [{"n", "url", "heading"}]
     check: dict[str, Any] | None  # {"passed", "unsupported", "retried"}; None when not checked
-    private_check: dict[str, Any] | None  # {"enough_info", "unsupported"} of the private draft
+    # {"enough_info", "unsupported"} of the private draft; {"enough_info": None,
+    # "unsupported": [], "guard": <rule>} when code replaced it before the check (10s).
+    private_check: dict[str, Any] | None
 
     # Retry after a failed check (general questions, at most once).
     retried: bool

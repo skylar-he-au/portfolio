@@ -478,6 +478,66 @@ async def test_general_retry_that_passes():
     assert run.state["answer_text"] == GOOD_ANSWER
 
 
+# --- blog sections next to a named project (10s) ----------------------------------------
+
+POST = Section(
+    "/blog/how-i-evaluate-my-portfolio-ai",
+    "can-i-trust-the-judge",
+    "Can I trust the judge?",
+    "A judge from the same company as the answering model might favour it.",
+    score=0.04,
+)
+PRIVACY = Section("/privacy", "who-sees", "Who sees your question", "Nobody else.", score=0.01)
+
+
+async def test_named_project_with_blog_sections_searches_again_without_the_blog():
+    run = await ask(
+        "Why don't you use an AI model to grade RoleRadar's eval results?",
+        claude=[rewrite_reply("RoleRadar eval grading model judge"), GOOD_ANSWER],
+        gemini=[check_reply()],
+        retriever=FakeRetriever([POST, MATCH, PRIVACY], [MATCH, TESTS, PRIVACY]),
+    )
+    query = "RoleRadar eval grading model judge"
+    assert run.retriever.calls == [(query, None), (query, ["/privacy", "/projects/roleradar"])]
+    assert [s.url for s in run.state["sections"]] == [MATCH.url, TESTS.url, PRIVACY.url]
+    [retrieve] = [n for n in run.state["trace"]["nodes"] if n["name"] == "retrieve"]
+    assert retrieve["scope"] == ["/privacy", "/projects/roleradar"]
+    assert "/blog/" not in str(run.claude.calls[1][1].content)  # the answer saw no post
+
+
+@pytest.mark.parametrize(
+    ("question", "query", "first"),
+    [
+        # the question is about the blog or the site itself
+        ("Does your blog post on evals cover RoleRadar?", "blog evals RoleRadar", [POST, MATCH]),
+        ("How does this site judge RoleRadar answers?", "site judge RoleRadar", [POST, MATCH]),
+        # no project named (the post is the right source)
+        ("Can I trust an LLM judge?", "LLM judge trust", [POST, MATCH]),
+        # a project named, but no blog section came back
+        ("How does RoleRadar match jobs?", "RoleRadar job matching", [MATCH, TESTS]),
+    ],
+)
+async def test_blog_sections_are_kept_otherwise(question: str, query: str, first: list):
+    run = await ask(
+        question,
+        claude=[rewrite_reply(query), GOOD_ANSWER],
+        gemini=[check_reply()],
+        retriever=FakeRetriever(first),
+    )
+    assert run.retriever.calls == [(query, None)]
+    assert [s.url for s in run.state["sections"]] == [s.url for s in first]
+
+
+async def test_rewritten_query_naming_the_project_counts_for_a_follow_up():
+    run = await ask(
+        "Why no model judge for that one?",
+        claude=[rewrite_reply("RoleRadar eval grading without a model judge"), GOOD_ANSWER],
+        gemini=[check_reply()],
+        retriever=FakeRetriever([POST, TESTS], [TESTS, MATCH]),
+    )
+    assert run.retriever.calls[1][1] == ["/projects/roleradar"]
+
+
 async def test_off_topic_question_is_declined_without_retrieval_or_check():
     decline = "I can only answer questions about Skylar's projects — try asking about RoleRadar."
     run = await ask(
@@ -600,7 +660,9 @@ async def test_private_salary_not_on_about_page_gets_fixed_sentence():
 
 
 async def test_private_inference_is_flagged_and_replaced():
-    inferred = "Yes, I can work full-time in Australia [1]."
+    # An inference the code guard does not catch (no yes / no, hours or visa words), so
+    # the check model decides it.
+    inferred = "I can start any job in Australia right away [1]."
     run = await ask(
         "Can you work full-time?",
         claude=[rewrite_reply("Skylar work full-time", private=True), inferred],
@@ -617,6 +679,62 @@ async def test_private_inference_is_flagged_and_replaced():
         {"passed": False, "unsupported": [], "retried": False, "reason": "inferred"}
     ]
     assert run.data("token") == []
+
+
+@pytest.mark.parametrize(
+    ("question", "draft", "guard"),
+    [
+        # the 10p answer the check model passed (20261125T023509-v11-default, pass 6)
+        (
+            "Can you work full-time in Australia?",
+            "Yes, I can work in Australia, and I'm happy to discuss the details, so please "
+            "email me [1]. I'm looking for internships and part-time work now, and graduate "
+            "programs and full-time roles from early 2027, when I graduate in June 2027 [2].",
+            "verdict",
+        ),
+        ("Can you work full-time?", "Yes, I can work full-time in Australia [1].", "verdict"),
+        ("What are your work rights?", "I can work full-time in Australia [1].", "hours"),
+        ("What are your work rights?", "I'm on a student visa [1].", "term"),
+    ],
+)
+async def test_private_unstated_conclusion_is_replaced_by_code_without_check(
+    question: str, draft: str, guard: str
+):
+    run = await ask(
+        question,
+        claude=[rewrite_reply("Skylar work rights", private=True), draft],
+        gemini=[],
+        retriever=FakeRetriever([WORK_RIGHTS, AVAILABILITY]),
+    )
+    assert run.names == ["route", "answer", "check", "trace"]
+    assert run.data("answer") == [
+        {
+            "text": PRIVATE_FALLBACK,
+            "citations": [{"n": 1, "url": "/about", "heading": "About Skylar", "quotes": []}],
+        }
+    ]
+    assert run.data("check") == [
+        {"passed": False, "unsupported": [], "retried": False, "reason": "inferred"}
+    ]
+    assert run.state["private_check"] == {"enough_info": None, "unsupported": [], "guard": guard}
+    assert run.gemini.calls == []  # code decided; the check model never ran
+    assert run.data("token") == []
+    assert_statuses_paired(run)
+
+
+async def test_private_answer_from_the_page_still_goes_to_the_check():
+    draft = (
+        "I'm studying in Sydney and can work in Australia; happy to discuss details — email me [1]."
+    )
+    run = await ask(
+        "What are your work rights in Australia?",
+        claude=[rewrite_reply("Skylar work rights", private=True), draft],
+        gemini=[private_check_reply(enough_info=True)],
+        retriever=FakeRetriever([WORK_RIGHTS]),
+    )
+    assert len(run.gemini.calls) == 1
+    assert run.data("answer")[0]["text"] == draft
+    assert run.state["check"]["passed"] is True
 
 
 async def test_private_check_says_passed_but_lists_a_real_quote_fails():

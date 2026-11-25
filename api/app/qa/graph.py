@@ -12,7 +12,11 @@
   sentences. A failed check sends `reset retry` and answers once more; if that fails too
   the answer stays, marked.
 - Private questions (rewrite flag or `private.looks_private`) use /about only, are never
-  streamed, and are shown only if the check passes; otherwise a fixed sentence.
+  streamed, and are shown only if the check passes; otherwise a fixed sentence. Before the
+  check, code (`private.unstated_conclusion`) sends the fixed sentence for a draft that
+  settles work rights, visas or hours where the sections do not.
+- A general question that names a project searches again without blog posts when the
+  first search mixed them in (`_project_scope`, 10s): the posts are about this site.
 - Off-topic questions get a one-line decline: no retrieval, no check.
 - `recall` (3b2) embeds the question and picks earlier turns of the conversation from the
   state's `turns` (see `memory`); the rewrite node uses them to resolve "it". Without an
@@ -36,7 +40,7 @@ from app.config import Settings
 from app.qa import memory, prompts
 from app.qa.models import CALL_TIMEOUT_S, ChatProvider, build_providers, stream_text, structured
 from app.qa.output import ANSWER_NODE, resolve_answer, resolve_citations, verify_unsupported
-from app.qa.private import looks_private
+from app.qa.private import looks_private, unstated_conclusion
 from app.qa.prompts import PRIVATE_FALLBACK
 from app.qa.state import QAInput, QAState, turn_defaults
 from app.rag.types import Embedder, Retriever, Section
@@ -138,6 +142,39 @@ def _drop_refusals(raw: str) -> str:
     return "".join(s for s in sentences if not _is_refusal(s)).strip()
 
 
+# A question about the blog or this site itself keeps blog sections even when it names a
+# project ("does the blog post on evals cover RoleRadar?").
+_ABOUT_SITE = re.compile(
+    r"\bblog\b|\bposts?\b|\barticles?\b|\bthis (?:site|website|assistant|chatbot)\b"
+    r"|\bportfolio\b|\bask my projects\b|博客|文章|这个网站|本站",
+    re.IGNORECASE,
+)
+
+
+def _project_scope(question: str, query: str, found: Sequence[Section]) -> list[str] | None:
+    """Pages to search again when blog sections came back for a question about a project.
+
+    The blog posts are about this site; next to a project's sections the answer model once
+    took a post's point about this site's judge as a RoleRadar finding, and three post
+    sections pushed RoleRadar's own eval section out of the top six (10s). So when the
+    question or its rewritten query names a project whose page came back, blog sections
+    came back too, and the question is not about the blog or the site, search again in the
+    non-blog pages that came back. None: keep the first search.
+    """
+    if _ABOUT_SITE.search(question) or not any(s.page.startswith("/blog/") for s in found):
+        return None
+    text = re.sub(r"[^a-z0-9]", "", f"{question} {query}".casefold())
+    named = {
+        s.page
+        for s in found
+        if s.page.startswith("/projects/")
+        and re.sub(r"[^a-z0-9]", "", s.page.removeprefix("/projects/")) in text
+    }
+    if not named:
+        return None
+    return sorted({s.page for s in found if not s.page.startswith("/blog/")})
+
+
 def _retry_query(state: QAState) -> str:
     # Search again for what the failed sentences claim; without quotes, use the
     # visitor's own wording, which differs from the rewritten query.
@@ -206,9 +243,14 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         query = state.get("retry_query") or state["query"]
         pages = ABOUT_PAGES if state["private"] else None
         found = list(await deps.retriever(query, pages=pages))[:MAX_SECTIONS]
+        scope = None if state["private"] else _project_scope(state["question"], query, found)
+        if scope:
+            found = list(await deps.retriever(query, pages=scope))[:MAX_SECTIONS]
         if not found and state.get("retried"):
             found = state["sections"]  # the retry search found nothing: keep the first sections
         trace = node.end("openai", deps.embed_model)
+        if scope:
+            trace["scope"] = scope  # searched again without blog posts (10s)
         return {"sections": found, "nodes": [*state["nodes"], trace]}
 
     async def answer(state: QAState) -> dict[str, Any]:
@@ -324,6 +366,20 @@ def build_graph(deps: GraphDeps, checkpointer: Any = None) -> Any:
         writer = get_stream_writer()
         node = _Node(writer, "check")
         draft = state["answer_text"]
+        guard = unstated_conclusion(state["question"], draft, [s.text for s in state["sections"]])
+        if guard:
+            # Code settles it (10s): no model call, the fixed sentence as for a failed check.
+            trace = node.end()
+            result = {"passed": False, "unsupported": [], "retried": False, "reason": "inferred"}
+            _emit_answer(writer, PRIVATE_FALLBACK, [ABOUT_CITATION])
+            _emit_check(writer, result)
+            return {
+                "private_check": {"enough_info": None, "unsupported": [], "guard": guard},
+                "nodes": [*state["nodes"], trace],
+                "answer_text": PRIVATE_FALLBACK,
+                "citations": [ABOUT_CITATION],
+                "check": result,
+            }
         messages = prompts.private_check_messages(state["question"], draft, state["sections"])
         out, provider = await structured(
             "check", check_order, prompts.PrivateCheckOut, messages, deadline_s=timeout
